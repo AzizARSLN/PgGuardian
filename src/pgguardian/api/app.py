@@ -19,6 +19,7 @@ from pgguardian.api.routers import roles as roles_router
 from pgguardian.api.routers import schemas as schemas_router
 from pgguardian.api.routers import snapshots as snapshots_router
 from pgguardian.api.routers import sql as sql_router
+from pgguardian.api.routers import table_io as table_io_router
 
 _SCALAR_HTML = """
 <!doctype html>
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(configops_router.router, dependencies=guarded)
     app.include_router(replication_router.router, dependencies=guarded)
     app.include_router(backups_router.router, dependencies=guarded)
+    app.include_router(table_io_router.router, dependencies=guarded)
     return app
 
 
