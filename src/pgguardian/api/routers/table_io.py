@@ -13,6 +13,7 @@ from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
 from pgguardian.api.safety import DryRunResult, RiskLevel, audit, ensure_writes_allowed
 from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient, get_connection
+from pgguardian.diagnostics.profiling import profile_table
 
 router = APIRouter(prefix="/api/v1/tables", tags=["table-io"])
 
@@ -105,6 +106,22 @@ def import_table(
                     copy.write(content.decode("utf-8", errors="strict"))
     audit("table.import", f"{schema_name}.{table_name}", RiskLevel.MAINTENANCE, settings)
     return {"imported": f"{schema_name}.{table_name}", "bytes": len(content)}
+
+
+@router.get("/{schema}/{table}/profile")
+def profile_table_endpoint(
+    schema: str,
+    table: str,
+    client: DbClient = Depends(resolve_client),
+) -> list[dict]:
+    """Profile table columns (nulls, distinct, avg width) - read-only, capped."""
+    from pgguardian.api.safety import validate_identifier
+
+    schema_name = validate_identifier(schema, what="schema name")
+    table_name = validate_identifier(table, what="table name")
+    with mapped_errors(client.settings):
+        client.ping()
+        return profile_table(client, schema_name, table_name)
 
 
 @router.post("/{schema}/{table}/analyze")
