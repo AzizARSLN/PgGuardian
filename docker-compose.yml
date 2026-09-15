@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: pgguardian-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pgguardian
+      POSTGRES_PASSWORD: pgguardian
+      POSTGRES_DB: pgguardian
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgguardian -d pgguardian"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
