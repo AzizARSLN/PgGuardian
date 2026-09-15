@@ -77,6 +77,14 @@ class GrantChange(MutationRequest):
     object_name: str | None = None
 
 
+class GrantMembershipRequest(MutationRequest):
+    """Add/remove a member to/from a role (MAINTENANCE)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    member: str = Field(description="Role to add as member")
+
+
 _ALLOWED_PRIVILEGES = frozenset(
     {
         "SELECT",
@@ -325,6 +333,112 @@ def revoke_privilege(
     return {"revoked": body.privilege, "role": body.role}
 
 
+class RoleMembership(BaseModel):
+    """One membership link: role is member of parent role."""
+
+    model_config = ConfigDict(frozen=True)
+
+    role: str
+    member: str
+    admin_option: bool = False
+
+
+@router.get("/{name}/members", response_model=list[RoleMembership])
+def list_role_members(
+    name: str, client: DbClient = Depends(resolve_client)
+) -> list[RoleMembership]:
+    """Members of a role (read-only)."""
+    role_name = validate_identifier(name, what="role name")
+    with mapped_errors(client.settings):
+        client.ping()
+        rows = client.fetch_all(
+            "SELECT r.rolname AS role, m.rolname AS member, am.admin_option"
+            " FROM pg_auth_members am"
+            " JOIN pg_roles r ON r.oid = am.roleid"
+            " JOIN pg_roles m ON m.oid = am.member"
+            " WHERE r.rolname = %s ORDER BY 2",
+            (role_name,),
+        )
+    return [
+        RoleMembership(
+            role=str(row.get("role")),
+            member=str(row.get("member")),
+            admin_option=bool(row.get("admin_option")),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/{name}/memberships", response_model=list[RoleMembership])
+def list_role_memberships(
+    name: str, client: DbClient = Depends(resolve_client)
+) -> list[RoleMembership]:
+    """Roles that a given role is member of (read-only)."""
+    role_name = validate_identifier(name, what="role name")
+    with mapped_errors(client.settings):
+        client.ping()
+        rows = client.fetch_all(
+            "SELECT r.rolname AS role, m.rolname AS member, am.admin_option"
+            " FROM pg_auth_members am"
+            " JOIN pg_roles r ON r.oid = am.roleid"
+            " JOIN pg_roles m ON m.oid = am.member"
+            " WHERE m.rolname = %s ORDER BY 1",
+            (role_name,),
+        )
+    return [
+        RoleMembership(
+            role=str(row.get("role")),
+            member=str(row.get("member")),
+            admin_option=bool(row.get("admin_option")),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/memberships", response_model=list[RoleMembership])
+def list_all_memberships(client: DbClient = Depends(resolve_client)) -> list[RoleMembership]:
+    """All role memberships (read-only, top 500)."""
+    with mapped_errors(client.settings):
+        client.ping()
+        rows = client.fetch_all(
+            "SELECT r.rolname AS role, m.rolname AS member, am.admin_option"
+            " FROM pg_auth_members am"
+            " JOIN pg_roles r ON r.oid = am.roleid"
+            " JOIN pg_roles m ON m.oid = am.member"
+            " ORDER BY 1, 2 LIMIT 500"
+        )
+    return [
+        RoleMembership(
+            role=str(row.get("role")),
+            member=str(row.get("member")),
+            admin_option=bool(row.get("admin_option")),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/{name}/grants", response_model=list[dict])
+def list_role_grants(name: str, client: DbClient = Depends(resolve_client)) -> list[dict]:
+    """All grants for a role across tables/schemas/databases (read-only)."""
+    role_name = validate_identifier(name, what="role name")
+    with mapped_errors(client.settings):
+        client.ping()
+        rows = client.fetch_all(
+            "SELECT grantee AS role, table_schema AS schema_name, table_name,"
+            " privilege_type AS privilege, 'table' AS object_type"
+            " FROM information_schema.role_table_grants WHERE grantee = %s"
+            " UNION ALL"
+            " SELECT grantee, object_schema, object_name, privilege_type, object_type"
+            " FROM information_schema.role_usage_grants WHERE grantee = %s"
+            " UNION ALL"
+            " SELECT grantee, NULL, object_name, privilege_type, object_type"
+            " FROM information_schema.role_routine_grants WHERE grantee = %s"
+            " ORDER BY 5, 2, 3 LIMIT 500",
+            (role_name, role_name, role_name),
+        )
+    return [dict(row) for row in rows]
+
+
 @router.get("/grants/table", response_model=list[dict])
 def list_table_grants(
     role: str | None = None, client: DbClient = Depends(resolve_client)
@@ -346,3 +460,57 @@ def list_table_grants(
                 " ORDER BY 1, 2, 3, 4 LIMIT 500"
             )
     return [dict(row) for row in rows]
+
+
+@router.post("/{name}/grant-membership", response_model=DryRunResult | dict)
+def grant_membership(
+    name: str,
+    body: GrantMembershipRequest,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> DryRunResult | dict:
+    """Add a member to a role: GRANT role TO member (MAINTENANCE)."""
+    ensure_writes_allowed(settings, "role.grant_membership")
+    target = validate_identifier(name, what="role name")
+    member = validate_identifier(body.member, what="member name")
+    query = SQL("GRANT {} TO {}").format(Identifier(target), Identifier(member))
+    if body.dry_run:
+        return DryRunResult(
+            action="role.grant_membership",
+            risk=RiskLevel.MAINTENANCE,
+            sql=[query.as_string()],
+            target=target,
+        )
+    require_confirm(body, "role.grant_membership")
+    with mapped_errors(settings):
+        client.ping()
+        client.execute_raw(query)
+    audit("role.grant_membership", target, RiskLevel.MAINTENANCE, settings)
+    return {"granted": target, "to": member}
+
+
+@router.post("/{name}/revoke-membership", response_model=DryRunResult | dict)
+def revoke_membership(
+    name: str,
+    body: GrantMembershipRequest,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> DryRunResult | dict:
+    """Remove a member from a role: REVOKE role FROM member (MAINTENANCE)."""
+    ensure_writes_allowed(settings, "role.revoke_membership")
+    target = validate_identifier(name, what="role name")
+    member = validate_identifier(body.member, what="member name")
+    query = SQL("REVOKE {} FROM {}").format(Identifier(target), Identifier(member))
+    if body.dry_run:
+        return DryRunResult(
+            action="role.revoke_membership",
+            risk=RiskLevel.MAINTENANCE,
+            sql=[query.as_string()],
+            target=target,
+        )
+    require_confirm(body, "role.revoke_membership")
+    with mapped_errors(settings):
+        client.ping()
+        client.execute_raw(query)
+    audit("role.revoke_membership", target, RiskLevel.MAINTENANCE, settings)
+    return {"revoked": target, "from": member}
