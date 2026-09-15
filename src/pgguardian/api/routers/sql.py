@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
 from pgguardian.api.safety import (
@@ -21,6 +21,7 @@ from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
 from pgguardian.sqlexec.classifier import SqlRejectedError, StatementKind, classify
 from pgguardian.sqlexec.executor import DEFAULT_MAX_ROWS, HARD_MAX_ROWS, SqlResult, run_sql
+from pgguardian.sqlexec.formatter import format_sql
 
 router = APIRouter(prefix="/api/v1/sql", tags=["sql"])
 
@@ -38,6 +39,31 @@ class SqlRequest(MutationRequest):
     readonly: bool = Field(
         default=True, description="When true (default), only read statements run."
     )
+
+
+class SqlFormatRequest(BaseModel):
+    """Format SQL without executing (no DB needed)."""
+
+    sql: str = Field(description="SQL to format")
+    keyword_case: str = Field(default="upper", description="upper or lower")
+
+
+class SqlFormatResponse(BaseModel):
+    """Formatted SQL result."""
+
+    original: str
+    formatted: str
+    keyword_case: str
+
+
+@router.post("/format", response_model=SqlFormatResponse)
+def format_sql_endpoint(body: SqlFormatRequest) -> SqlFormatResponse:
+    """Format SQL (no DB needed, read-only)."""
+    case = body.keyword_case.lower()
+    if case not in ("upper", "lower"):
+        raise HTTPException(status_code=400, detail="keyword_case must be upper or lower")
+    formatted = format_sql(body.sql, keyword_case=case)
+    return SqlFormatResponse(original=body.sql, formatted=formatted, keyword_case=case)
 
 
 @router.post("", response_model=SqlResult | DryRunResult)

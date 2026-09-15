@@ -19,6 +19,7 @@ from pgguardian.cli import (
 )
 from pgguardian.sqlexec.classifier import SqlRejectedError, classify, ensure_allowed
 from pgguardian.sqlexec.executor import DEFAULT_MAX_ROWS, run_sql
+from pgguardian.sqlexec.formatter import format_sql
 
 
 def run(
@@ -29,12 +30,26 @@ def run(
     allow_write: bool = False,
     confirm: bool = False,
     dry_run: bool = False,
+    format_only: bool = False,
+    keyword_case: str = "upper",
 ) -> int:
     """Run exactly one SQL statement with read-only-by-default guards."""
     if (sql is None) == (file is None):
         typer.echo("Pass exactly one of --sql or --file.", err=True)
         return 3
     statement = sql if sql is not None else Path(file or "").read_text(encoding="utf-8")
+    if format_only:
+        if keyword_case.lower() not in ("upper", "lower"):
+            typer.echo("keyword_case must be upper or lower.", err=True)
+            return 3
+        formatted = format_sql(statement, keyword_case=keyword_case.lower())
+        if effective_format(opts) == "json":
+            print_json(
+                {"original": statement, "formatted": formatted, "keyword_case": keyword_case}
+            )
+        else:
+            Console(no_color=opts.no_color, quiet=opts.quiet).print(formatted)
+        return 0
     try:
         kind = classify(statement)
     except SqlRejectedError as exc:
