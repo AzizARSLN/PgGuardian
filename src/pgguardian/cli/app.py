@@ -327,6 +327,12 @@ def query(
     ] = False,
     confirm: Annotated[bool, typer.Option("--confirm", help="Confirm mutations.")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Classify only.")] = False,
+    format_sql: Annotated[
+        bool, typer.Option("--format-sql", help="Format SQL and print without executing.")
+    ] = False,
+    keyword_case: Annotated[
+        str, typer.Option("--keyword-case", help="Keyword case for --format-sql: upper or lower.")
+    ] = "upper",
 ) -> None:
     """Run one SQL statement (read-only by default, results capped)."""
     raise typer.Exit(
@@ -338,6 +344,8 @@ def query(
             allow_write=allow_write,
             confirm=confirm,
             dry_run=dry_run,
+            format_only=format_sql,
+            keyword_case=keyword_case,
         )
     )
 
