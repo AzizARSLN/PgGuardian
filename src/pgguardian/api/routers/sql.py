@@ -66,6 +66,48 @@ def format_sql_endpoint(body: SqlFormatRequest) -> SqlFormatResponse:
     return SqlFormatResponse(original=body.sql, formatted=formatted, keyword_case=case)
 
 
+class ExplainRequest(BaseModel):
+    """EXPLAIN a query (read-only)."""
+
+    sql: str = Field(description="SQL to EXPLAIN")
+    analyze: bool = Field(default=False, description="EXPLAIN ANALYZE (runs query)")
+
+
+@router.post("/explain")
+def explain_sql(
+    body: ExplainRequest,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> dict:
+    """EXPLAIN (ANALYZE) a query - read-only, capped; ANALYZE needs writes."""
+    # EXPLAIN without ANALYZE is read-only; with ANALYZE it actually runs
+    if body.analyze and not settings.allow_writes:
+        raise HTTPException(
+            status_code=403, detail="EXPLAIN ANALYZE needs PGGUARDIAN_ALLOW_WRITES=1"
+        )
+    prefix = "EXPLAIN (FORMAT JSON) " if not body.analyze else "EXPLAIN (ANALYZE, FORMAT JSON) "
+    # Validate the inner SQL is at least parseable
+    try:
+        classify(body.sql)
+    except SqlRejectedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with mapped_errors(settings):
+        client.ping()
+        # Use get_connection with statement_timeout for safety
+        from pgguardian.database.connection import get_connection
+
+        with get_connection(client.settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(prefix + body.sql)
+                row = cur.fetchone()
+                # pg returns JSON in first column
+                if row:
+                    # row is dict with key maybe "QUERY PLAN"
+                    val = next(iter(row.values())) if isinstance(row, dict) else row[0]
+                    return {"plan": val, "analyze": body.analyze}
+                return {"plan": [], "analyze": body.analyze}
+
+
 @router.post("", response_model=SqlResult | DryRunResult)
 def execute_sql(
     body: SqlRequest,
