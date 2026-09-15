@@ -14,6 +14,7 @@ from pgguardian.diagnostics import health as health_diag
 from pgguardian.diagnostics import indexes as indexes_diag
 from pgguardian.diagnostics import locks as locks_diag
 from pgguardian.diagnostics import maintenance as maintenance_diag
+from pgguardian.diagnostics import pg_stat_statements as pgss_diag
 from pgguardian.diagnostics import queries as queries_diag
 from pgguardian.diagnostics import storage as storage_diag
 from pgguardian.models.connection import ConnectionReport
@@ -138,3 +139,14 @@ def get_report(
             username=client.settings.username,
         )
         return build_report_dict(opts, limit=min(limit, 500), client=client)
+
+
+@router.get("/pg-stat-statements")
+def get_pg_stat_statements(
+    limit: int = 20, client: DbClient = Depends(resolve_client)
+) -> list[dict]:
+    """Top queries from pg_stat_statements (empty if extension not available)."""
+    _preflight(client)
+    with mapped_errors(client.settings):
+        rows = pgss_diag.collect_pg_stat_statements(client, limit=min(limit, 100))
+    return rows
