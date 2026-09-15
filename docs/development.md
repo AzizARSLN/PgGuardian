@@ -11,7 +11,7 @@ pip install -e ".[dev]"
 docker compose up -d
 
 # Point the CLI at it
-export PGGUARDIAN_CONNECTION_STRING="host=localhost port=5432 dbname=pgguardian user=pgguardian password=pgguardian"
+export PGGUARDIAN_CONNECTION_STRING="host=localhost port=5432 dbname=pgguardian user=pgguardian password=1"
 
 pgguardian health
 pgguardian diagnose

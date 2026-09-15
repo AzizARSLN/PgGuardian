@@ -47,14 +47,14 @@ jobs:
       - name: Seed database
         run: psql "$PGGUARDIAN_TEST_CONNECTION_STRING" -f docker/init.sql
         env:
-          PGGUARDIAN_TEST_CONNECTION_STRING: host=localhost port=5432 dbname=pgguardian user=pgguardian password=pgguardian
+          PGGUARDIAN_TEST_CONNECTION_STRING: host=localhost port=5432 dbname=pgguardian user=pgguardian password=1
 
       - name: pytest
         run: pytest
         env:
-          PGGUARDIAN_TEST_CONNECTION_STRING: host=localhost port=5432 dbname=pgguardian user=pgguardian password=pgguardian
+          PGGUARDIAN_TEST_CONNECTION_STRING: host=localhost port=5432 dbname=pgguardian user=pgguardian password=1
 
       - name: Coverage
         run: pytest --cov=src/pgguardian --cov-report=term-missing --cov-fail-under=70
         env:
-          PGGUARDIAN_TEST_CONNECTION_STRING: host=localhost port=5432 dbname=pgguardian user=pgguardian password=pgguardian
+          PGGUARDIAN_TEST_CONNECTION_STRING: host=localhost port=5432 dbname=pgguardian user=pgguardian password=1

@@ -379,10 +379,24 @@ def history(
 def serve(
     host: Annotated[str, typer.Option("--host", help="Bind host.")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="Bind port.")] = 8000,
-    reload: Annotated[bool, typer.Option("--reload", help="Auto-reload for development.")] = False,
+    reload: Annotated[bool, typer.Option("--reload", help="Auto-reload on code changes.")] = False,
+    debug: Annotated[
+        bool, typer.Option("--debug", help="Dev mode: auto-reload + DEBUG logging.")
+    ] = False,
+    log_level: Annotated[
+        str,
+        typer.Option(
+            "--log-level",
+            help="Log level: critical | error | warning | info | debug | trace",
+        ),
+    ] = "info",
 ) -> None:
-    """Serve the PgGuardian HTTP API."""
-    raise typer.Exit(code=serve_cmd.run(host=host, port=port, reload=reload))
+    """Serve the PgGuardian HTTP API. Use --debug for local development."""
+    raise typer.Exit(
+        code=serve_cmd.run(
+            host=host, port=port, reload=reload, debug=debug, log_level=log_level
+        )
+    )
 
 
 if __name__ == "__main__":

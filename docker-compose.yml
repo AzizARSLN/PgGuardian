@@ -5,8 +5,23 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: pgguardian
-      POSTGRES_PASSWORD: pgguardian
+      POSTGRES_PASSWORD: "1"
       POSTGRES_DB: pgguardian
+      # ---------- DEBUG / DEV AYARLARI ----------
+      # Tüm SQL sorgularını stdout'a logla (pgGuardian testi için kullanışlı)
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command: >
+      postgres
+      -c log_statement=all
+      -c log_min_duration_statement=0
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_duration=on
+      -c log_line_prefix='[%t] [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+      -c shared_buffers=256MB
+      -c work_mem=16MB
+      -c max_connections=200
     ports:
       - "5432:5432"
     volumes:
@@ -17,6 +32,17 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:

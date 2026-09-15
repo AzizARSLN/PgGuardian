@@ -163,7 +163,7 @@ pgguardian report --format html --output report.html
 
 ```bash
 docker compose up -d
-export PGGUARDIAN_CONNECTION_STRING="host=localhost port=5432 dbname=pgguardian user=pgguardian password=pgguardian"
+export PGGUARDIAN_CONNECTION_STRING="host=localhost port=5432 dbname=pgguardian user=pgguardian password=1"
 pgguardian health
 ```
 

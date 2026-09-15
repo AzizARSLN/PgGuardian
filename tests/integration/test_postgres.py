@@ -3,7 +3,7 @@
 Run with a reachable database, e.g.::
 
     docker compose up -d
-    set PGGUARDIAN_TEST_CONNECTION_STRING=host=localhost port=5432 dbname=pgguardian user=pgguardian password=pgguardian
+    set PGGUARDIAN_TEST_CONNECTION_STRING=host=localhost port=5432 dbname=pgguardian user=pgguardian password=1
     pytest tests/integration
 
 Without ``PGGUARDIAN_TEST_CONNECTION_STRING`` every test is skipped —
