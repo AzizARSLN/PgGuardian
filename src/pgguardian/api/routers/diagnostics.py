@@ -8,6 +8,7 @@ from pgguardian.api.deps import mapped_errors, resolve_client
 from pgguardian.cli import GlobalOptions
 from pgguardian.cli.report import build_report_dict
 from pgguardian.database.connection import DbClient
+from pgguardian.diagnostics import bloat as bloat_diag
 from pgguardian.diagnostics import connections as connections_diag
 from pgguardian.diagnostics import diagnose as diagnose_diag
 from pgguardian.diagnostics import health as health_diag
@@ -16,6 +17,7 @@ from pgguardian.diagnostics import locks as locks_diag
 from pgguardian.diagnostics import maintenance as maintenance_diag
 from pgguardian.diagnostics import pg_stat_statements as pgss_diag
 from pgguardian.diagnostics import queries as queries_diag
+from pgguardian.diagnostics import sequences as sequences_diag
 from pgguardian.diagnostics import storage as storage_diag
 from pgguardian.models.connection import ConnectionReport
 from pgguardian.models.diagnostic import DiagnosticFinding
@@ -150,3 +152,19 @@ def get_pg_stat_statements(
     with mapped_errors(client.settings):
         rows = pgss_diag.collect_pg_stat_statements(client, limit=min(limit, 100))
     return rows
+
+
+@router.get("/bloat")
+def get_bloat(limit: int = 20, client: DbClient = Depends(resolve_client)) -> list[dict]:
+    """Tables with high dead tuples as bloat indicator (read-only)."""
+    _preflight(client)
+    with mapped_errors(client.settings):
+        return bloat_diag.collect_bloat(client, limit=min(limit, 100))
+
+
+@router.get("/sequences")
+def get_sequences(limit: int = 100, client: DbClient = Depends(resolve_client)) -> list[dict]:
+    """Sequences with exhaustion percent (read-only)."""
+    _preflight(client)
+    with mapped_errors(client.settings):
+        return sequences_diag.collect_sequences(client, limit=min(limit, 500))
