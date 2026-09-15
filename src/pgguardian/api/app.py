@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import HTMLResponse
 
 from pgguardian import __version__
 from pgguardian.api.deps import verify_token
@@ -19,6 +20,36 @@ from pgguardian.api.routers import schemas as schemas_router
 from pgguardian.api.routers import snapshots as snapshots_router
 from pgguardian.api.routers import sql as sql_router
 
+_SCALAR_HTML = """
+<!doctype html>
+<html>
+<head>
+  <title>PgGuardian API Reference</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --scalar-color-1: #f5f5f5;
+      --scalar-color-2: #a6a6a6;
+      --scalar-color-3: #737373;
+      --scalar-color-accent: #6366f1;
+      --scalar-background-1: #0a0a0a;
+      --scalar-background-2: #141414;
+      --scalar-background-3: #1f1f1f;
+      --scalar-border-color: #262626;
+      --scalar-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body { margin: 0; background: var(--scalar-background-1); }
+    scalar-api-reference { height: 100vh; }
+  </style>
+</head>
+<body>
+  <script id="api-reference" data-url="/openapi.json"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+</body>
+</html>
+"""
+
 
 def create_app() -> FastAPI:
     """Build the FastAPI app (factory keeps tests isolated, no globals)."""
@@ -33,6 +64,11 @@ def create_app() -> FastAPI:
     )
     guarded = [Depends(verify_token)]
 
+    @app.get("/reference", include_in_schema=False)
+    def scalar_reference() -> HTMLResponse:
+        """Scalar API reference — modern interactive docs at /reference."""
+        return HTMLResponse(_SCALAR_HTML)
+
     @app.get("/", tags=["meta"])
     def root() -> dict:
         """Service info (no database access)."""
@@ -40,6 +76,8 @@ def create_app() -> FastAPI:
             "service": "pgguardian",
             "version": __version__,
             "docs": "/docs",
+            "reference": "/reference",
+            "openapi": "/openapi.json",
             "health": "/api/v1/health",
         }
 
