@@ -26,3 +26,11 @@ class ApiSettings(PgGuardianSettings):
     audit_log_file: str | None = Field(
         default=None, description="Optional JSONL file for the audit trail."
     )
+    jwt_secret: str | None = Field(
+        default=None,
+        description="HS256 signing secret for JWT access/refresh tokens. Random if unset.",
+    )
+    bootstrap_password: str | None = Field(
+        default=None,
+        description="Bootstrap admin password. Falls back to 'admin123' when unset.",
+    )

@@ -5,6 +5,7 @@ REM  - Uses .venv if found (FIRST PRIORITY - prevents RuntimeError)
 REM  - Starts Docker PostgreSQL (password=1), waits for pg_isready
 REM  - Checks python-multipart (fixes "Form data requires..." error)
 REM  - Launches PgGuardian API (debug reload mode)
+REM  - Launches Next.js Frontend (separate window, pnpm dev)
 REM =====================================================================
 
 setlocal
@@ -17,6 +18,7 @@ if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "PG_PORT=5432"
 set "API_HOST=127.0.0.1"
 set "API_PORT=8000"
+set "UI_PORT=3000"
 set "WAIT_POSTGRES_MAX_SEC=60"
 
 REM =====================================================================
@@ -84,13 +86,14 @@ echo    Debug Mode          : ENABLED ^(auto-reload + verbose logging^)
 echo ============================================================================
 echo    Python   : %PYTHON_EXE%
 echo    Source   : %PYTHONPATH%
+echo    Frontend (Next.js) : http://%API_HOST%:%UI_PORT%
 echo ============================================================================
 echo.
 
 REM =====================================================================
 REM  STEP 1 : Docker Desktop running?
 REM =====================================================================
-echo [1/5] Checking Docker ...
+echo [1/6] Checking Docker ...
 docker version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Docker not found or Docker Desktop not running.
@@ -105,12 +108,12 @@ echo.
 REM =====================================================================
 REM  STEP 2 : Start PostgreSQL container (detached)
 REM =====================================================================
-echo [2/5] Starting PostgreSQL container ^(docker compose up -d^) ...
-docker compose up -d
+echo [2/6] Starting PostgreSQL container ^(docker compose up -d postgres^) ...
+docker compose up -d postgres
 if errorlevel 1 (
     REM Older Docker may use hyphenated docker-compose
     echo        "docker compose" failed, trying "docker-compose" ...
-    docker-compose up -d
+    docker-compose up -d postgres
     if errorlevel 1 (
         echo [ERROR] Could not start PostgreSQL container.
         pause
@@ -123,7 +126,7 @@ echo.
 REM =====================================================================
 REM  STEP 3 : Wait until PostgreSQL is actually ready ^(pg_isready^)
 REM =====================================================================
-echo [3/5] Waiting for PostgreSQL to accept connections ^(max %WAIT_POSTGRES_MAX_SEC%s^) ...
+echo [3/6] Waiting for PostgreSQL to accept connections ^(max %WAIT_POSTGRES_MAX_SEC%s^) ...
 set "ELAPSED=0"
 set "PG_READY=0"
 
@@ -151,13 +154,13 @@ echo.
 REM =====================================================================
 REM  STEP 4 : Verify dependencies (esp python-multipart for Form/UploadFile)
 REM =====================================================================
-echo [4/5] Checking Python dependencies ...
+echo [4/6] Checking Python dependencies ...
 
 REM Check python-multipart
 %PYTHON_EXE% -c "import multipart" >nul 2>&1
 if errorlevel 1 (
     echo        python-multipart MISSING - installing now ...
-        %PIP_EXE% install python-multipart
+    %PIP_EXE% install python-multipart
     if errorlevel 1 (
         echo [ERROR] Failed to install python-multipart.
         pause
@@ -169,7 +172,7 @@ REM Check that pgguardian imports and create_app runs
 %PYTHON_EXE% -c "from pgguardian.api.app import create_app; create_app()" >nul 2>&1
 if errorlevel 1 (
     echo        PgGuardian package missing or broken - reinstalling editable ...
-        %PIP_EXE% install -e ".[dev]"
+    %PIP_EXE% install -e ".[dev]"
     if errorlevel 1 (
         echo [ERROR] Editable install failed. Check the pip output above.
         pause
@@ -187,9 +190,9 @@ if errorlevel 1 (
 echo.
 
 REM =====================================================================
-REM  STEP 5 : Quick CLI health-check, then launch the API server
+REM  STEP 5 : Quick CLI health-check, print endpoints
 REM =====================================================================
-echo [5/5] Running quick CLI health check ...
+echo [5/6] Running quick CLI health check ...
 %PYTHON_EXE% -m pgguardian health
 REM health exit code 2 means "couldn't connect but CLI works" - non-fatal here
 echo.
@@ -197,12 +200,45 @@ echo.
 echo ============================================================================
 echo  APPLICATION ENDPOINTS  (open these in your browser after startup)
 echo ----------------------------------------------------------------------------
-echo    Scalar Reference   :  http://%API_HOST%:%API_PORT%/reference       ^<- NEW!
+echo    Dashboard (UI)     :  http://%API_HOST%:%UI_PORT%/ ^(Dashboard^)
+echo    Scalar Reference   :  http://%API_HOST%:%API_PORT%/reference
 echo    Swagger UI         :  http://%API_HOST%:%API_PORT%/docs
 echo    Health Endpoint    :  http://%API_HOST%:%API_PORT%/api/v1/health
 echo    OpenAPI JSON       :  http://%API_HOST%:%API_PORT%/openapi.json
 echo    Service Info       :  http://%API_HOST%:%API_PORT%/
 echo ============================================================================
+echo.
+
+REM =====================================================================
+REM  STEP 6 : Start Next.js Frontend (separate window) + then launch API
+REM =====================================================================
+echo [6/6] Starting Next.js Frontend ...
+
+REM Check pnpm is available, if not try to enable corepack or fall back
+pnpm --version >nul 2>&1
+if errorlevel 1 (
+    echo        pnpm not found directly, trying corepack enable ...
+    where corepack >nul 2>&1
+    if not errorlevel 1 (
+        corepack enable >nul 2>&1
+        corepack prepare pnpm@10.17.1 --activate >nul 2>&1
+    )
+)
+
+REM Run pnpm install in frontend if node_modules missing
+if not exist "%SCRIPT_DIR%\frontend\node_modules" (
+    echo        Running pnpm install in frontend ...
+    pushd "%SCRIPT_DIR%\frontend"
+    pnpm install
+    if errorlevel 1 (
+        echo [WARN] pnpm install failed, continuing anyway ...
+    )
+    popd
+)
+
+echo        Launching PgGuardian Frontend in new window ...
+start "PgGuardian Frontend" cmd /k "cd /d %SCRIPT_DIR%\frontend && pnpm dev"
+
 echo.
 echo  Starting PgGuardian API with auto-reload and debug logging ...
 echo  To STOP: Close this window OR press Ctrl+C
