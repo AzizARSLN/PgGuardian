@@ -17,11 +17,12 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from pgguardian.api.deps import (
+    get_api_settings,
     get_jwt_settings,
-    resolve_client,
     verify_jwt,
 )
 from pgguardian.api.settings import ApiSettings
+from pgguardian.config.settings import PgGuardianSettings, get_settings
 from pgguardian.database.connection import DbClient
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -71,6 +72,41 @@ def _jti_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _auth_db_client(settings: ApiSettings) -> DbClient:
+    """Return a DbClient for AUTH tables only.
+
+    Users/sessions tables live in the central PgGuardian database configured
+    via PGGUARDIAN_* env vars. We MUST NOT look at X-Profile-Name, profile
+    store or active profile for auth because profile DBs don't have these
+    tables. We also build connection string manually to skip any cached
+    profile-specific connection string.
+    """
+    host = settings.host
+    port = settings.port
+    database = settings.database
+    username = settings.username
+    password = settings.password
+    resolved: PgGuardianSettings = get_settings(
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        connection_string=None,
+        active_profile=None,
+    )
+    parts = [
+        f"host={host}",
+        f"port={port}",
+        f"dbname={database}",
+        f"user={username}",
+    ]
+    if password:
+        parts.append(f"password={password}")
+    parts.append(f"connect_timeout={resolved.connect_timeout}")
+    return DbClient(resolved, cli_connection_string=" ".join(parts))
+
+
 def _mint_tokens(
     user_id: int,
     email: str,
@@ -111,10 +147,11 @@ def login(
     body: LoginRequest,
     response: Response,
     request: Request,
-    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
     secret: str = Depends(get_jwt_settings),
 ) -> LoginResponse:
     """Issue access + refresh tokens for valid email/password credentials."""
+    client = _auth_db_client(settings)
     row = client.fetch_one(
         "SELECT id, email, full_name, password_hash, app_role, is_active, password_must_change "
         "FROM pgguardian_users WHERE email = %s",
@@ -179,25 +216,25 @@ def login(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     response: Response,
-    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
     _claims: dict[str, Any] = Depends(verify_jwt),
     refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ) -> None:
     """Invalidate the stored refresh session and clear the cookie."""
+    client = _auth_db_client(settings)
     if refresh:
         client.execute_raw(
             "DELETE FROM pgguardian_sessions WHERE refresh_hash = %s",
             (_jti_hash(refresh),),
         )
     response.delete_cookie(key=REFRESH_COOKIE, httponly=True, samesite="lax")
-
-
 @router.get("/me", response_model=UserPublic)
 def me(
+    settings: ApiSettings = Depends(get_api_settings),
     claims: dict[str, Any] = Depends(verify_jwt),
-    client: DbClient = Depends(resolve_client),
 ) -> UserPublic:
     """Return the authenticated user's public profile."""
+    client = _auth_db_client(settings)
     user_id = int(claims["sub"])
     row = client.fetch_one(
         "SELECT id, email, full_name, app_role, password_must_change FROM pgguardian_users "
@@ -213,21 +250,19 @@ def me(
         role=str(row["app_role"]),
         password_must_change=bool(row["password_must_change"]),
     )
-
-
 @router.post("/refresh", response_model=LoginResponse)
 def refresh(
     response: Response,
     request: Request,
-    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
     secret: str = Depends(get_jwt_settings),
     refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ) -> LoginResponse:
     """Exchange a valid refresh cookie for a fresh access token.
-
     The refresh token itself is rotated: the old session hash is deleted and a
     new HttpOnly cookie is issued.
     """
+    client = _auth_db_client(settings)
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Missing refresh cookie.")
     try:
@@ -238,14 +273,11 @@ def refresh(
             options={"require": ["sub", "email", "role", "exp", "type"]},
         )
     except pyjwt.ExpiredSignatureError as err:
-
         raise HTTPException(status_code=401, detail="Refresh expired.") from err
     except pyjwt.InvalidTokenError as err:
-
         raise HTTPException(status_code=401, detail="Invalid refresh.") from err
     if decoded.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Wrong token type.")
-
     session = client.fetch_one(
         "SELECT s.id, s.user_id, u.email, u.full_name, u.app_role, u.is_active, "
         "u.password_must_change FROM pgguardian_sessions s JOIN pgguardian_users u "
@@ -256,7 +288,6 @@ def refresh(
         raise HTTPException(status_code=401, detail="Session revoked.")
     if not session["is_active"]:
         raise HTTPException(status_code=401, detail="Account disabled.")
-
     user_id = int(session["user_id"])
     client.execute_raw("DELETE FROM pgguardian_sessions WHERE id = %s", (int(session["id"]),))
     access, new_refresh, expires_in = _mint_tokens(
@@ -299,15 +330,14 @@ def refresh(
             password_must_change=bool(session["password_must_change"]),
         ),
     )
-
-
 @router.patch("/me/change_password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     body: ChangePasswordRequest,
+    settings: ApiSettings = Depends(get_api_settings),
     claims: dict[str, Any] = Depends(verify_jwt),
-    client: DbClient = Depends(resolve_client),
 ) -> None:
     """Change the authenticated user's own password (any role)."""
+    client = _auth_db_client(settings)
     if len(body.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 chars.")
     user_id = int(claims["sub"])
@@ -337,7 +367,7 @@ def bootstrap_admin_if_needed(settings: ApiSettings | None = None) -> None:
     if settings is None:
         settings = ApiSettings()
     try:
-        client = resolve_client(settings=settings)
+        client = _auth_db_client(settings)
     except Exception:
         return
     try:

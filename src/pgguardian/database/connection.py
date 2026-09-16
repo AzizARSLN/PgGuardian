@@ -60,7 +60,12 @@ def resolve_connection_string(
     """Resolve the effective libpq connection string without ever logging it."""
     if cli_connection_string:
         return cli_connection_string
-    if settings.connection_string:
+    # When an explicit profile is active, the profile's own fields are
+    # authoritative. We intentionally skip settings.connection_string here
+    # because the computed cached value may have been built before the
+    # profile overrides were applied (a stale connection string can easily
+    # point to the wrong database, e.g. the ambient env "pgguardian" DB).
+    if settings.connection_string and not settings.active_profile:
         return settings.connection_string
 
     if settings.active_profile:

@@ -241,7 +241,14 @@ export async function apiFetch<T = unknown>(
   }
 
   const selectedProfile = getSelectedProfileFromStore();
-  if (selectedProfile) {
+  // Do NOT send profile header on /auth/* endpoints. The user/session tables
+  // live on the central ambient database (PGGUARDIAN_DATABASE), not on any
+  // user-selected profile database. Sending IzmirDB (template1) here would
+  // cause "Invalid credentials" even with the correct password because the
+  // pgguardian_users table simply does not exist there. (Backend also
+  // enforces this via `resolve_auth_client`.)
+  const isAuthEndpoint = endpoint.includes("/auth/");
+  if (selectedProfile && !isAuthEndpoint) {
     headers["X-Profile-Name"] = encodeURIComponent(selectedProfile);
   }
 
@@ -256,7 +263,7 @@ export async function apiFetch<T = unknown>(
             ...headers,
             Authorization: `Bearer ${newToken}`,
           };
-          if (selectedProfile) {
+          if (selectedProfile && !isAuthEndpoint) {
             retryHeaders["X-Profile-Name"] = encodeURIComponent(selectedProfile);
           }
           return await performFetch<T>(

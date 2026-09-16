@@ -251,6 +251,64 @@ def resolve_client(
     return DbClient(resolved, cli_connection_string=cli_conn_str_override)
 
 
+def resolve_auth_client(
+    settings: ApiSettings = Depends(get_api_settings),
+) -> DbClient:
+    """Build a DbClient exclusively for auth/session endpoints.
+
+    The user/session tables (``pgguardian_users``, ``pgguardian_sessions``)
+    live on the **default/ambient** database (``PGGUARDIAN_DATABASE``), never
+    on a user-selected profile's database. Profile headers/query/store must
+    therefore be **completely ignored** for login / logout / refresh /
+    change_password flows, otherwise selecting a profile that points at
+    ``template1`` (or any other DB) results in "Invalid credentials" even
+    when the password is correct (the users table simply isn't there).
+
+    To guarantee the correct DB is always used, we bypass ``build_settings``
+    entirely (which can apply saved-profile defaults) and force the ambient
+    ``PGGUARDIAN_*`` env values (already loaded into ``settings`` via the
+    normal Pydantic env parser) onto both the ``PgGuardianSettings`` object
+    and the low-level ``cli_connection_string`` override.
+    """
+    # 1. Use ApiSettings (pure env-driven) as the settings base — never
+    #    consult ProfileStore here, even for the "default" profile.
+    host = settings.host
+    port = settings.port
+    database = settings.database
+    username = settings.username
+    password = settings.password
+    # 2. Stamp the final values on a fresh settings object so
+    #    `resolve_connection_string` cannot later pick up stale / profile-
+    #    derived values from any other resolution path.
+    from pgguardian.config.settings import get_settings
+    resolved = get_settings(
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        connection_string=None,  # force rebuild from the explicit fields above
+        active_profile=None,  # auth never runs under a user profile context
+    )
+    # 3. Forward the API-level timeouts/thresholds (they are not stored on
+    #    the core PgGuardianSettings model but are known in this layer).
+    resolved.connect_timeout = settings.connect_timeout
+    resolved.query_timeout_ms = settings.query_timeout_ms
+    # 4. Force the exact libpq connection string so neither ambient PG*
+    #    env variables nor psycopg defaults can silently redirect us.
+    parts = [
+        f"host={host}",
+        f"port={port}",
+        f"dbname={database}",
+        f"user={username}",
+    ]
+    if password:
+        parts.append(f"password={password}")
+    parts.append(f"connect_timeout={resolved.connect_timeout}")
+    cli_conn_str_override = " ".join(parts)
+    return DbClient(resolved, cli_connection_string=cli_conn_str_override)
+
+
 @contextmanager
 def mapped_errors(settings: PgGuardianSettings) -> Iterator[None]:
     """Map DB failures to sanitized HTTP errors (never leak secrets)."""
