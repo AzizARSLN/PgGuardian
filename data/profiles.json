@@ -1,0 +1,43 @@
+{
+  "profiles": {
+    "IzmirDB": {
+      "created_at": "2026-09-16T11:30:02.071401",
+      "database": "template1",
+      "description": null,
+      "host": "localhost",
+      "is_default": false,
+      "password": null,
+      "password_env": null,
+      "port": 5433,
+      "server": null,
+      "updated_at": "2026-09-16T11:30:02.071401",
+      "username": "pgguardian"
+    },
+    "Kütahya": {
+      "created_at": "2026-09-16T10:18:23.641199",
+      "database": "pgguardian",
+      "description": "ğüşöçİ test",
+      "host": "localhost",
+      "is_default": true,
+      "password": null,
+      "password_env": null,
+      "port": 5433,
+      "server": null,
+      "updated_at": "2026-09-16T10:19:00.343054",
+      "username": "pgguardian"
+    },
+    "Şanlıurfa_2024": {
+      "created_at": "2026-09-16T10:18:23.675133",
+      "database": "pgguardian",
+      "description": null,
+      "host": "localhost",
+      "is_default": false,
+      "password": null,
+      "password_env": null,
+      "port": 5433,
+      "server": null,
+      "updated_at": "2026-09-16T10:18:23.675133",
+      "username": "pgguardian"
+    }
+  }
+}

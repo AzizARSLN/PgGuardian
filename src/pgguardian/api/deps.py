@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import secrets
+import urllib.parse
 import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -16,7 +17,7 @@ from pgguardian.api.settings import ApiSettings
 from pgguardian.cli import GlobalOptions, build_settings
 from pgguardian.config.settings import PgGuardianSettings
 from pgguardian.database.connection import ConnectionError, DbClient
-from pgguardian.profiles.store import ProfileNotFoundError
+from pgguardian.profiles.store import ProfileNotFoundError, ProfileStore
 from pgguardian.utils.security import sanitize_error
 
 _JWT_CACHE: dict[str, str] = {}
@@ -151,29 +152,94 @@ def require_role_OR_open(allowed_roles: set[str]) -> Callable[..., dict[str, Any
     return _check
 
 
+def _resolve_profile_from_store() -> str | None:
+    """Return default (or first saved) profile name if any exist; else None."""
+    try:
+        store = ProfileStore()
+    except Exception:
+        return None
+    profiles = store.list()
+    if not profiles:
+        return None
+    for p in profiles:
+        if p.is_default:
+            return p.name
+    return profiles[0].name
+
+
 def resolve_client(
     profile: str | None = None,
+    x_profile_name: str | None = Header(default=None, alias="X-Profile-Name"),
+    profile_query: str | None = None,
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DbClient:
-    """Build a DbClient for the request (env or saved profile)."""
-    parts = [
-        f"host={settings.host}",
-        f"port={settings.port}",
-        f"dbname={settings.database}",
-        f"user={settings.username}",
-    ]
-    if settings.password:
-        parts.append(f"password={settings.password}")
-    parts.append(f"connect_timeout={settings.connect_timeout}")
-    forced_conn_str = " ".join(parts)
+    """Build a DbClient for the request.
+
+    Profile resolution order (highest priority first):
+      1. Explicit ``profile`` kwarg when called directly (rare).
+      2. ``X-Profile-Name`` HTTP header.
+      3. ``?profile=`` query string.
+      4. Saved profile with ``is_default=True``.
+      5. First saved profile (any order).
+      6. Environment-based fallback (``PGGUARDIAN_*`` vars), which is the
+         original behavior when zero profiles are saved.
+    """
+    # Header names and values are restricted to latin-1 by the HTTP/1.1 spec.
+    # Non-ASCII profile names (e.g. Turkish) are URL-encoded by the client;
+    # decode both sources here so the rest of the stack sees real Unicode.
+    def _decode(value: str | None) -> str | None:
+        if value is None:
+            return None
+        decoded = urllib.parse.unquote(value)
+        return decoded or None
+
+    chosen_profile_raw = (
+        profile
+        or _decode(x_profile_name)
+        or _decode(profile_query)
+    )
+    if not chosen_profile_raw:
+        chosen_profile_raw = _resolve_profile_from_store()
+    chosen_profile = chosen_profile_raw
+    has_explicit_profile = bool(chosen_profile)
+    # When a profile name is actually selected, prefer it over the fallback
+    # connection string + per-field overrides from environment variables.
+    # The profile defines the authoritative values; API-level env settings are
+    # only used as fallbacks when ZERO profiles are saved.
+    fallback_conn = settings.connection_string if not has_explicit_profile else None
+    if has_explicit_profile:
+        env_host = env_port = env_database = env_username = env_password = None
+    else:
+        env_host = settings.host
+        env_port = settings.port
+        env_database = settings.database
+        env_username = settings.username
+        env_password = settings.password
+    # cli_connection_string override (for DB driver): only force the env values
+    # when no profile is selected. When a profile is selected, the resolved
+    # settings (derived from the profile) determine the connection parameters
+    # and cli_connection_string should not override them.
+    if has_explicit_profile:
+        cli_conn_str_override = None
+    else:
+        parts = [
+            f"host={settings.host}",
+            f"port={settings.port}",
+            f"dbname={settings.database}",
+            f"user={settings.username}",
+        ]
+        if settings.password:
+            parts.append(f"password={settings.password}")
+        parts.append(f"connect_timeout={settings.connect_timeout}")
+        cli_conn_str_override = " ".join(parts)
     opts = GlobalOptions(
-        connection_string=settings.connection_string,
-        profile=profile,
-        host=settings.host,
-        port=settings.port,
-        database=settings.database,
-        username=settings.username,
-        password=settings.password,
+        connection_string=fallback_conn,
+        profile=chosen_profile,
+        host=env_host,
+        port=env_port,
+        database=env_database,
+        username=env_username,
+        password=env_password,
     )
     try:
         resolved = build_settings(opts)
@@ -182,7 +248,7 @@ def resolve_client(
     # Preserve API-level timeouts/thresholds on top of the profile base.
     resolved.connect_timeout = settings.connect_timeout
     resolved.query_timeout_ms = settings.query_timeout_ms
-    return DbClient(resolved, cli_connection_string=forced_conn_str)
+    return DbClient(resolved, cli_connection_string=cli_conn_str_override)
 
 
 @contextmanager

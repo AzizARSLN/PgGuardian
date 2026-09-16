@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore
+from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore, PROFILE_NAME_PATTERN
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
 
@@ -23,6 +23,17 @@ class ProfileCreate(BaseModel):
     server: str | None = None
     description: str | None = None
     is_default: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        if not PROFILE_NAME_PATTERN.match(value):
+            raise ValueError(
+                "Profile name must be 1-64 chars of letters (incl. Unicode), "
+                "digits, '.', '-' or '_'. Whitespace or /\\:*?\"<>| characters "
+                "are not allowed."
+            )
+        return value
 
 
 def _store() -> ProfileStore:

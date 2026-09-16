@@ -2,6 +2,7 @@
 
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/useAuthStore";
+import { getSelectedProfileFromStore } from "@/store/useProfileStore";
 
 export const API_BASE_URL = "/api/v1";
 export const DEFAULT_TIMEOUT = 30000;
@@ -239,6 +240,11 @@ export async function apiFetch<T = unknown>(
     }
   }
 
+  const selectedProfile = getSelectedProfileFromStore();
+  if (selectedProfile) {
+    headers["X-Profile-Name"] = encodeURIComponent(selectedProfile);
+  }
+
   try {
     return await performFetch<T>(url, { ...headers }, rest, timeout, skipToast);
   } catch (error) {
@@ -250,6 +256,9 @@ export async function apiFetch<T = unknown>(
             ...headers,
             Authorization: `Bearer ${newToken}`,
           };
+          if (selectedProfile) {
+            retryHeaders["X-Profile-Name"] = encodeURIComponent(selectedProfile);
+          }
           return await performFetch<T>(
             url,
             retryHeaders,

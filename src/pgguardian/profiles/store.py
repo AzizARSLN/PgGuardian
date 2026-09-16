@@ -12,13 +12,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+PROFILE_NAME_PATTERN = re.compile(r"^(?!.*[/\\:*?\"<>|\s])[\w.\-]{1,64}$", re.UNICODE)
 
 
 class ProfileNotFoundError(KeyError):
@@ -171,21 +173,56 @@ class ProfileStore:
 
     def _write_raw(self, raw: dict[str, dict]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(
-            dir=str(self.path.parent), prefix=".profiles-", suffix=".tmp"
-        )
+        path_str = str(self.path)
+        bak = path_str + ".bak"
+        final_text = json.dumps(
+            {"profiles": raw}, indent=2, sort_keys=True, ensure_ascii=False
+        ) + "\n"
+        # 1) Existing file → backup (safe rollback on failure)
+        backup_ok = False
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump({"profiles": raw}, handle, indent=2, sort_keys=True)
-                handle.write("\n")
+            if os.path.isfile(path_str):
+                # Delete previous .bak if present (Windows: overwrite requires delete)
+                if os.path.isfile(bak):
+                    try:
+                        os.remove(bak)
+                    except OSError:
+                        pass
+                shutil.copy2(path_str, bak)
+                backup_ok = True
+        except OSError:
+            backup_ok = False
+        # 2) Direct write to target with flush + fsync to avoid Defender lock issues
+        last_err: Exception | None = None
+        for attempt in range(5):
             try:
-                os.chmod(tmp_name, 0o600)
-            except OSError:
-                pass
-            os.replace(tmp_name, self.path)
-        finally:
+                with open(path_str, "w", encoding="utf-8", newline="\n") as handle:
+                    handle.write(final_text)
+                    handle.flush()
+                    try:
+                        os.fsync(handle.fileno())
+                    except OSError:
+                        pass
+                break
+            except OSError as exc:
+                last_err = exc
+                time.sleep(0.1 * (attempt + 1))
+        else:
+            if last_err is not None:
+                if backup_ok and os.path.isfile(bak):
+                    try:
+                        shutil.copy2(bak, path_str)
+                    except OSError:
+                        pass
+                raise last_err
+        # 3) Try to tighten permissions on Unix; ignore on Windows
+        try:
+            os.chmod(path_str, 0o600)
+        except OSError:
+            pass
+        # 4) Cleanup backup only after successful write
+        if backup_ok and os.path.isfile(bak):
             try:
-                if os.path.exists(tmp_name):
-                    os.remove(tmp_name)
+                os.remove(bak)
             except OSError:
                 pass
