@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export const API_BASE_URL = "/api/v1";
 export const DEFAULT_TIMEOUT = 30000;
@@ -41,8 +42,19 @@ export class ApiError extends Error {
   }
 }
 
+export function getAccessTokenFromStore(): string | null {
+  try {
+    return useAuthStore.getState().access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 function getApiToken(): string | null {
   try {
+    const jwtToken = getAccessTokenFromStore();
+    if (jwtToken) return jwtToken;
+
     if (typeof window === "undefined") return null;
     const key = "pgguardian_api_token";
     return window.sessionStorage.getItem(key);
@@ -86,39 +98,13 @@ function buildQueryString(
   return qs ? `?${qs}` : "";
 }
 
-export async function apiFetch<T = unknown>(
-  endpoint: string,
-  options: RequestOptions = {}
+async function performFetch<T = unknown>(
+  url: string,
+  headers: Record<string, string>,
+  rest: RequestInit,
+  timeout: number,
+  skipToast: boolean
 ): Promise<T> {
-  const {
-    timeout = DEFAULT_TIMEOUT,
-    skipAuth = false,
-    skipToast = false,
-    params,
-    headers: customHeaders,
-    ...rest
-  } = options;
-
-  const url = `${API_BASE_URL}${endpoint}${params ? buildQueryString(params) : ""}`;
-
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    ...(customHeaders as Record<string, string>),
-  };
-
-  if (rest.body && !(rest.body instanceof FormData)) {
-    if (!headers["Content-Type"]) {
-      headers["Content-Type"] = "application/json";
-    }
-  }
-
-  if (!skipAuth) {
-    const token = getApiToken();
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -217,6 +203,72 @@ export async function apiFetch<T = unknown>(
     throw error;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+export async function apiFetch<T = unknown>(
+  endpoint: string,
+  options: RequestOptions = {}
+): Promise<T> {
+  const {
+    timeout = DEFAULT_TIMEOUT,
+    skipAuth = false,
+    skipToast = false,
+    params,
+    headers: customHeaders,
+    ...rest
+  } = options;
+
+  const url = `${API_BASE_URL}${endpoint}${params ? buildQueryString(params) : ""}`;
+
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...(customHeaders as Record<string, string>),
+  };
+
+  if (rest.body && !(rest.body instanceof FormData)) {
+    if (!headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+  }
+
+  if (!skipAuth) {
+    const token = getApiToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  try {
+    return await performFetch<T>(url, { ...headers }, rest, timeout, skipToast);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401 && !skipAuth) {
+      try {
+        const newToken = await useAuthStore.getState().refreshAccessToken();
+        if (newToken) {
+          const retryHeaders: Record<string, string> = {
+            ...headers,
+            Authorization: `Bearer ${newToken}`,
+          };
+          return await performFetch<T>(
+            url,
+            retryHeaders,
+            rest,
+            timeout,
+            skipToast
+          );
+        }
+      } catch {
+        // ignore refresh errors, fall through to logout
+      }
+
+      await useAuthStore.getState().logout();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("auth:401"));
+      }
+      throw error;
+    }
+    throw error;
   }
 }
 

@@ -214,30 +214,65 @@ REM  STEP 6 : Start Next.js Frontend (separate window) + then launch API
 REM =====================================================================
 echo [6/6] Starting Next.js Frontend ...
 
-REM Check pnpm is available, if not try to enable corepack or fall back
+REM ============================================================
+REM  Pick package manager: 1) pnpm  2) npm  (fallback chain)
+REM ============================================================
+set "PKG_MGR="
+set "INSTALL_CMD="
+set "DEV_CMD="
+
 pnpm --version >nul 2>&1
-if errorlevel 1 (
-    echo        pnpm not found directly, trying corepack enable ...
-    where corepack >nul 2>&1
+if not errorlevel 1 (
+    set "PKG_MGR=pnpm"
+    set "INSTALL_CMD=pnpm install"
+    set "DEV_CMD=pnpm dev"
+    goto pkg_found
+)
+
+REM pnpm not found - try corepack enable once, then recheck
+where corepack >nul 2>&1
+if not errorlevel 1 (
+    corepack enable >nul 2>&1
+    corepack prepare pnpm@10.17.1 --activate >nul 2>&1
+    pnpm --version >nul 2>&1
     if not errorlevel 1 (
-        corepack enable >nul 2>&1
-        corepack prepare pnpm@10.17.1 --activate >nul 2>&1
+        set "PKG_MGR=pnpm"
+        set "INSTALL_CMD=pnpm install"
+        set "DEV_CMD=pnpm dev"
+        goto pkg_found
     )
 )
 
-REM Run pnpm install in frontend if node_modules missing
+REM Final fallback: npm
+npm --version >nul 2>&1
+if not errorlevel 1 (
+    set "PKG_MGR=npm"
+    set "INSTALL_CMD=npm install --no-audit --no-fund"
+    set "DEV_CMD=npm run dev"
+    goto pkg_found
+)
+
+:pkg_found
+if not defined PKG_MGR (
+    echo [ERROR] Neither pnpm nor npm found. Install Node.js LTS from https://nodejs.org/
+    pause
+    exit /b 1
+)
+echo        Package manager    : %PKG_MGR%
+
+REM Install deps if node_modules missing
 if not exist "%SCRIPT_DIR%\frontend\node_modules" (
-    echo        Running pnpm install in frontend ...
+    echo        Running %PKG_MGR% install in frontend ...
     pushd "%SCRIPT_DIR%\frontend"
-    pnpm install
+    %INSTALL_CMD%
     if errorlevel 1 (
-        echo [WARN] pnpm install failed, continuing anyway ...
+        echo [WARN] %PKG_MGR% install failed, continuing anyway ...
     )
     popd
 )
 
 echo        Launching PgGuardian Frontend in new window ...
-start "PgGuardian Frontend" cmd /k "cd /d %SCRIPT_DIR%\frontend && pnpm dev"
+start "PgGuardian Frontend" cmd /k "cd /d %SCRIPT_DIR%\frontend && %DEV_CMD%"
 
 echo.
 echo  Starting PgGuardian API with auto-reload and debug logging ...

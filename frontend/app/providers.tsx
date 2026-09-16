@@ -48,11 +48,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const queryClient = React.useMemo(() => getQueryClient(), []);
   const [modalOpen, setModalOpen] = React.useState(false);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const logout = useAuthStore((s) => s.logout);
 
   React.useEffect(() => {
     function handleAuth401() {
-      clearAuth();
+      logout();
       setModalOpen(true);
     }
 
@@ -62,7 +62,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         window.removeEventListener("auth:401", handleAuth401);
       };
     }
-  }, [clearAuth]);
+  }, [logout]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -70,12 +70,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
       const cookieExists =
         document.cookie
           .split(";")
-          .some((c) => c.trim().startsWith("auth=")) || false;
+          .some(
+            (c) =>
+              c.trim().startsWith("pgg_refresh=") ||
+              c.trim().startsWith("auth=")
+          ) || false;
       const hasAuth =
         cookieExists ||
         Boolean(window.sessionStorage.getItem("pgguardian_api_token"));
       if (hasAuth && !isAuthenticated) {
-        useAuthStore.getState().setAuthenticated(true);
+        useAuthStore.getState().refreshAccessToken().then((tok) => {
+          if (!tok) {
+            useAuthStore.getState().setAuthenticated(true);
+          }
+        });
       }
     } catch {
     }

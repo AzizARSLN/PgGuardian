@@ -21,7 +21,7 @@ services:
       -c work_mem=16MB
       -c max_connections=200
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

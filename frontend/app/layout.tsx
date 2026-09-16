@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
+import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 import "./globals.css";
+
 import SidebarNav from "@/components/sidebar-nav";
 import Header from "@/components/header";
 import { Toaster } from "@/components/ui/sonner";
@@ -12,26 +14,16 @@ export const metadata: Metadata = {
   description: "PostgreSQL veritabanı yönetimi, teşhis ve izleme paneli",
 };
 
-const PROTECTED_PATHS = [
-  "/dashboard",
-  "/connections",
-  "/diagnostics",
-  "/sql-editor",
-  "/query-management",
-  "/schema-browser",
-  "/roles",
-  "/maintenance",
-  "/config",
-  "/replication",
-  "/backups",
-  "/snapshots",
-  "/report",
-  "/settings",
-];
-
-function isProtected(pathname: string) {
-  return PROTECTED_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
+function hasAnyAuth(cookieStore: ReadonlyRequestCookies) {
+  const newAuth = cookieStore.get("pgg_refresh");
+  const legacyToken = cookieStore.get("pgguardian_api_token");
+  const legacyAuth = cookieStore.get("auth");
+  const envToken = process.env.NEXT_PUBLIC_PGGUARDIAN_API_TOKEN;
+  return Boolean(
+    newAuth?.value ||
+    legacyToken?.value ||
+    legacyAuth?.value ||
+    envToken
   );
 }
 
@@ -41,23 +33,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const authCookie = cookieStore.get("auth");
-  const hasAuth = Boolean(authCookie?.value);
-
-  let pathname = "";
-  try {
-    const headersList = Object.fromEntries(cookieStore);
-    const _ = headersList;
-  } catch {
-    // noop
-  }
-
-  const reqHeaders = (await import("next/headers"));
-  const h = await reqHeaders.headers();
-  const xUrl = h.get("x-next-pathname") || h.get("x-invoke-path") || "";
-  pathname = xUrl;
-
-  const showShell = hasAuth;
+  const showShell = hasAnyAuth(cookieStore);
 
   return (
     <html lang="tr" suppressHydrationWarning>

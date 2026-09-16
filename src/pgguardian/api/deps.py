@@ -156,13 +156,23 @@ def resolve_client(
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DbClient:
     """Build a DbClient for the request (env or saved profile)."""
+    parts = [
+        f"host={settings.host}",
+        f"port={settings.port}",
+        f"dbname={settings.database}",
+        f"user={settings.username}",
+    ]
+    if settings.password:
+        parts.append(f"password={settings.password}")
+    parts.append(f"connect_timeout={settings.connect_timeout}")
+    forced_conn_str = " ".join(parts)
     opts = GlobalOptions(
         connection_string=settings.connection_string,
         profile=profile,
-        host=settings.host if settings.host != "localhost" else None,
-        port=None,
-        database=None,
-        username=None,
+        host=settings.host,
+        port=settings.port,
+        database=settings.database,
+        username=settings.username,
         password=settings.password,
     )
     try:
@@ -172,7 +182,7 @@ def resolve_client(
     # Preserve API-level timeouts/thresholds on top of the profile base.
     resolved.connect_timeout = settings.connect_timeout
     resolved.query_timeout_ms = settings.query_timeout_ms
-    return DbClient(resolved)
+    return DbClient(resolved, cli_connection_string=forced_conn_str)
 
 
 @contextmanager

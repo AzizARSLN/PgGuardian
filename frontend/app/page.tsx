@@ -1,3 +1,7 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DatabaseZap, Shield, Activity, TerminalSquare, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +11,16 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export default function HomePage() {
+  const router = useRouter();
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const next = formData.get("next") as string | null;
+    const target = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
+    router.push(target);
+  }
+
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-8">
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -37,18 +51,39 @@ export default function HomePage() {
 
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Activity, title: "Gerçek Zamanlı Teşhis", desc: "Canlı sorgular, kilitler ve sağlık" },
-              { icon: TerminalSquare, title: "SQL Editör", desc: "Syntax ve güvenlik sınıflandırması" },
-              { icon: Shield, title: "Güvenli Profil", desc: "Şifreleri yerel (YARA) + AES-256 ile sakla" },
-              { icon: DatabaseZap, title: "Bakım & Yedekleme", desc: "VACUUM, REINDEX, snapshot ve rapor" },
+              {
+                icon: Activity,
+                title: "Gerçek Zamanlı Teşhis",
+                desc: "Canlı sorgular, kilitler ve sağlık",
+              },
+              {
+                icon: TerminalSquare,
+                title: "SQL Editör",
+                desc: "Syntax ve güvenlik sınıflandırması",
+              },
+              {
+                icon: Shield,
+                title: "Güvenli Profil",
+                desc: "Şifreleri yerel (YARA) + AES-256 ile sakla",
+              },
+              {
+                icon: DatabaseZap,
+                title: "Bakım & Yedekleme",
+                desc: "VACUUM, REINDEX, snapshot ve rapor",
+              },
             ].map((f) => (
-              <Card key={f.title} className="bg-white/5 backdrop-blur-md border-white/10 shadow-xl">
+              <Card
+                key={f.title}
+                className="bg-white/5 backdrop-blur-md border-white/10 shadow-xl"
+              >
                 <CardContent className="p-5 space-y-2.5">
                   <div className="h-10 w-10 rounded-full bg-gradient-accent/20 flex items-center justify-center">
                     <f.icon className="h-5 w-5 text-gradient" />
                   </div>
                   <h3 className="font-semibold text-white">{f.title}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {f.desc}
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -64,7 +99,7 @@ export default function HomePage() {
               </p>
             </div>
 
-            <form action="/api/v1/auth/login" method="POST" className="space-y-6">
+            <form onSubmit={onSubmit} className="space-y-6">
               <div className="space-y-3">
                 <Label htmlFor="username">Kullanıcı Adı</Label>
                 <Input
@@ -90,7 +125,10 @@ export default function HomePage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Checkbox id="remember" name="remember" />
-                  <Label htmlFor="remember" className="text-sm cursor-pointer">
+                  <Label
+                    htmlFor="remember"
+                    className="text-sm cursor-pointer"
+                  >
                     Beni hatırla
                   </Label>
                 </div>
@@ -108,7 +146,14 @@ export default function HomePage() {
               </Button>
 
               <div className="text-center text-xs text-muted-foreground">
-                İlk kullanım için <Link href="/dashboard" className="text-gradient hover:underline">geliştirici modunu</Link> aktif edin
+                İlk kullanım için{" "}
+                <Link
+                  href="/dashboard"
+                  className="text-gradient hover:underline"
+                >
+                  geliştirici modunu
+                </Link>{" "}
+                aktif edin
               </div>
             </form>
           </CardContent>
