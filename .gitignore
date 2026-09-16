@@ -16,6 +16,21 @@ htmlcov/
 .ruff_cache/
 pgguardian.toml
 .env
+.env.local
+.env.*.local
+
+# --- Frontend / Node (generic) ---
+node_modules/
+.pnp/
+.pnp.js
+.npm
+.eslintcache
+.stylelintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # --- Editors / IDEs ---
 .vscode/*
@@ -27,6 +42,7 @@ pgguardian.toml
 .idea/
 *.iml
 .history/
+.trae/
 
 # --- OS ---
 .DS_Store

@@ -1,0 +1,47 @@
+# --- Next.js / React / Turbopack ---
+.next/
+out/
+.turbo/
+.output/
+
+# --- Node / Package managers ---
+node_modules/
+.pnp/
+.pnp.cjs
+.pnp.data.*
+.pnpm-store/
+.pnpm-cache/
+.npm-cache/
+package-lock.json
+
+# --- Testing / Linting cache ---
+coverage/
+.eslintcache
+.stylelintcache
+playwright-report/
+blob-report/
+.playwright/
+
+# --- Build artifacts / TypeScript ---
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Env / Secrets ---
+.env
+.env.local
+.env.*.local
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
