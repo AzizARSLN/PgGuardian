@@ -163,8 +163,8 @@ export default function SettingsPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Settings className="h-8 w-8 text-violet-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Settings className="h-8 w-8 text-info" />
             Ayarlar
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -172,23 +172,23 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+          <CheckCircle2 className="h-4 w-4 text-success" />
           Ayarlar otomatik olarak kaydedilir
         </div>
       </div>
 
       {/* (a) Güvenlik: Master Password Değiştir */}
-      <Card className="relative overflow-hidden border-red-500/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 via-transparent to-violet-500/5 pointer-events-none" />
+      <Card className="relative overflow-hidden border-destructive/20">
+        <div className="absolute inset-0 bg-gradient-to-br from-destructive/5 via-transparent to-info/5 pointer-events-none" />
         <CardHeader className="pb-5 relative">
           <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br from-red-500 to-rose-500 flex items-center justify-center shadow-lg">
-              <Shield className="h-6 w-6 text-white" />
+            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-destructive to-destructive flex items-center justify-center shadow-sm">
+              <Shield className="h-6 w-6 text-foreground" />
             </div>
             <div className="flex-1 min-w-0">
               <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
                 Güvenlik
-                <Badge variant="outline" className="text-[10px] font-mono bg-red-500/10 text-red-400 border-red-500/30">
+                <Badge variant="outline" className="text-[10px] font-mono bg-destructive/10 text-destructive border-destructive/30">
                   <AlertCircle className="h-3 w-3 mr-1" />
                   DÜZENLE: DANGEROUS
                 </Badge>
@@ -200,10 +200,10 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="pt-0 relative space-y-4">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 flex items-center justify-between flex-wrap gap-4">
+          <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-between flex-wrap gap-4">
             <div>
               <div className="font-semibold flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-violet-400" />
+                <KeyRound className="h-4 w-4 text-info" />
                 Master Parolayı Değiştir
               </div>
               <div className="text-xs text-muted-foreground mt-1">
@@ -214,7 +214,7 @@ export default function SettingsPage() {
               <DialogTrigger asChild>
                 <Button
                   variant="destructive"
-                  className="h-12 bg-red-500 hover:bg-red-600 text-white"
+                  className="h-12 bg-destructive hover:bg-destructive text-destructive-foreground"
                 >
                   <SaveAll className="h-4 w-4 mr-2" />
                   Parolayı Değiştir
@@ -222,7 +222,7 @@ export default function SettingsPage() {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2 text-red-400">
+                  <DialogTitle className="flex items-center gap-2 text-destructive">
                     <Shield className="h-6 w-6" />
                     Master Parolayı Değiştir — DANGEROUS
                   </DialogTitle>
@@ -259,8 +259,8 @@ export default function SettingsPage() {
                     />
                   </div>
                   {newPw && newPw2 && newPw !== newPw2 && (
-                    <div className="rounded-2xl bg-red-500/10 border border-red-500/30 p-4">
-                      <p className="text-xs text-red-400 flex items-center gap-1.5">
+                    <div className="rounded-md bg-destructive/10 border border-destructive/30 p-4">
+                      <p className="text-xs text-destructive flex items-center gap-1.5">
                         <AlertCircle className="h-4 w-4 shrink-0" />
                         Yeni parola ve tekrarı eşleşmiyor.
                       </p>
@@ -274,7 +274,7 @@ export default function SettingsPage() {
                       type="submit"
                       variant="destructive"
                       disabled={pwSubmitting || !newPw || !newPw2 || newPw !== newPw2}
-                      className="bg-red-500 hover:bg-red-600 text-white"
+                      className="bg-destructive hover:bg-destructive text-destructive-foreground"
                     >
                       {pwSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                       <Save className="h-4 w-4 mr-2" />
@@ -289,12 +289,12 @@ export default function SettingsPage() {
       </Card>
 
       {/* (b) Tema */}
-      <Card className="relative overflow-hidden border-violet-500/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-indigo-500/5 pointer-events-none" />
+      <Card className="relative overflow-hidden border-info/20">
+        <div className="absolute inset-0 bg-gradient-to-br from-info/5 via-transparent to-info/5 pointer-events-none" />
         <CardHeader className="pb-5 relative">
           <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center shadow-lg">
-              <Palette className="h-6 w-6 text-white" />
+            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-info to-info flex items-center justify-center shadow-sm">
+              <Palette className="h-6 w-6 text-foreground" />
             </div>
             <div>
               <CardTitle className="text-xl">Tema</CardTitle>
@@ -307,9 +307,9 @@ export default function SettingsPage() {
         <CardContent className="pt-0 relative">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {([
-              { val: "light", label: "Açık", icon: Sun, color: "from-amber-400 to-orange-500" },
-              { val: "dark", label: "Koyu (Glass)", icon: Moon, color: "from-indigo-500 to-violet-500" },
-              { val: "system", label: "Sistem", icon: Monitor, color: "from-slate-400 to-slate-600" },
+              { val: "light", label: "Açık", icon: Sun, color: "from-warning to-warning" },
+              { val: "dark", label: "Koyu (Glass)", icon: Moon, color: "from-info to-info" },
+              { val: "system", label: "Sistem", icon: Monitor, color: "from-muted to-muted" },
             ] as const).map((t) => {
               const active = theme === t.val;
               return (
@@ -317,17 +317,17 @@ export default function SettingsPage() {
                   type="button"
                   key={t.val}
                   onClick={() => setTheme(t.val)}
-                  className={`group relative rounded-3xl border p-6 text-left transition-all ${
+                  className={`group relative rounded-lg border p-6 text-left transition-all ${
                     active
-                      ? "border-white/40 bg-white/10 shadow-xl shadow-indigo-500/10"
-                      : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
+                      ? "border-border bg-muted shadow-sm shadow-info/10"
+                      : "border-border bg-card hover:bg-muted hover:border-border"
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className={`h-10 w-10 rounded-xl bg-gradient-to-br ${t.color} flex items-center justify-center shadow-md`}
+                      className={`h-10 w-10 rounded-md bg-gradient-to-br ${t.color} flex items-center justify-center shadow-md`}
                     >
-                      <t.icon className="h-5 w-5 text-white" />
+                      <t.icon className="h-5 w-5 text-foreground" />
                     </div>
                     <div>
                       <div className="font-semibold">{t.label}</div>
@@ -346,15 +346,15 @@ export default function SettingsPage() {
                       Aktif
                     </Badge>
                   )}
-                  <div className="mt-4 rounded-2xl h-20 bg-gradient-to-br from-white/5 to-white/10 border border-white/5 flex items-center justify-center">
+                  <div className="mt-4 rounded-md h-20 bg-gradient-to-br from-muted/5 to-muted/10 border border-border flex items-center justify-center">
                     {t.val === "light" ? (
-                      <div className="w-12 h-12 rounded-xl bg-white shadow-lg shadow-black/10" />
+                      <div className="w-12 h-12 rounded-md bg-card shadow-sm shadow-black/10" />
                     ) : t.val === "dark" ? (
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/30 to-emerald-500/30 backdrop-blur-md border border-white/10 shadow-lg" />
+                      <div className="w-12 h-12 rounded-md bg-gradient-to-br from-info/30 to-success/30 border border-border shadow-sm" />
                     ) : (
                       <div className="flex gap-2">
-                        <div className="w-8 h-12 rounded-lg bg-white shadow-md" />
-                        <div className="w-8 h-12 rounded-lg bg-gradient-to-br from-indigo-500/30 to-emerald-500/30 backdrop-blur-md border border-white/10" />
+                        <div className="w-8 h-12 rounded-lg bg-card shadow-md" />
+                        <div className="w-8 h-12 rounded-lg bg-gradient-to-br from-info/30 to-success/30 border border-border" />
                       </div>
                     )}
                   </div>
@@ -369,12 +369,12 @@ export default function SettingsPage() {
       </Card>
 
       {/* (c) Canlı Yenileme */}
-      <Card className="relative overflow-hidden border-emerald-500/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-sky-500/5 pointer-events-none" />
+      <Card className="relative overflow-hidden border-success/20">
+        <div className="absolute inset-0 bg-gradient-to-br from-success/5 via-transparent to-info/5 pointer-events-none" />
         <CardHeader className="pb-5 relative">
           <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg">
-              <RefreshCw className="h-6 w-6 text-white" />
+            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-success to-success flex items-center justify-center shadow-sm">
+              <RefreshCw className="h-6 w-6 text-foreground" />
             </div>
             <div>
               <CardTitle className="text-xl">Canlı Yenileme</CardTitle>
@@ -385,7 +385,7 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="pt-0 relative space-y-6">
-          <div className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/5 p-6 flex-wrap gap-4">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-card p-6 flex-wrap gap-4">
             <div>
               <div className="font-semibold flex items-center gap-2">
                 Otomatik Yenileme
@@ -400,13 +400,13 @@ export default function SettingsPage() {
             <Switch checked={autoRefresh} onCheckedChange={(v) => setAutoRefresh(Boolean(v))} />
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="rounded-lg border border-border bg-card p-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
               <div>
                 <Label className="text-base font-semibold">Poll Sıklığı</Label>
                 <div className="text-xs text-muted-foreground mt-1">
-                  Mevcut: <span className="font-mono text-emerald-300">{pollInterval / 1000} sn</span>
-                  {!autoRefresh && <span className="ml-2 text-amber-300">(otomatik yenileme kapalı)</span>}
+                  Mevcut: <span className="font-mono text-success">{pollInterval / 1000} sn</span>
+                  {!autoRefresh && <span className="ml-2 text-warning">(otomatik yenileme kapalı)</span>}
                 </div>
               </div>
             </div>
@@ -415,7 +415,7 @@ export default function SettingsPage() {
               onValueChange={(v) => setPollInterval(Number(v))}
               disabled={!autoRefresh}
             >
-              <SelectTrigger className="h-14 rounded-2xl">
+              <SelectTrigger className="h-14 rounded-md">
                 <SelectValue placeholder="Poll aralığı seçin" />
               </SelectTrigger>
               <SelectContent>
@@ -431,17 +431,17 @@ export default function SettingsPage() {
       </Card>
 
       {/* (d) API Token */}
-      <Card className="relative overflow-hidden border-sky-500/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 via-transparent to-indigo-500/5 pointer-events-none" />
+      <Card className="relative overflow-hidden border-info/20">
+        <div className="absolute inset-0 bg-gradient-to-br from-info/5 via-transparent to-info/5 pointer-events-none" />
         <CardHeader className="pb-5 relative">
           <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-500 flex items-center justify-center shadow-lg">
-              <KeyRound className="h-6 w-6 text-white" />
+            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-info to-info flex items-center justify-center shadow-sm">
+              <KeyRound className="h-6 w-6 text-foreground" />
             </div>
             <div>
               <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
                 API Token
-                <Badge variant="outline" className="text-[10px] font-mono bg-sky-500/10 text-sky-400 border-sky-500/30">
+                <Badge variant="outline" className="text-[10px] font-mono bg-info/10 text-info border-info/30">
                   Bearer auth
                 </Badge>
               </CardTitle>
@@ -453,7 +453,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="pt-0 relative space-y-4">
           {apiToken ? (
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
+            <div className="rounded-lg border border-border bg-card p-6 space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <Label className="text-base font-semibold">Mevcut API Token</Label>
@@ -477,7 +477,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setShowToken((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-white transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-card hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                     title={showToken ? "Gizle" : "Göster"}
                   >
                     {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -493,7 +493,7 @@ export default function SettingsPage() {
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
-                        <KeyRound className="h-6 w-6 text-sky-400" />
+                        <KeyRound className="h-6 w-6 text-info" />
                         API Token Ayarla
                       </DialogTitle>
                       <DialogDescription>
@@ -519,7 +519,7 @@ export default function SettingsPage() {
                         <Button
                           type="submit"
                           disabled={tokenSubmitting || !newApiToken.trim()}
-                          className="bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600"
+                          className="bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
                         >
                           {tokenSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                           <Save className="h-4 w-4 mr-2" />
@@ -532,13 +532,13 @@ export default function SettingsPage() {
               </div>
             </div>
           ) : (
-            <div className="rounded-3xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-4">
+            <div className="rounded-lg border border-warning/30 bg-warning/5 p-6 space-y-4">
               <div className="flex items-start gap-3 flex-wrap">
-                <div className="h-10 w-10 shrink-0 rounded-xl bg-amber-500/15 flex items-center justify-center">
-                  <AlertCircle className="h-5 w-5 text-amber-400" />
+                <div className="h-10 w-10 shrink-0 rounded-md bg-warning/15 flex items-center justify-center">
+                  <AlertCircle className="h-5 w-5 text-warning" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-amber-300">API Tokeni Ayarla</div>
+                  <div className="font-semibold text-warning">API Tokeni Ayarla</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     Oturum açma veya token doğrulaması yapılmadı. Aşağıdan token ayarlayın.
                   </div>
@@ -547,7 +547,7 @@ export default function SettingsPage() {
               <Dialog open={tokenDialogOpen} onOpenChange={setTokenDialogOpen}>
                 <DialogTrigger asChild>
                   <Button
-                    className="h-12 w-full bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600"
+                    className="h-12 w-full bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
                   >
                     <KeyRound className="h-5 w-5 mr-2" />
                     API Tokeni Ayarla
@@ -556,7 +556,7 @@ export default function SettingsPage() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                      <KeyRound className="h-6 w-6 text-sky-400" />
+                      <KeyRound className="h-6 w-6 text-info" />
                       API Token Ayarla
                     </DialogTitle>
                     <DialogDescription>
@@ -582,7 +582,7 @@ export default function SettingsPage() {
                       <Button
                         type="submit"
                         disabled={tokenSubmitting || !newApiToken.trim()}
-                        className="bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600"
+                        className="bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
                       >
                         {tokenSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                         <Save className="h-4 w-4 mr-2" />

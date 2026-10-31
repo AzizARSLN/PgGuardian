@@ -66,9 +66,9 @@ function formatLag(lagSec: number | null | undefined): string {
 }
 
 function lagColor(lagSec: number) {
-  if (lagSec < 10) return "#10b981";
-  if (lagSec <= 60) return "#f59e0b";
-  return "#ef4444";
+  if (lagSec < 10) return "var(--chart-2)";
+  if (lagSec <= 60) return "var(--chart-3)";
+  return "var(--chart-4)";
 }
 
 function ReplicaLagChart({ replica }: { replica: ReplicaInfo }) {
@@ -99,7 +99,7 @@ function ReplicaLagChart({ replica }: { replica: ReplicaInfo }) {
         <BarChart data={data} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
           <defs>
             <linearGradient id={chartId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity={1} />
+              <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={1} />
               <stop offset="100%" stopColor="#a855f7" stopOpacity={0.35} />
             </linearGradient>
           </defs>
@@ -151,14 +151,14 @@ function ReplicaCard({ replica, idx }: { replica: ReplicaInfo; idx: number }) {
   const sync = replica.sync_state ?? replica.state ?? "-";
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] backdrop-blur-md p-6 shadow-xl shadow-black/10 transition hover:shadow-2xl hover:shadow-indigo-500/10 hover:border-white/20">
+    <div className="rounded-lg border border-border bg-gradient-to-br from-muted/[0.06] to-muted/[0.02] p-6 shadow-sm shadow-black/10 transition hover:shadow-sm hover:shadow-info/10 hover:border-border">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-violet-500/30 flex items-center justify-center border border-indigo-400/20">
-            <Server className="h-6 w-6 text-indigo-300" />
+          <div className="h-12 w-12 rounded-md bg-gradient-to-br from-info/30 to-info/30 flex items-center justify-center border border-info/20">
+            <Server className="h-6 w-6 text-info" />
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-white text-lg truncate">{name}</p>
+            <p className="font-semibold text-foreground text-lg truncate">{name}</p>
             <p className="text-xs text-muted-foreground font-mono">
               {address}
               {replica.username ? ` · ${replica.username}` : ""}
@@ -169,22 +169,22 @@ function ReplicaCard({ replica, idx }: { replica: ReplicaInfo; idx: number }) {
       </div>
 
       <div className="grid grid-cols-3 gap-2 mt-5">
-        <div className="rounded-2xl border border-white/5 bg-black/20 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-white/45">Replay Lag</p>
-          <p className="font-mono text-sm text-white mt-0.5">{formatLag(lagSec)}</p>
+        <div className="rounded-md border border-border bg-black/20 px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Replay Lag</p>
+          <p className="font-mono text-sm text-foreground mt-0.5">{formatLag(lagSec)}</p>
         </div>
-        <div className="rounded-2xl border border-white/5 bg-black/20 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-white/45">WAL Lag</p>
-          <p className="font-mono text-sm text-white mt-0.5">{formatBytes(replica.replay_lag_bytes ?? 0)}</p>
+        <div className="rounded-md border border-border bg-black/20 px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">WAL Lag</p>
+          <p className="font-mono text-sm text-foreground mt-0.5">{formatBytes(replica.replay_lag_bytes ?? 0)}</p>
         </div>
-        <div className="rounded-2xl border border-white/5 bg-black/20 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-white/45">Sync</p>
-          <p className="font-semibold text-sm text-white mt-0.5 capitalize">{sync}</p>
+        <div className="rounded-md border border-border bg-black/20 px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Sync</p>
+          <p className="font-semibold text-sm text-foreground mt-0.5 capitalize">{sync}</p>
         </div>
       </div>
 
       <div className="mt-2">
-        <p className="text-[10px] uppercase tracking-wider text-white/45 mb-1">30 dk Lag Trendi</p>
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">30 dk Lag Trendi</p>
         <ReplicaLagChart replica={replica} />
       </div>
     </div>
@@ -227,11 +227,11 @@ export default function ReplicationPage() {
         header: "Slot Adı",
         cell: ({ row }) => (
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-sky-500/30 to-blue-600/30 flex items-center justify-center border border-sky-400/20">
-              <DatabaseZap className="h-4 w-4 text-sky-300" />
+            <div className="h-9 w-9 rounded-md bg-gradient-to-br from-info/30 to-info/30 flex items-center justify-center border border-info/20">
+              <DatabaseZap className="h-4 w-4 text-info" />
             </div>
             <div>
-              <p className="font-semibold text-white">{row.getValue("slot_name")}</p>
+              <p className="font-semibold text-foreground">{row.getValue("slot_name")}</p>
               {row.original.plugin && row.original.plugin !== "-" ? (
                 <p className="text-xs text-muted-foreground font-mono">
                   plugin: {row.original.plugin}
@@ -249,7 +249,7 @@ export default function ReplicationPage() {
           return (
             <Badge
               variant="secondary"
-              className="rounded-full font-medium capitalize border-white/10"
+              className="rounded-md font-medium capitalize border-border"
             >
               {t}
             </Badge>
@@ -262,19 +262,19 @@ export default function ReplicationPage() {
         cell: ({ row }) => {
           const active = row.getValue("active") as boolean;
           return active ? (
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1">
+            <div className="inline-flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-1">
               <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
               </span>
-              <span className="text-xs font-semibold text-emerald-300">AKTİF</span>
+              <span className="text-xs font-semibold text-success">AKTİF</span>
             </div>
           ) : (
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+            <div className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1">
               <span className="relative flex h-2.5 w-2.5">
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white/40"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-muted"></span>
               </span>
-              <span className="text-xs font-semibold text-white/60">PASİF</span>
+              <span className="text-xs font-semibold text-muted-foreground">PASİF</span>
             </div>
           );
         },
@@ -285,7 +285,7 @@ export default function ReplicationPage() {
         cell: ({ row }) => {
           const b = row.getValue("wal_size_bytes") as number | undefined;
           return (
-            <div className="text-right font-mono text-sm text-white">
+            <div className="text-right font-mono text-sm text-foreground">
               {b != null ? formatBytes(b) : "-"}
             </div>
           );
@@ -297,7 +297,7 @@ export default function ReplicationPage() {
         cell: ({ row }) => {
           const v = row.getValue("restart_lsn") as string | undefined;
           return (
-            <span className="font-mono text-xs text-white/80 bg-white/5 rounded-md px-2 py-1 border border-white/10">
+            <span className="font-mono text-xs text-foreground/80 bg-card rounded-md px-2 py-1 border border-border">
               {v ?? "-"}
             </span>
           );
@@ -309,7 +309,7 @@ export default function ReplicationPage() {
         cell: ({ row }) => {
           const pid = row.getValue("active_pid") as number | undefined;
           return (
-            <div className="text-right font-mono text-sm text-white/80">
+            <div className="text-right font-mono text-sm text-foreground/80">
               {pid != null ? pid : "-"}
             </div>
           );
@@ -336,7 +336,7 @@ export default function ReplicationPage() {
     <div className="space-y-8 pb-16">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Replication</h1>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Replication</h1>
           <p className="text-muted-foreground mt-1">
             WAL göndericiler, replika lag, 30 dk trend ve çoğaltma slotları
           </p>
@@ -345,7 +345,7 @@ export default function ReplicationPage() {
           <RiskBadge riskLevel={lagRisk(metrics.avgLag)}>Sistem Lag</RiskBadge>
           <Button
             variant="outline"
-            className="rounded-full gap-2 border-white/10 hover:border-white/20"
+            className="rounded-md gap-2 border-border hover:border-border"
             onClick={() => {
               toast.promise(refetch(), {
                 loading: "Yenileniyor...",
@@ -367,13 +367,13 @@ export default function ReplicationPage() {
             label: "Replika",
             val: isLoading ? <Skeleton className="h-10 w-20 rounded-lg" /> : metrics.totalReplicas,
             icon: GitBranch,
-            color: "from-indigo-500 to-violet-500",
+            color: "from-info to-info",
           },
           {
             label: "Aktif Gönderici",
             val: isLoading ? <Skeleton className="h-10 w-20 rounded-lg" /> : metrics.activeReplicas,
             icon: CheckCircle2,
-            color: "from-emerald-500 to-teal-500",
+            color: "from-success to-success",
           },
           {
             label: "Ortalama Lag",
@@ -383,11 +383,11 @@ export default function ReplicationPage() {
               <span className="font-mono">{formatLag(metrics.avgLag)}</span>
             ),
             icon: Activity,
-            color: lagColor(metrics.avgLag) === "#10b981"
-              ? "from-emerald-500 to-teal-500"
-              : lagColor(metrics.avgLag) === "#f59e0b"
-                ? "from-amber-500 to-orange-500"
-                : "from-rose-500 to-red-500",
+            color: lagColor(metrics.avgLag) === "var(--chart-2)"
+              ? "from-success to-success"
+              : lagColor(metrics.avgLag) === "var(--chart-3)"
+                ? "from-warning to-warning"
+                : "from-destructive to-destructive",
           },
           {
             label: "Slot",
@@ -396,26 +396,26 @@ export default function ReplicationPage() {
             ) : (
               <span>
                 {metrics.activeSlots}
-                <span className="text-white/40 text-2xl font-medium"> / {metrics.totalSlots}</span>
+                <span className="text-muted-foreground text-2xl font-medium"> / {metrics.totalSlots}</span>
               </span>
             ),
             icon: Radio,
-            color: "from-sky-500 to-blue-500",
+            color: "from-info to-info",
           },
         ].map((m, i) => (
           <Card
             key={m.label}
-            className="rounded-3xl border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] backdrop-blur-md shadow-xl shadow-black/10"
+            className="rounded-lg border-border bg-gradient-to-br from-muted/[0.06] to-muted/[0.02] shadow-sm shadow-black/10"
           >
             <CardContent className="p-6 flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">{m.label}</p>
-                <p className="text-3xl font-bold text-white leading-none mt-2">{m.val}</p>
+                <p className="text-3xl font-bold text-foreground leading-none mt-2">{m.val}</p>
               </div>
               <div
-                className={`h-14 w-14 rounded-2xl bg-gradient-to-r ${m.color} flex items-center justify-center shadow-lg ring-1 ring-white/10`}
+                className={`h-14 w-14 rounded-md bg-gradient-to-r ${m.color} flex items-center justify-center shadow-sm ring-1 ring-border`}
               >
-                <m.icon className="h-7 w-7 text-white" />
+                <m.icon className="h-7 w-7 text-foreground" />
               </div>
             </CardContent>
           </Card>
@@ -424,8 +424,8 @@ export default function ReplicationPage() {
 
       <div>
         <div className="flex items-center gap-2 mb-4">
-          <div className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
-          <h2 className="text-lg font-semibold text-white tracking-tight">Replika Düğümleri</h2>
+          <div className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" />
+          <h2 className="text-lg font-semibold text-foreground tracking-tight">Replika Düğümleri</h2>
           <p className="text-sm text-muted-foreground">
             streaming durumu, replay lag ve 30 dk trend
           </p>
@@ -435,33 +435,33 @@ export default function ReplicationPage() {
             {[0, 1].map((i) => (
               <div
                 key={i}
-                className="rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md p-6 space-y-5"
+                className="rounded-lg border border-border bg-card p-6 space-y-5"
               >
                 <div className="flex items-center gap-3">
-                  <Skeleton className="h-12 w-12 rounded-2xl" />
+                  <Skeleton className="h-12 w-12 rounded-md" />
                   <div className="space-y-2 flex-1">
                     <Skeleton className="h-5 w-40 rounded-md" />
                     <Skeleton className="h-3 w-56 rounded-md" />
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <Skeleton className="h-16 rounded-2xl" />
-                  <Skeleton className="h-16 rounded-2xl" />
-                  <Skeleton className="h-16 rounded-2xl" />
+                  <Skeleton className="h-16 rounded-md" />
+                  <Skeleton className="h-16 rounded-md" />
+                  <Skeleton className="h-16 rounded-md" />
                 </div>
-                <Skeleton className="h-28 w-full rounded-2xl" />
+                <Skeleton className="h-28 w-full rounded-md" />
               </div>
             ))}
           </div>
         ) : replicas.length === 0 ? (
-          <Card className="rounded-3xl border-white/10 bg-white/[0.04] backdrop-blur-md">
+          <Card className="rounded-lg border-border bg-card">
             <CardContent className="p-14 flex flex-col items-center gap-4 text-center">
-              <div className="h-16 w-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
-                <XCircle className="h-8 w-8 text-white/40" />
+              <div className="h-16 w-16 rounded-md bg-card flex items-center justify-center border border-border">
+                <XCircle className="h-8 w-8 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-white font-semibold text-lg">Aktif replika bulunamadı</p>
-                <p className="text-white/50 text-sm mt-1 max-w-md">
+                <p className="text-foreground font-semibold text-lg">Aktif replika bulunamadı</p>
+                <p className="text-muted-foreground text-sm mt-1 max-w-md">
                   Bu örnekte replika yapılandırılmamış. Bir standby sunucu bağladığınızda veya
                   logical replication başlattığınızda burada görünecektir.
                 </p>
@@ -479,31 +479,31 @@ export default function ReplicationPage() {
 
       <div>
         <div className="flex items-center gap-2 mb-4">
-          <div className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-pulse" />
-          <h2 className="text-lg font-semibold text-white tracking-tight">
+          <div className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" />
+          <h2 className="text-lg font-semibold text-foreground tracking-tight">
             Çoğaltma Slotları (Replication Slots)
           </h2>
           <p className="text-sm text-muted-foreground">
             logical / physical slotların WAL tüketimi ve aktif PID
           </p>
         </div>
-        <Card className="rounded-3xl border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] backdrop-blur-md shadow-xl shadow-black/10 overflow-hidden">
+        <Card className="rounded-lg border-border bg-gradient-to-br from-muted/[0.06] to-muted/[0.02] shadow-sm shadow-black/10 overflow-hidden">
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-8 space-y-3">
-                <Skeleton className="h-10 w-full rounded-xl" />
+                <Skeleton className="h-10 w-full rounded-md" />
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  <Skeleton key={i} className="h-14 w-full rounded-md" />
                 ))}
               </div>
             ) : slots.length === 0 ? (
               <div className="p-14 flex flex-col items-center gap-4 text-center">
-                <div className="h-16 w-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
-                  <HardDrive className="h-8 w-8 text-white/40" />
+                <div className="h-16 w-16 rounded-md bg-card flex items-center justify-center border border-border">
+                  <HardDrive className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-white font-semibold text-lg">Slot tanımlı değil</p>
-                  <p className="text-white/50 text-sm mt-1 max-w-md">
+                  <p className="text-foreground font-semibold text-lg">Slot tanımlı değil</p>
+                  <p className="text-muted-foreground text-sm mt-1 max-w-md">
                     pg_create_logical_replication_slot() ile bir slot oluşturduğunuzda burada
                     listelenecektir.
                   </p>
@@ -513,13 +513,13 @@ export default function ReplicationPage() {
               <>
                 <div className="overflow-x-auto">
                   <Table>
-                    <TableHeader className="bg-white/[0.03] border-b border-white/5">
+                    <TableHeader className="bg-card border-b border-border">
                       {slotTable.getHeaderGroups().map((hg) => (
-                        <TableRow key={hg.id} className="border-white/5 hover:bg-transparent">
+                        <TableRow key={hg.id} className="border-border hover:bg-transparent">
                           {hg.headers.map((h) => (
                             <TableHead
                               key={h.id}
-                              className="text-xs uppercase tracking-wider text-white/55 font-semibold py-4 px-5"
+                              className="text-xs uppercase tracking-wider text-muted-foreground font-semibold py-4 px-5"
                             >
                               {h.isPlaceholder
                                 ? null
@@ -533,10 +533,10 @@ export default function ReplicationPage() {
                       {slotTable.getRowModel().rows.map((row) => (
                         <TableRow
                           key={row.id}
-                          className={`border-white/5 transition-colors hover:bg-white/[0.04] ${
+                          className={`border-border transition-colors hover:bg-card ${
                             row.original.active
                               ? ""
-                              : "bg-white/[0.015] opacity-[0.85]"
+                              : "bg-muted opacity-[0.85]"
                           }`}
                         >
                           {row.getVisibleCells().map((c) => (
@@ -550,8 +550,8 @@ export default function ReplicationPage() {
                   </Table>
                 </div>
                 {slotTable.getPageCount() > 1 && (
-                  <div className="flex items-center justify-between gap-3 p-4 border-t border-white/5 bg-black/10">
-                    <p className="text-xs text-white/50">
+                  <div className="flex items-center justify-between gap-3 p-4 border-t border-border bg-black/10">
+                    <p className="text-xs text-muted-foreground">
                       {slotTable.getRowCount()} kayıttan{" "}
                       {slotTable.getState().pagination.pageIndex *
                         slotTable.getState().pagination.pageSize +
@@ -568,20 +568,20 @@ export default function ReplicationPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="rounded-full border-white/10"
+                        className="rounded-md border-border"
                         onClick={() => slotTable.previousPage()}
                         disabled={!slotTable.getCanPreviousPage()}
                       >
                         Önceki
                       </Button>
-                      <span className="text-xs text-white/60 font-mono px-3">
+                      <span className="text-xs text-muted-foreground font-mono px-3">
                         {slotTable.getState().pagination.pageIndex + 1} /{" "}
                         {slotTable.getPageCount()}
                       </span>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="rounded-full border-white/10"
+                        className="rounded-md border-border"
                         onClick={() => slotTable.nextPage()}
                         disabled={!slotTable.getCanNextPage()}
                       >

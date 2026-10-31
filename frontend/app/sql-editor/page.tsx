@@ -330,7 +330,7 @@ export default function SqlEditorPage() {
         cell: ({ getValue }) => {
           const v = getValue();
           if (v === null || v === undefined) return <span className="text-muted-foreground italic">NULL</span>;
-          if (typeof v === 'object') return <code className="text-xs text-zinc-300">{JSON.stringify(v)}</code>;
+          if (typeof v === 'object') return <code className="text-xs text-muted-foreground">{JSON.stringify(v)}</code>;
           return String(v);
         },
       })),
@@ -348,7 +348,7 @@ export default function SqlEditorPage() {
       <ConfirmDialog />
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white">SQL Editor</h1>
+          <h1 className="text-3xl font-bold text-foreground">SQL Editor</h1>
           <p className="text-muted-foreground mt-1">
             Şema gezgini · sorgu yürütme · geçmiş · CSV dışa aktarım
           </p>
@@ -365,8 +365,8 @@ export default function SqlEditorPage() {
         {/* Sol: Şema Ağacı */}
         <Card className="col-span-12 lg:col-span-3 overflow-hidden flex flex-col">
           <CardContent className="p-0 flex flex-col flex-1">
-            <div className="px-5 py-4 border-b border-white/10 flex items-center gap-2">
-              <Database className="h-4 w-4 text-emerald-400" />
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Database className="h-4 w-4 text-success" />
               <span className="font-semibold">Şema Ağacı</span>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-1">
@@ -376,7 +376,7 @@ export default function SqlEditorPage() {
                 </div>
               )}
               {schemasQuery.error && (
-                <div className="text-sm text-red-400 p-3">
+                <div className="text-sm text-destructive p-3">
                   Şemalar yüklenemedi
                 </div>
               )}
@@ -388,7 +388,7 @@ export default function SqlEditorPage() {
                     <button
                       type="button"
                       onClick={() => toggleSchema(sch.name)}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 text-left transition-colors"
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-card text-left transition-colors"
                     >
                       {open ? (
                         <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -399,8 +399,8 @@ export default function SqlEditorPage() {
                         className={cn(
                           'h-4 w-4 shrink-0',
                           sch.is_system
-                            ? 'text-zinc-500'
-                            : 'text-indigo-400'
+                            ? 'text-muted-foreground'
+                            : 'text-info'
                         )}
                       />
                       <span className="font-medium text-sm truncate">
@@ -443,14 +443,14 @@ export default function SqlEditorPage() {
                                 <button
                                   type="button"
                                   onClick={() => toggleGroup(sch.name, grp)}
-                                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/5 text-left transition-colors"
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-card text-left transition-colors"
                                 >
                                   {gopen ? (
                                     <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
                                   ) : (
                                     <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
                                   )}
-                                  <Icon className="h-3.5 w-3.5 shrink-0 text-emerald-400/80" />
+                                  <Icon className="h-3.5 w-3.5 shrink-0 text-success/80" />
                                   <span className="text-sm capitalize">
                                     {grp === 'tables'
                                       ? 'Tablolar'
@@ -478,7 +478,7 @@ export default function SqlEditorPage() {
                                           onClick={() =>
                                             insertObjectName(sch.name, it)
                                           }
-                                          className="w-full text-left px-3 py-1 rounded-md hover:bg-white/5 text-xs font-mono text-zinc-300 truncate"
+                                          className="w-full text-left px-3 py-1 rounded-md hover:bg-card text-xs font-mono text-muted-foreground truncate"
                                           title="Sorguya ekle"
                                         >
                                           {it}
@@ -505,18 +505,18 @@ export default function SqlEditorPage() {
           <Card className="overflow-hidden flex flex-col">
             <CardContent className="p-0 flex flex-col flex-1">
               <div
-                className="rounded-t-2xl border border-white/5 font-mono"
+                className="rounded-t-2xl border border-border font-mono"
                 style={{ background: '#09090b' }}
               >
-                <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border">
                   <div className="flex items-center gap-2">
-                    <TerminalSquare className="h-4 w-4 text-emerald-400" />
+                    <TerminalSquare className="h-4 w-4 text-success" />
                     <span className="text-xs text-muted-foreground">
                       query.sql
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="px-2 py-0.5 rounded-md bg-success/10 text-success border border-success/20">
                       pgsql
                     </span>
                     <span>UTF-8</span>
@@ -538,16 +538,16 @@ export default function SqlEditorPage() {
                       fontSize: 13,
                       background: '#09090b',
                     }}
-                    className="text-emerald-400"
+                    className="text-success"
                   />
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 p-4 border-b border-white/5 bg-black/20">
+              <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border bg-black/20">
                 <Button
                   onClick={handleExecute}
                   disabled={executeMutation.isPending}
-                  className="bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold"
+                  className="bg-gradient-to-r from-info to-success hover:from-info hover:to-success text-foreground font-semibold"
                 >
                   <Play className="h-4 w-4" />
                   {executeMutation.isPending ? 'Çalışıyor...' : 'Execute (F5)'}
@@ -564,7 +564,7 @@ export default function SqlEditorPage() {
                   variant="outline"
                   onClick={() => handleExplain(true)}
                   disabled={explainMutation.isPending}
-                  className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                  className="border-warning/40 text-warning hover:bg-warning/10 hover:text-warning"
                 >
                   <AlertTriangle className="h-4 w-4" />
                   Explain Analyze
@@ -626,7 +626,7 @@ export default function SqlEditorPage() {
 
                 <TabsContent value="results">
                   {!sqlResult && (
-                    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-16 text-center">
+                    <div className="rounded-md border border-dashed border-border bg-black/20 p-16 text-center">
                       <FileJson className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                       <p className="text-muted-foreground">
                         Henüz sonuç yok. Bir sorgu çalıştırın.
@@ -634,16 +634,16 @@ export default function SqlEditorPage() {
                     </div>
                   )}
                   {sqlResult && (
-                    <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
+                    <div className="rounded-md border border-border bg-black/20 overflow-hidden">
                       {sqlResult.columns.length === 0 ? (
                         <div className="p-8 text-center text-muted-foreground">
-                          Komut: <strong className="text-white">{sqlResult.command}</strong> · 
-                          Süre: <strong className="text-emerald-400">{formatDuration(sqlResult.duration_ms)}</strong>
+                          Komut: <strong className="text-foreground">{sqlResult.command}</strong> · 
+                          Süre: <strong className="text-success">{formatDuration(sqlResult.duration_ms)}</strong>
                         </div>
                       ) : (
                         <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
                           <UITable>
-                            <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur">
+                            <TableHeader className="sticky top-0 bg-card/90">
                               {resultTable.getHeaderGroups().map((hg) => (
                                 <TableRow key={hg.id}>
                                   {hg.headers.map((h) => (
@@ -691,7 +691,7 @@ export default function SqlEditorPage() {
                 </TabsContent>
 
                 <TabsContent value="messages">
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-5 space-y-2 max-h-[420px] overflow-y-auto font-mono text-xs">
+                  <div className="rounded-md border border-border bg-black/30 p-5 space-y-2 max-h-[420px] overflow-y-auto font-mono text-xs">
                     {messages.length === 0 && (
                       <div className="text-muted-foreground text-center py-8">
                         Henüz mesaj yok
@@ -700,7 +700,7 @@ export default function SqlEditorPage() {
                     {messages.map((msg, i) => (
                       <div
                         key={i}
-                        className="text-zinc-300 border-l-2 border-emerald-500/30 pl-3 py-1"
+                        className="text-muted-foreground border-l-2 border-success/30 pl-3 py-1"
                       >
                         {msg}
                       </div>
@@ -709,17 +709,17 @@ export default function SqlEditorPage() {
                 </TabsContent>
 
                 <TabsContent value="history">
-                  <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
+                  <div className="rounded-md border border-border bg-black/20 overflow-hidden">
                     {history.length === 0 ? (
                       <div className="p-12 text-center text-muted-foreground">
                         Henüz sorgu geçmişi yok
                       </div>
                     ) : (
-                      <div className="divide-y divide-white/5 max-h-[420px] overflow-y-auto">
+                      <div className="divide-y divide-border max-h-[420px] overflow-y-auto">
                         {history.map((h, i) => (
                           <div
                             key={i}
-                            className="p-4 hover:bg-white/5 cursor-pointer transition-colors group"
+                            className="p-4 hover:bg-card cursor-pointer transition-colors group"
                             onClick={() => setSqlText(h.query)}
                           >
                             <div className="flex items-center gap-3 mb-2">
@@ -731,7 +731,7 @@ export default function SqlEditorPage() {
                                 {formatDuration(h.duration_ms)}
                               </Badge>
                             </div>
-                            <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap line-clamp-2 group-hover:text-white">
+                            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap line-clamp-2 group-hover:text-foreground">
                               {h.query}
                             </pre>
                           </div>

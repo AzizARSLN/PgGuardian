@@ -221,15 +221,15 @@ export default function ConnectionsPage() {
         const p = row.original;
         return (
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-emerald-500/20 border border-white/10 flex items-center justify-center shrink-0">
-              <Database className="h-5 w-5 text-emerald-400" />
+            <div className="h-10 w-10 rounded-md bg-gradient-to-br from-info/20 to-success/20 border border-border flex items-center justify-center shrink-0">
+              <Database className="h-5 w-5 text-success" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <p className="font-semibold text-sm truncate">{p.name}</p>
                 {p.is_default && (
                   <RiskBadge riskLevel="OK" size="sm">
-                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                    <Star className="h-3 w-3 fill-warning text-warning" />
                     Varsayılan
                   </RiskBadge>
                 )}
@@ -246,7 +246,7 @@ export default function ConnectionsPage() {
       accessorKey: "host",
       header: "Host",
       cell: ({ row }) => (
-        <code className="text-xs font-mono text-muted-foreground bg-white/5 px-3 py-1.5 rounded-full">
+        <code className="text-xs font-mono text-muted-foreground bg-card px-3 py-1.5 rounded-md">
           {row.original.host ?? "-"}
         </code>
       ),
@@ -291,7 +291,7 @@ export default function ConnectionsPage() {
               size="sm"
               disabled={busy || defaultMutation.isPending}
               onClick={() => handleSetDefault(p)}
-              className="h-9 rounded-full"
+              className="h-9 rounded-md"
             >
               <Star className="h-3.5 w-3.5" />
               Varsayılan
@@ -303,8 +303,8 @@ export default function ConnectionsPage() {
             disabled={busy || p.is_default}
             onClick={() => handleDelete(p)}
             className={cn(
-              "h-9 rounded-full",
-              !p.is_default && "text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50"
+              "h-9 rounded-md",
+              !p.is_default && "text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
             )}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -347,8 +347,8 @@ export default function ConnectionsPage() {
       <ConfirmDialog />
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Server className="h-8 w-8 text-indigo-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Server className="h-8 w-8 text-info" />
             Bağlantı Profilleri
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -359,14 +359,14 @@ export default function ConnectionsPage() {
           <Button
             variant="outline"
             onClick={() => refetch()}
-            className="h-12 px-6 rounded-full"
+            className="h-12 px-6 rounded-md"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Yenile
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="h-12 px-6 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600">
+              <Button className="h-12 px-6 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success">
                 <Plus className="h-4 w-4 mr-2" />
                 Yeni Profil
               </Button>
@@ -374,7 +374,7 @@ export default function ConnectionsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5 text-emerald-400" />
+                  <Database className="h-5 w-5 text-success" />
                   Yeni Bağlantı Profili
                 </DialogTitle>
                 <DialogDescription>
@@ -388,10 +388,10 @@ export default function ConnectionsPage() {
                     <Input
                       {...register("name", { required: "Zorunlu alan" })}
                       placeholder="prod-primary"
-                      className={cn(errors.name && "border-red-500/50")}
+                      className={cn(errors.name && "border-destructive/50")}
                     />
                     {errors.name && (
-                      <p className="text-xs text-red-400">{errors.name.message}</p>
+                      <p className="text-xs text-destructive">{errors.name.message}</p>
                     )}
                   </div>
 
@@ -425,7 +425,7 @@ export default function ConnectionsPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="h-8 px-3 rounded-full text-xs"
+                    className="h-8 px-3 rounded-md text-xs"
                   >
                     {showPassword ? (
                       <><EyeOff className="h-3 w-3 mr-1" />Gizle</>
@@ -452,7 +452,7 @@ export default function ConnectionsPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-5">
+                <div className="flex items-center justify-between rounded-md border border-border bg-card p-5">
                   <div>
                     <Label>Varsayılan olarak ayarla</Label>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -476,14 +476,14 @@ export default function ConnectionsPage() {
                       reset();
                       setShowPassword(false);
                     }}
-                    className="h-11 rounded-full"
+                    className="h-11 rounded-md"
                   >
                     İptal
                   </Button>
                   <Button
                     type="submit"
                     disabled={isSubmitting || createMutation.isPending}
-                    className="h-11 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600"
+                    className="h-11 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success"
                   >
                     {isSubmitting || createMutation.isPending ? (
                       <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Oluşturuluyor…</>
@@ -503,7 +503,7 @@ export default function ConnectionsPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <CardTitle className="text-xl flex items-center gap-2">
-              <Database className="h-5 w-5 text-indigo-400" />
+              <Database className="h-5 w-5 text-info" />
               Profiller
             </CardTitle>
             <CardDescription>
@@ -522,7 +522,7 @@ export default function ConnectionsPage() {
         </div>
       </CardHeader>
       <CardContent className="!p-0">
-        <div className="rounded-3xl overflow-hidden">
+        <div className="rounded-lg overflow-hidden">
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((hg) => (
@@ -554,7 +554,7 @@ export default function ConnectionsPage() {
                     </p>
                     <Button
                       onClick={() => setDialogOpen(true)}
-                      className="h-11 px-6 rounded-full"
+                      className="h-11 px-6 rounded-md"
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       İlk Profili Oluştur
@@ -576,7 +576,7 @@ export default function ConnectionsPage() {
           </Table>
         </div>
         {!isLoading && (profiles?.length ?? 0) > 0 && (
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-white/5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-border">
             <div className="flex items-center gap-3 text-sm">
               <p className="text-muted-foreground">
                 Sayfa{" "}
@@ -589,7 +589,7 @@ export default function ConnectionsPage() {
                 </span>{" "}
                 kayıt
               </p>
-              <div className="h-6 w-px bg-white/10" />
+              <div className="h-6 w-px bg-muted" />
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Sayfa başına:</span>
                 <Select
@@ -600,7 +600,7 @@ export default function ConnectionsPage() {
                     table.setPageSize(n);
                   }}
                 >
-                  <SelectTrigger className="h-9 w-[88px] rounded-full">
+                  <SelectTrigger className="h-9 w-[88px] rounded-md">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -619,7 +619,7 @@ export default function ConnectionsPage() {
                 size="sm"
                 onClick={() => table.previousPage()}
                 disabled={!canPrev}
-                className="h-9 rounded-full"
+                className="h-9 rounded-md"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Önceki
@@ -629,7 +629,7 @@ export default function ConnectionsPage() {
                 size="sm"
                 onClick={() => table.nextPage()}
                 disabled={!canNext}
-                className="h-9 rounded-full"
+                className="h-9 rounded-md"
               >
                 Sonraki
                 <ChevronRight className="h-4 w-4" />

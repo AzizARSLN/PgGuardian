@@ -267,7 +267,7 @@ export default function SchemaTableDetailPage() {
         if (v === null || v === undefined)
           return <span className="text-muted-foreground italic">NULL</span>;
         if (typeof v === 'object')
-          return <code className="text-xs text-zinc-300">{JSON.stringify(v)}</code>;
+          return <code className="text-xs text-muted-foreground">{JSON.stringify(v)}</code>;
         return <span className="text-xs">{String(v)}</span>;
       },
     }));
@@ -291,8 +291,8 @@ export default function SchemaTableDetailPage() {
         header: 'Kolon',
         cell: ({ getValue }) => (
           <div className="flex items-center gap-2">
-            <Columns3 className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="font-mono font-medium text-white text-sm">
+            <Columns3 className="h-3.5 w-3.5 text-info" />
+            <span className="font-mono font-medium text-foreground text-sm">
               {getValue<string>()}
             </span>
           </div>
@@ -310,11 +310,11 @@ export default function SchemaTableDetailPage() {
           const total = nc + distinct;
           return (
             <div className="flex flex-col gap-1">
-              <span className="font-mono text-xs text-zinc-300">{formatNumber(nc)}</span>
+              <span className="font-mono text-xs text-muted-foreground">{formatNumber(nc)}</span>
               {total > 0 && (
-                <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                <div className="h-1.5 w-full rounded-md bg-muted overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-red-500 to-amber-500"
+                    className="h-full bg-gradient-to-r from-destructive to-warning"
                     style={{ width: `${Math.min(100, (nc / total) * 100)}%` }}
                   />
                 </div>
@@ -335,7 +335,7 @@ export default function SchemaTableDetailPage() {
           const total = nc + dc;
           return (
             <div className="flex flex-col gap-1">
-              <span className="font-mono text-xs text-zinc-300">{formatNumber(dc)}</span>
+              <span className="font-mono text-xs text-muted-foreground">{formatNumber(dc)}</span>
               {total > 0 && (
                 <span className="text-[10px] text-muted-foreground">
                   {formatPercent(dc, total)} benzersiz
@@ -352,7 +352,7 @@ export default function SchemaTableDetailPage() {
         sortingFn: (a, b) =>
           (a.original.avg_width_bytes ?? 0) - (b.original.avg_width_bytes ?? 0),
         cell: ({ getValue }) => (
-          <span className="font-mono text-xs text-zinc-300">
+          <span className="font-mono text-xs text-muted-foreground">
             {formatBytes(getValue<number | undefined>() ?? 0)}
           </span>
         ),
@@ -364,7 +364,7 @@ export default function SchemaTableDetailPage() {
           const v = getValue();
           if (v === null || v === undefined) return null;
           return (
-            <code className="text-[11px] font-mono text-zinc-400 truncate max-w-[140px] block">
+            <code className="text-[11px] font-mono text-muted-foreground truncate max-w-[140px] block">
               {String(v)}
             </code>
           );
@@ -377,7 +377,7 @@ export default function SchemaTableDetailPage() {
           const v = getValue();
           if (v === null || v === undefined) return null;
           return (
-            <code className="text-[11px] font-mono text-zinc-400 truncate max-w-[140px] block">
+            <code className="text-[11px] font-mono text-muted-foreground truncate max-w-[140px] block">
               {String(v)}
             </code>
           );
@@ -412,7 +412,7 @@ export default function SchemaTableDetailPage() {
             <ArrowLeft className="h-4 w-4 mr-1.5" />
             Şema Tarayıcıya Dön
           </Button>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
             <Database className="h-8 w-8 text-gradient" />
             {identifier}
           </h1>
@@ -425,14 +425,14 @@ export default function SchemaTableDetailPage() {
             variant="outline"
             className="px-4 py-2 text-sm bg-black/30 gap-2"
           >
-            <HardDrive className="h-3.5 w-3.5 text-amber-400" />
+            <HardDrive className="h-3.5 w-3.5 text-warning" />
             {detail ? formatBytes(detail.total_size_bytes) : '...'}
           </Badge>
           <Badge
             variant="outline"
             className="px-4 py-2 text-sm bg-black/30 gap-2"
           >
-            <Layers className="h-3.5 w-3.5 text-emerald-400" />
+            <Layers className="h-3.5 w-3.5 text-success" />
             {detail ? formatNumber(detail.live_tuples) : '...'} satır
           </Badge>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!previewResult || previewResult.row_count === 0}>
@@ -441,7 +441,7 @@ export default function SchemaTableDetailPage() {
           </Button>
           <Button
             onClick={handleFullExport}
-            className="bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold"
+            className="bg-gradient-to-r from-info to-success hover:from-info hover:to-success text-foreground font-semibold"
             size="sm"
           >
             <FileSpreadsheet className="h-4 w-4 mr-1.5" />
@@ -497,23 +497,23 @@ export default function SchemaTableDetailPage() {
                 )}
                 {detail && detail.columns.length === 0 && <EmptyRow text="Kolon bulunamadı" />}
                 {detail && detail.columns.length > 0 && (
-                  <div className="divide-y divide-white/5">
+                  <div className="divide-y divide-border">
                     {detail.columns.map((c, i) => (
                       <div
                         key={i}
-                        className="p-5 flex items-start gap-4 hover:bg-white/5 transition-colors"
+                        className="p-5 flex items-start gap-4 hover:bg-card transition-colors"
                       >
                         <div className="flex flex-col items-center pt-1 gap-1.5 w-10 shrink-0">
                           <span className="font-mono text-[10px] text-muted-foreground">
                             #{i + 1}
                           </span>
-                          <div className="h-8 w-8 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
-                            <Type className="h-3.5 w-3.5 text-indigo-400" />
+                          <div className="h-8 w-8 rounded-full bg-info/15 border border-info/30 flex items-center justify-center">
+                            <Type className="h-3.5 w-3.5 text-info" />
                           </div>
                         </div>
                         <div className="flex-1 min-w-0 space-y-2">
                           <div className="flex items-center gap-3 flex-wrap">
-                            <span className="font-mono font-semibold text-white text-base">
+                            <span className="font-mono font-semibold text-foreground text-base">
                               {c.name}
                             </span>
                             <Badge
@@ -534,11 +534,11 @@ export default function SchemaTableDetailPage() {
                             )}
                           </div>
                           {c.default && (
-                            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 inline-block max-w-full overflow-hidden">
+                            <div className="rounded-md border border-border bg-black/20 px-3 py-2 inline-block max-w-full overflow-hidden">
                               <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
                                 <Sparkles className="h-3 w-3" /> Default
                               </div>
-                              <code className="text-xs font-mono text-zinc-300 block truncate">
+                              <code className="text-xs font-mono text-muted-foreground block truncate">
                                 {c.default}
                               </code>
                             </div>
@@ -561,14 +561,14 @@ export default function SchemaTableDetailPage() {
                     {detail.indexes.map((idx, i) => (
                       <div
                         key={i}
-                        className="rounded-2xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition-colors"
+                        className="rounded-md border border-border bg-card p-5 hover:bg-muted transition-colors"
                       >
                         <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                            <KeyRound className="h-5 w-5 text-emerald-400" />
+                          <div className="h-10 w-10 rounded-full bg-success/15 border border-success/30 flex items-center justify-center shrink-0">
+                            <KeyRound className="h-5 w-5 text-success" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-mono font-semibold text-white truncate">
+                            <div className="font-mono font-semibold text-foreground truncate">
                               {idx}
                             </div>
                             <div className="text-[11px] text-muted-foreground mt-1">
@@ -593,14 +593,14 @@ export default function SchemaTableDetailPage() {
                     {detail.constraints.map((cst, i) => (
                       <div
                         key={i}
-                        className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                        className="rounded-md border border-border bg-card p-5"
                       >
                         <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center shrink-0">
-                            <GitBranch className="h-5 w-5 text-violet-400" />
+                          <div className="h-10 w-10 rounded-full bg-info/15 border border-info/30 flex items-center justify-center shrink-0">
+                            <GitBranch className="h-5 w-5 text-info" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <pre className="font-mono text-sm text-zinc-300 whitespace-pre-wrap break-all">
+                            <pre className="font-mono text-sm text-muted-foreground whitespace-pre-wrap break-all">
                               {cst}
                             </pre>
                           </div>
@@ -636,9 +636,9 @@ export default function SchemaTableDetailPage() {
                         <code className="font-mono">{previewResult.kind}</code>
                       </span>
                     </div>
-                    <div className="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-2xl border border-white/10 bg-black/20">
+                    <div className="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-md border border-border bg-black/20">
                       <UITable>
-                        <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
+                        <TableHeader className="sticky top-0 bg-card/90 z-10">
                           {previewTable.getHeaderGroups().map((hg) => (
                             <TableRow key={hg.id}>
                               {hg.headers.map((h) => (
@@ -723,9 +723,9 @@ export default function SchemaTableDetailPage() {
                   <EmptyRow text="Profil yüklenemedi" />
                 )}
                 {!profileQuery.isLoading && profileQuery.data && profileQuery.data.length > 0 && (
-                  <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
+                  <div className="overflow-x-auto rounded-md border border-border bg-black/20">
                     <UITable>
-                      <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
+                      <TableHeader className="sticky top-0 bg-card/90 z-10">
                         {profileTable.getHeaderGroups().map((hg) => (
                           <TableRow key={hg.id}>
                             {hg.headers.map((h) => (
@@ -796,7 +796,7 @@ export default function SchemaTableDetailPage() {
                                       setDryRunData(null);
                                       form.setValue('file', f ?? undefined);
                                     }}
-                                    className="file:h-10 file:mr-4 file:rounded-full file:border-0 file:bg-gradient-to-r file:from-indigo-500 file:to-emerald-500 file:text-white file:px-4 file:text-sm file:font-semibold hover:file:opacity-90 cursor-pointer"
+                                    className="file:h-10 file:mr-4 file:rounded-md file:border-0 file:bg-gradient-to-r file:from-info file:to-success file:text-foreground file:px-4 file:text-sm file:font-semibold hover:file:opacity-90 cursor-pointer"
                                   />
                                 </div>
                               </FormControl>
@@ -817,7 +817,7 @@ export default function SchemaTableDetailPage() {
                         )}
                       />
                       {dryRunMutation.isPending && (
-                        <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-center text-sm text-muted-foreground">
+                        <div className="rounded-md border border-border bg-black/20 p-5 text-center text-sm text-muted-foreground">
                           Dry Run çalıştırılıyor...
                         </div>
                       )}
@@ -827,12 +827,12 @@ export default function SchemaTableDetailPage() {
                     <div className="space-y-5 mt-6">
                       <div
                         className={cn(
-                          'rounded-2xl border p-5 space-y-3',
+                          'rounded-md border p-5 space-y-3',
                           dryRunData.result.risk === 'DANGEROUS'
-                            ? 'border-red-500/40 bg-red-500/5'
+                            ? 'border-destructive/40 bg-destructive/5'
                             : dryRunData.result.risk === 'MAINTENANCE'
-                              ? 'border-amber-500/40 bg-amber-500/5'
-                              : 'border-emerald-500/40 bg-emerald-500/5'
+                              ? 'border-warning/40 bg-warning/5'
+                              : 'border-success/40 bg-success/5'
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -840,10 +840,10 @@ export default function SchemaTableDetailPage() {
                             className={cn(
                               'h-10 w-10 rounded-full flex items-center justify-center shrink-0',
                               dryRunData.result.risk === 'DANGEROUS'
-                                ? 'bg-red-500/15 text-red-400'
+                                ? 'bg-destructive/15 text-destructive'
                                 : dryRunData.result.risk === 'MAINTENANCE'
-                                  ? 'bg-amber-500/15 text-amber-400'
-                                  : 'bg-emerald-500/15 text-emerald-400'
+                                  ? 'bg-warning/15 text-warning'
+                                  : 'bg-success/15 text-success'
                             )}
                           >
                             {dryRunData.result.risk === 'DANGEROUS' ? (
@@ -854,7 +854,7 @@ export default function SchemaTableDetailPage() {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-white">
+                              <span className="font-semibold text-foreground">
                                 Dry Run Sonucu
                               </span>
                               <RiskBadge
@@ -874,7 +874,7 @@ export default function SchemaTableDetailPage() {
                               {dryRunData.result.note}
                             </p>
                             {dryRunData.result.target && (
-                              <p className="text-xs text-zinc-400 mt-0.5 font-mono">
+                              <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                                 Hedef: {dryRunData.result.target}
                               </p>
                             )}
@@ -883,7 +883,7 @@ export default function SchemaTableDetailPage() {
                       </div>
 
                       {dryRunData.result.sql && dryRunData.result.sql.length > 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-black/30 p-5 space-y-3">
+                        <div className="rounded-md border border-border bg-black/30 p-5 space-y-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                             <Hash className="h-3.5 w-3.5" />
                             SQL Önizlemesi
@@ -892,7 +892,7 @@ export default function SchemaTableDetailPage() {
                             {dryRunData.result.sql.map((s, i) => (
                               <pre
                                 key={i}
-                                className="rounded-xl bg-black/40 border border-white/5 p-4 text-xs font-mono text-zinc-300 whitespace-pre-wrap break-all"
+                                className="rounded-md bg-black/40 border border-border p-4 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all"
                               >
                                 {s}
                               </pre>
@@ -902,14 +902,14 @@ export default function SchemaTableDetailPage() {
                       )}
 
                       {dryRunData.previewRecords.length > 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
-                          <div className="px-5 py-3 border-b border-white/10 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                        <div className="rounded-md border border-border bg-black/20 overflow-hidden">
+                          <div className="px-5 py-3 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                             <Eye className="h-3.5 w-3.5" />
                             İlk {dryRunData.previewRecords.length} satır önizleme
                           </div>
                           <div className="overflow-x-auto max-h-64 overflow-y-auto">
                             <UITable>
-                              <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur">
+                              <TableHeader className="sticky top-0 bg-card/90">
                                 <TableRow>
                                   {Object.keys(dryRunData.previewRecords[0]).map(
                                     (k) => (
@@ -929,7 +929,7 @@ export default function SchemaTableDetailPage() {
                                     {Object.values(r).map((v, j) => (
                                       <TableCell
                                         key={j}
-                                        className="px-4 py-2 text-[11px] text-zinc-300 font-mono"
+                                        className="px-4 py-2 text-[11px] text-muted-foreground font-mono"
                                       >
                                         {v === null || v === undefined
                                           ? 'NULL'
@@ -960,8 +960,8 @@ export default function SchemaTableDetailPage() {
                           disabled={importMutation.isPending}
                           className={cn(
                             dryRunData.result.risk === 'DANGEROUS'
-                              ? 'bg-red-500 hover:bg-red-600 text-white font-bold'
-                              : 'bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold'
+                              ? 'bg-destructive hover:bg-destructive text-destructive-foreground font-bold'
+                              : 'bg-gradient-to-r from-info to-success hover:from-info hover:to-success text-foreground font-semibold'
                           )}
                         >
                           <Upload className="h-4 w-4 mr-1.5" />
@@ -992,9 +992,9 @@ function Section({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <div className="h-px flex-1 bg-white/5" />
+        <div className="h-px flex-1 bg-card" />
         <span>{title}</span>
-        <div className="h-px flex-1 bg-white/5" />
+        <div className="h-px flex-1 bg-card" />
       </div>
       {children}
     </div>
@@ -1003,7 +1003,7 @@ function Section({
 
 function LoadingRow() {
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-16 text-center text-muted-foreground">
+    <div className="rounded-md border border-dashed border-border bg-black/20 p-16 text-center text-muted-foreground">
       Yükleniyor...
     </div>
   );
@@ -1011,7 +1011,7 @@ function LoadingRow() {
 
 function EmptyRow({ text }: { text: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-16 text-center text-muted-foreground">
+    <div className="rounded-md border border-dashed border-border bg-black/20 p-16 text-center text-muted-foreground">
       {text}
     </div>
   );

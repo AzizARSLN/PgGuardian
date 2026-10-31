@@ -254,7 +254,7 @@ export default function ConfigPage() {
         return (
           <div className="flex items-center gap-3 min-w-0">
             {s.pending_restart && (
-              <div className="h-10 w-1.5 rounded-full bg-gradient-to-b from-red-500 to-red-400 shrink-0" />
+              <div className="h-10 w-1.5 rounded-full bg-gradient-to-b from-destructive to-destructive shrink-0" />
             )}
             <div className="min-w-0">
               <p className="font-mono text-sm font-semibold truncate">{s.name}</p>
@@ -295,7 +295,7 @@ export default function ConfigPage() {
                 size="icon"
                 onClick={() => handleEditSave(s)}
                 disabled={changeSettingMutation.isPending}
-                className="h-9 w-9 rounded-full border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                className="h-9 w-9 rounded-full border-success/40 text-success hover:bg-success/10"
               >
                 <Check className="h-4 w-4" />
               </Button>
@@ -312,7 +312,7 @@ export default function ConfigPage() {
         }
         return (
           <div className="flex items-center gap-2">
-            <code className="text-sm font-mono bg-white/5 px-3 py-1.5 rounded-full truncate max-w-[180px]">
+            <code className="text-sm font-mono bg-card px-3 py-1.5 rounded-md truncate max-w-[180px]">
               {s.setting ?? "-"}
             </code>
             {s.unit && (
@@ -382,7 +382,7 @@ export default function ConfigPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-9 rounded-full"
+              className="h-9 rounded-md"
               onClick={() => handleEditStart(s)}
               disabled={busy}
             >
@@ -427,8 +427,8 @@ export default function ConfigPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Settings2 className="h-8 w-8 text-purple-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Settings2 className="h-8 w-8 text-info" />
             Sunucu Yapılandırması
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -442,7 +442,7 @@ export default function ConfigPage() {
               refetch();
               toast.success("Ayarlar yenilendi");
             }}
-            className="h-12 px-6 rounded-full"
+            className="h-12 px-6 rounded-md"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Yenile
@@ -451,10 +451,10 @@ export default function ConfigPage() {
             onClick={handleReloadConfig}
             disabled={reloadConfigMutation.isPending}
             className={cn(
-              "h-12 px-6 rounded-full font-semibold",
+              "h-12 px-6 rounded-md font-semibold",
               pendingRestartCount > 0
-                ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 animate-pulse"
-                : "bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
+                ? "bg-gradient-to-r from-destructive to-warning hover:from-destructive hover:to-warning animate-pulse"
+                : "bg-gradient-to-r from-warning to-warning hover:from-warning hover:to-warning"
             )}
           >
             {reloadConfigMutation.isPending ? (
@@ -490,39 +490,39 @@ export default function ConfigPage() {
               label: "Toplam Ayar",
               val: (settings ?? []).length,
               icon: Settings2,
-              from: "from-indigo-500",
-              to: "to-purple-500",
+              from: "from-info",
+              to: "to-info",
             },
             {
               label: "SIGHUP (Reload)",
               val: sighupContextCount,
               icon: RotateCcw,
-              from: "from-amber-500",
-              to: "to-yellow-500",
+              from: "from-warning",
+              to: "to-warning",
               risk: sighupContextCount > 0 ? ("MAINTENANCE" as RiskLevel) : null,
             },
             {
               label: "Süperuser Context",
               val: superuserContextCount,
               icon: Power,
-              from: "from-rose-500",
-              to: "to-pink-500",
+              from: "from-destructive",
+              to: "to-info",
               risk: superuserContextCount > 50 ? ("WARNING" as RiskLevel) : null,
             },
             {
               label: "Postmaster (Restart)",
               val: postmasterContextCount,
               icon: Server,
-              from: "from-red-500",
-              to: "to-orange-500",
+              from: "from-destructive",
+              to: "to-warning",
               risk: postmasterContextCount > 0 ? ("DANGEROUS" as RiskLevel) : null,
             },
             {
               label: "Restart Bekleyen",
               val: pendingRestartCount,
               icon: AlertCircle,
-              from: pendingRestartCount > 0 ? "from-red-500" : "from-emerald-500",
-              to: pendingRestartCount > 0 ? "to-rose-500" : "to-teal-500",
+              from: pendingRestartCount > 0 ? "from-destructive" : "from-success",
+              to: pendingRestartCount > 0 ? "to-destructive" : "to-success",
               risk:
                 pendingRestartCount > 5
                   ? ("DANGEROUS" as RiskLevel)
@@ -536,9 +536,9 @@ export default function ConfigPage() {
               key={m.label}
               className={cn(
                 "relative overflow-hidden",
-                m.risk === "DANGEROUS" && "border-red-500/30",
-                m.risk === "WARNING" && "border-amber-500/30",
-                m.borderWarn && "border-red-500/30"
+                m.risk === "DANGEROUS" && "border-destructive/30",
+                m.risk === "WARNING" && "border-warning/30",
+                m.borderWarn && "border-destructive/30"
               )}
             >
               <div
@@ -566,13 +566,13 @@ export default function ConfigPage() {
                   </div>
                   <div
                     className={cn(
-                      "h-11 w-11 rounded-2xl bg-gradient-to-br flex items-center justify-center",
+                      "h-11 w-11 rounded-md bg-gradient-to-br flex items-center justify-center",
                       m.from,
                       m.to
                     )}
                     style={{ opacity: 0.85 }}
                   >
-                    <m.icon className="h-5 w-5 text-white" />
+                    <m.icon className="h-5 w-5 text-foreground" />
                   </div>
                 </div>
                 {m.risk && (
@@ -591,7 +591,7 @@ export default function ConfigPage() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <CardTitle className="text-xl flex items-center gap-2">
-                <Database className="h-5 w-5 text-purple-400" />
+                <Database className="h-5 w-5 text-info" />
                 Yapılandırma Ayarları
               </CardTitle>
               <CardDescription>
@@ -643,7 +643,7 @@ export default function ConfigPage() {
           </div>
         </CardHeader>
         <CardContent className="!p-0">
-          <div className="rounded-3xl overflow-hidden">
+          <div className="rounded-lg overflow-hidden">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((hg) => (
@@ -687,7 +687,7 @@ export default function ConfigPage() {
                       key={row.id}
                       className={cn(
                         row.original.pending_restart &&
-                          "bg-red-500/5 [&:hover]:bg-red-500/10"
+                          "bg-destructive/5 [&:hover]:bg-destructive/10"
                       )}
                       style={
                         row.original.pending_restart
@@ -712,7 +712,7 @@ export default function ConfigPage() {
             </Table>
           </div>
           {!isLoading && filteredSettings.length > 0 && (
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-white/5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-border">
               <div className="flex items-center gap-3 text-sm">
                 <p className="text-muted-foreground">
                   Sayfa{" "}
@@ -725,7 +725,7 @@ export default function ConfigPage() {
                   </span>{" "}
                   kayıt
                 </p>
-                <div className="h-6 w-px bg-white/10" />
+                <div className="h-6 w-px bg-muted" />
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Sayfa başına:</span>
                   <Select
@@ -736,7 +736,7 @@ export default function ConfigPage() {
                       table.setPageSize(n);
                     }}
                   >
-                    <SelectTrigger className="h-9 w-[88px] rounded-full">
+                    <SelectTrigger className="h-9 w-[88px] rounded-md">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -755,7 +755,7 @@ export default function ConfigPage() {
                   size="sm"
                   onClick={() => table.previousPage()}
                   disabled={!canPrev}
-                  className="h-9 rounded-full"
+                  className="h-9 rounded-md"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Önceki
@@ -765,7 +765,7 @@ export default function ConfigPage() {
                   size="sm"
                   onClick={() => table.nextPage()}
                   disabled={!canNext}
-                  className="h-9 rounded-full"
+                  className="h-9 rounded-md"
                 >
                   Sonraki
                   <ChevronRight className="h-4 w-4" />

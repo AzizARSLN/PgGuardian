@@ -182,7 +182,7 @@ export default function QueryManagementPage() {
         header: 'PID',
         size: 90,
         cell: ({ getValue }) => (
-          <span className="font-mono font-semibold text-white">
+          <span className="font-mono font-semibold text-foreground">
             {String(getValue<number>())}
           </span>
         ),
@@ -201,7 +201,7 @@ export default function QueryManagementPage() {
                   5dk+
                 </RiskBadge>
               )}
-              <code className="text-xs font-mono text-zinc-300 whitespace-pre-wrap line-clamp-2 hover:line-clamp-none transition-all">
+              <code className="text-xs font-mono text-muted-foreground whitespace-pre-wrap line-clamp-2 hover:line-clamp-none transition-all">
                 {q || '<boş sorgu>'}
               </code>
             </div>
@@ -223,10 +223,10 @@ export default function QueryManagementPage() {
               className={cn(
                 'font-mono',
                 dangerous
-                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
                   : s >= 60
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400'
-                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                    ? 'border-warning/40 bg-warning/10 text-warning'
+                    : 'border-success/30 bg-success/10 text-success'
               )}
             >
               <Clock className="h-3 w-3 mr-1" />
@@ -247,10 +247,10 @@ export default function QueryManagementPage() {
                 className={cn(
                   'h-3 w-3 shrink-0',
                   s.toLowerCase().includes('active')
-                    ? 'text-emerald-400 animate-pulse'
+                    ? 'text-success animate-pulse'
                     : s.toLowerCase().includes('wait')
-                      ? 'text-amber-400'
-                      : 'text-zinc-500'
+                      ? 'text-warning'
+                      : 'text-muted-foreground'
                 )}
               />
               <RiskBadge riskLevel={stateVariant(s) as any} size="sm" showIcon={false}>
@@ -266,8 +266,8 @@ export default function QueryManagementPage() {
         size: 140,
         cell: ({ getValue }) => (
           <div className="flex items-center gap-2">
-            <Server className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="font-mono text-xs text-zinc-300">
+            <Server className="h-3.5 w-3.5 text-info" />
+            <span className="font-mono text-xs text-muted-foreground">
               {getValue<string | null | undefined>() ?? '-'}
             </span>
           </div>
@@ -279,8 +279,8 @@ export default function QueryManagementPage() {
         size: 130,
         cell: ({ getValue }) => (
           <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-violet-400" />
-            <span className="text-sm text-zinc-300 truncate">
+            <User className="h-3.5 w-3.5 text-info" />
+            <span className="text-sm text-muted-foreground truncate">
               {getValue<string | null | undefined>() ?? '-'}
             </span>
           </div>
@@ -309,7 +309,7 @@ export default function QueryManagementPage() {
                 size="sm"
                 onClick={() => handleCancel(r)}
                 disabled={cancelMutation.isPending}
-                className="h-9 px-3 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                className="h-9 px-3 text-xs border-warning/40 text-warning hover:bg-warning/10"
               >
                 <Power className="h-3.5 w-3.5 mr-1" />
                 Cancel
@@ -319,7 +319,7 @@ export default function QueryManagementPage() {
                 size="sm"
                 onClick={() => handleTerminate(r)}
                 disabled={terminateMutation.isPending}
-                className="h-9 px-3 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+                className="h-9 px-3 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
               >
                 <Skull className="h-3.5 w-3.5 mr-1" />
                 Terminate
@@ -346,7 +346,7 @@ export default function QueryManagementPage() {
       <ConfirmDialog />
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white">Canlı Sorgu Yönetimi</h1>
+          <h1 className="text-3xl font-bold text-foreground">Canlı Sorgu Yönetimi</h1>
           <p className="text-muted-foreground mt-1">
             Aktif sorgular · 5sn poll · Cancel / Terminate işlemleri
           </p>
@@ -360,7 +360,7 @@ export default function QueryManagementPage() {
               className={cn(
                 'h-3.5 w-3.5',
                 activeQuery.isFetching || longRunningQuery.isFetching
-                  ? 'animate-spin text-emerald-400'
+                  ? 'animate-spin text-success'
                   : 'text-muted-foreground'
               )}
             />
@@ -372,57 +372,57 @@ export default function QueryManagementPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="overflow-hidden">
           <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 mb-4" />
+            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-info to-info mb-4" />
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Toplam</p>
-                <p className="text-3xl font-bold text-white">{counts.total}</p>
+                <p className="text-3xl font-bold text-foreground">{counts.total}</p>
               </div>
-              <Activity className="h-8 w-8 text-indigo-400" />
+              <Activity className="h-8 w-8 text-info" />
             </div>
           </CardContent>
         </Card>
         <Card className="overflow-hidden">
           <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 mb-4" />
+            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-success to-success mb-4" />
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Aktif</p>
-                <p className="text-3xl font-bold text-white">{counts.activeCount}</p>
+                <p className="text-3xl font-bold text-foreground">{counts.activeCount}</p>
               </div>
-              <Users className="h-8 w-8 text-emerald-400" />
+              <Users className="h-8 w-8 text-success" />
             </div>
           </CardContent>
         </Card>
         <Card className="overflow-hidden">
           <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 mb-4" />
+            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-warning to-warning mb-4" />
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">
                   Uzun Çalışan (1dk+)
                 </p>
-                <p className="text-3xl font-bold text-white">
+                <p className="text-3xl font-bold text-foreground">
                   {longRunningQuery.data?.queries?.length ?? 0}
                 </p>
               </div>
-              <Clock className="h-8 w-8 text-amber-400" />
+              <Clock className="h-8 w-8 text-warning" />
             </div>
           </CardContent>
         </Card>
         <Card className="overflow-hidden">
           <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-red-500 to-rose-500 mb-4" />
+            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-destructive to-destructive mb-4" />
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">
                   DANGEROUS (5dk+)
                 </p>
-                <p className="text-3xl font-bold text-white">
+                <p className="text-3xl font-bold text-foreground">
                   {counts.longRunningCount}
                 </p>
               </div>
-              <AlertTriangle className="h-8 w-8 text-red-400" />
+              <AlertTriangle className="h-8 w-8 text-destructive" />
             </div>
           </CardContent>
         </Card>
@@ -459,7 +459,7 @@ export default function QueryManagementPage() {
         <CardContent className="!p-0">
           <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
             <UITable>
-              <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
+              <TableHeader className="sticky top-0 bg-card/90 z-10">
                 {table.getHeaderGroups().map((hg) => (
                   <TableRow key={hg.id}>
                     {hg.headers.map((h) => (
@@ -488,7 +488,7 @@ export default function QueryManagementPage() {
                       key={r.id}
                       className={cn(
                         isDangerous &&
-                          'border-l-4 border-l-red-500/60 bg-red-500/5'
+                          'border-l-4 border-l-red-500/60 bg-destructive/5'
                       )}
                     >
                       {r.getVisibleCells().map((c) => (

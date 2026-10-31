@@ -118,16 +118,16 @@ export function useConfirm() {
         }}
       >
         <AlertDialogContent
-          className={cn("sm:max-w-lg", isDangerous && "border-red-500/40")}
+          className={cn("sm:max-w-lg", isDangerous && "border-destructive/40")}
         >
           <AlertDialogHeader className="space-y-4">
             <div className="flex items-center gap-3">
               <div
                 className={cn(
-                  "flex h-12 w-12 items-center justify-center rounded-xl shrink-0",
+                  "flex h-12 w-12 items-center justify-center rounded-md shrink-0",
                   isDangerous
-                    ? "bg-red-500/15 text-red-400"
-                    : "bg-amber-500/15 text-amber-400"
+                    ? "bg-destructive/15 text-destructive"
+                    : "bg-warning/15 text-warning"
                 )}
               >
                 {isDangerous ? (
@@ -145,8 +145,8 @@ export function useConfirm() {
                   className={cn(
                     "w-fit font-semibold",
                     isDangerous
-                      ? "bg-red-500/15 text-red-400 border-red-500/40"
-                      : "bg-amber-500/15 text-amber-400 border-amber-500/40"
+                      ? "bg-destructive/15 text-destructive border-destructive/40"
+                      : "bg-warning/15 text-warning border-warning/40"
                   )}
                 >
                   {isDangerous ? (
@@ -169,7 +169,7 @@ export function useConfirm() {
           </AlertDialogHeader>
 
           {opts.sql_preview && opts.sql_preview.length > 0 && (
-            <div className="rounded-2xl border bg-black/40 backdrop-blur-sm p-4 overflow-hidden">
+            <div className="rounded-md border bg-black/40 p-4 overflow-hidden">
               <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
                 <TerminalSquare className="h-3.5 w-3.5" />
                 <span className="font-semibold">SQL Onizlemesi</span>
@@ -188,12 +188,12 @@ export function useConfirm() {
           )}
 
           {needsConfirmName && (
-            <div className="space-y-2.5 rounded-2xl border bg-black/20 backdrop-blur-sm p-4">
+            <div className="space-y-2.5 rounded-md border bg-black/20 p-4">
               <Label
                 htmlFor="confirm-name"
                 className={cn(
                   "font-semibold",
-                  isDangerous && "text-red-400"
+                  isDangerous && "text-destructive"
                 )}
               >
                 Onaylamak icin{" "}
@@ -216,8 +216,8 @@ export function useConfirm() {
                 className={cn(
                   "font-mono",
                   isDangerous && confirmNameMatch
-                    ? "border-red-500/50 focus-visible:ring-red-500"
-                    : confirmNameMatch && "focus-visible:ring-emerald-500"
+                    ? "border-destructive/50 focus-visible:ring-destructive"
+                    : confirmNameMatch && "focus-visible:ring-success"
                 )}
                 onKeyDown={onKeyDown}
               />
@@ -232,7 +232,7 @@ export function useConfirm() {
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={handleCancel}
-              className="h-12 rounded-full"
+              className="h-12 rounded-md"
             >
               {opts.cancel_label ?? "Iptal"}
             </AlertDialogCancel>
@@ -242,9 +242,9 @@ export function useConfirm() {
                 disabled={needsConfirmName && !confirmNameMatch}
                 onClick={handleConfirm}
                 className={cn(
-                  "h-12 rounded-full",
+                  "h-12 rounded-md",
                   isDangerous &&
-                    "bg-red-500 hover:bg-red-600 text-white font-bold"
+                    "bg-destructive hover:bg-destructive text-destructive-foreground font-bold"
                 )}
               >
                 {opts.confirm_label ?? (isDangerous ? "SIL" : "Onayla")}

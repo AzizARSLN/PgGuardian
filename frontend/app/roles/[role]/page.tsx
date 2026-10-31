@@ -337,15 +337,15 @@ export default function RoleDetailPage() {
             variant="outline"
             size="sm"
             onClick={() => router.push("/roles")}
-            className="h-10 rounded-full"
+            className="h-10 rounded-md"
           >
             <ArrowLeft className="h-4 w-4" />
             Rollere Dön
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                <Shield className="h-8 w-8 text-emerald-400" />
+              <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+                <Shield className="h-8 w-8 text-success" />
                 {roleName}
               </h1>
               {isSuperuser && (
@@ -373,7 +373,7 @@ export default function RoleDetailPage() {
             refetchMembers();
             toast.success("Veriler yenilendi");
           }}
-          className="h-12 px-6 rounded-full"
+          className="h-12 px-6 rounded-md"
         >
           <RefreshCw className="h-4 w-4 mr-2" />
           Tümünü Yenile
@@ -421,17 +421,17 @@ export default function RoleDetailPage() {
               <div
                 className={cn(
                   "absolute inset-0 opacity-10 pointer-events-none bg-gradient-to-br",
-                  m.val ? "from-emerald-500 to-teal-500" : "from-zinc-500 to-zinc-600"
+                  m.val ? "from-success to-success" : "from-muted to-muted"
                 )}
               />
               <CardContent className="p-6 relative">
                 <div className="flex items-center gap-3 mb-3">
                   <div
                     className={cn(
-                      "h-10 w-10 rounded-xl flex items-center justify-center",
+                      "h-10 w-10 rounded-md flex items-center justify-center",
                       m.val
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : "bg-white/5 text-muted-foreground"
+                        ? "bg-success/20 text-success"
+                        : "bg-card text-muted-foreground"
                     )}
                   >
                     <m.icon className="h-5 w-5" />
@@ -459,7 +459,7 @@ export default function RoleDetailPage() {
 
       <Card className="overflow-hidden">
         <CardContent className="!p-0">
-          <div className="p-6 border-b border-white/5">
+          <div className="p-6 border-b border-border">
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
                 <TabsTrigger value="attributes">Öznitelikler</TabsTrigger>
@@ -475,7 +475,7 @@ export default function RoleDetailPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div>
                     <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <Save className="h-5 w-5 text-indigo-400" />
+                      <Save className="h-5 w-5 text-info" />
                       Değiştirilebilir Öznitelikler
                     </h3>
                     <form onSubmit={onSubmitAttr} className="space-y-5">
@@ -485,7 +485,7 @@ export default function RoleDetailPage() {
                           type="password"
                           {...attrRegister("password")}
                           placeholder="•••••••• (değiştirmek istemiyorsanız boş bırakın)"
-                          className={cn(attrErrors.password && "border-red-500/50")}
+                          className={cn(attrErrors.password && "border-destructive/50")}
                         />
                         <p className="text-xs text-muted-foreground">
                           Şifreyi yalnızca değiştirmek istiyorsanız doldurun
@@ -528,7 +528,7 @@ export default function RoleDetailPage() {
                       <Button
                         type="submit"
                         disabled={attrSubmitting || alterMutation.isPending}
-                        className="h-12 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 w-full"
+                        className="h-12 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success w-full"
                       >
                         {attrSubmitting || alterMutation.isPending ? (
                           <>
@@ -547,7 +547,7 @@ export default function RoleDetailPage() {
 
                   <div>
                     <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <Shield className="h-5 w-5 text-emerald-400" />
+                      <Shield className="h-5 w-5 text-success" />
                       Mevcut Durum
                     </h3>
                     {rolesAllLoading || !role ? (
@@ -579,12 +579,12 @@ export default function RoleDetailPage() {
                         ].map(([k, v]) => (
                           <div
                             key={k}
-                            className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5"
+                            className="flex items-center justify-between rounded-md border border-border bg-card px-5 py-3.5"
                           >
                             <span className="text-sm font-medium text-muted-foreground">
                               {k}
                             </span>
-                            <code className="text-sm font-mono bg-black/30 px-3 py-1 rounded-full">
+                            <code className="text-sm font-mono bg-black/30 px-3 py-1 rounded-md">
                               {v}
                             </code>
                           </div>
@@ -612,7 +612,7 @@ export default function RoleDetailPage() {
                     ))}
                   </div>
                 ) : (roleGrants ?? []).length === 0 ? (
-                  <div className="p-12 text-center rounded-3xl border border-dashed border-white/10">
+                  <div className="p-12 text-center rounded-lg border border-dashed border-border">
                     <Shield className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
                     <p className="font-semibold text-lg">Henüz yetki yok</p>
                     <p className="text-sm text-muted-foreground mt-2">
@@ -632,7 +632,7 @@ export default function RoleDetailPage() {
                       return (
                         <div
                           key={`grant-${idx}-${privilege}-${objName}`}
-                          className="rounded-2xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition-colors"
+                          className="rounded-md border border-border bg-card p-5 hover:bg-muted transition-colors"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
@@ -669,7 +669,7 @@ export default function RoleDetailPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-9 rounded-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                                className="h-9 rounded-md border-success/30 text-success hover:bg-success/10"
                                 onClick={() => handleGrantRevoke(g, "grant")}
                               >
                                 <Plus className="h-3.5 w-3.5" />
@@ -678,7 +678,7 @@ export default function RoleDetailPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-9 rounded-full border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                className="h-9 rounded-md border-destructive/30 text-destructive hover:bg-destructive/10"
                                 onClick={() => handleGrantRevoke(g, "revoke")}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -698,7 +698,7 @@ export default function RoleDetailPage() {
                   <div>
                     <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <UserPlus className="h-5 w-5 text-emerald-400" />
+                        <UserPlus className="h-5 w-5 text-success" />
                         Bu Rolün Üyeleri
                         <span className="text-xs font-normal text-muted-foreground">
                           (
@@ -712,7 +712,7 @@ export default function RoleDetailPage() {
                         <DialogTrigger asChild>
                           <Button
                             size="sm"
-                            className="h-10 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                            className="h-10 rounded-md bg-gradient-to-r from-success to-success hover:from-success hover:to-success"
                           >
                             <UserPlus className="h-4 w-4 mr-2" />
                             Yeni Üye Ekle
@@ -721,7 +721,7 @@ export default function RoleDetailPage() {
                         <DialogContent className="sm:max-w-lg">
                           <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
-                              <UserPlus className="h-5 w-5 text-emerald-400" />
+                              <UserPlus className="h-5 w-5 text-success" />
                               &quot;{roleName}&quot; Rolüne Yeni Üye Ekle
                             </DialogTitle>
                             <DialogDescription>
@@ -755,7 +755,7 @@ export default function RoleDetailPage() {
                               </Select>
                             </div>
 
-                            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                            <div className="flex items-center gap-3 rounded-md border border-border bg-card p-4">
                               <Checkbox
                                 id="admin-option"
                                 checked={memWatch("admin_option")}
@@ -766,7 +766,7 @@ export default function RoleDetailPage() {
                               <div>
                                 <label
                                   htmlFor="admin-option"
-                                  className="text-sm font-medium cursor-pointer text-amber-400"
+                                  className="text-sm font-medium cursor-pointer text-warning"
                                 >
                                   ADMIN OPTION
                                 </label>
@@ -784,14 +784,14 @@ export default function RoleDetailPage() {
                                   setMembershipDialogOpen(false);
                                   memReset();
                                 }}
-                                className="h-11 rounded-full"
+                                className="h-11 rounded-md"
                               >
                                 İptal
                               </Button>
                               <Button
                                 type="submit"
                                 disabled={grantMembershipMutation.isPending}
-                                className="h-11 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                                className="h-11 rounded-md bg-gradient-to-r from-success to-success hover:from-success hover:to-success"
                               >
                                 {grantMembershipMutation.isPending ? (
                                   <>
@@ -818,7 +818,7 @@ export default function RoleDetailPage() {
                         ))}
                       </div>
                     ) : (members ?? []).length === 0 ? (
-                      <div className="p-10 text-center rounded-3xl border border-dashed border-white/10">
+                      <div className="p-10 text-center rounded-lg border border-dashed border-border">
                         <UserMinus className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
                         <p className="font-semibold">Henüz üye yok</p>
                         <p className="text-sm text-muted-foreground mt-1">
@@ -830,11 +830,11 @@ export default function RoleDetailPage() {
                         {(members ?? []).map((m, idx) => (
                           <div
                             key={`member-${idx}-${m.member}`}
-                            className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4"
+                            className="rounded-md border border-border bg-card p-4 flex items-center justify-between gap-4"
                           >
                             <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="h-10 w-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
-                                <UserPlus className="h-5 w-5 text-emerald-400" />
+                              <div className="h-10 w-10 rounded-md bg-success/15 flex items-center justify-center shrink-0">
+                                <UserPlus className="h-5 w-5 text-success" />
                               </div>
                               <div className="min-w-0">
                                 <p className="font-semibold text-sm truncate">{m.member}</p>
@@ -856,7 +856,7 @@ export default function RoleDetailPage() {
                               onClick={() => handleRevokeMembership(m)}
                               disabled={revokeMembershipMutation.isPending}
                               className={cn(
-                                "h-9 rounded-full shrink-0 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                                "h-9 rounded-md shrink-0 text-destructive border-destructive/30 hover:bg-destructive/10"
                               )}
                             >
                               <UserMinus className="h-3.5 w-3.5" />
@@ -870,7 +870,7 @@ export default function RoleDetailPage() {
 
                   <div>
                     <h3 className="text-lg font-semibold flex items-center gap-2 mb-5">
-                      <Shield className="h-5 w-5 text-indigo-400" />
+                      <Shield className="h-5 w-5 text-info" />
                       Bu Rolün Üye Olduğu Gruplar
                       <span className="text-xs font-normal text-muted-foreground">
                         ({(memberships ?? []).length} grup)
@@ -884,7 +884,7 @@ export default function RoleDetailPage() {
                         ))}
                       </div>
                     ) : (memberships ?? []).length === 0 ? (
-                      <div className="p-10 text-center rounded-3xl border border-dashed border-white/10">
+                      <div className="p-10 text-center rounded-lg border border-dashed border-border">
                         <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
                         <p className="font-semibold">Üye olunan grup yok</p>
                         <p className="text-sm text-muted-foreground mt-1">
@@ -897,14 +897,14 @@ export default function RoleDetailPage() {
                           <Link
                             key={`membership-${idx}-${m.role}`}
                             href={`/roles/${encodeURIComponent(m.role)}`}
-                            className="block rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors group"
+                            className="block rounded-md border border-border bg-card p-4 hover:bg-muted transition-colors group"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-xl bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                <Shield className="h-5 w-5 text-indigo-400" />
+                              <div className="h-10 w-10 rounded-md bg-info/15 flex items-center justify-center shrink-0">
+                                <Shield className="h-5 w-5 text-info" />
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="font-semibold text-sm truncate group-hover:text-emerald-400 transition-colors">
+                                <p className="font-semibold text-sm truncate group-hover:text-success transition-colors">
                                   {m.role}
                                 </p>
                                 <div className="flex items-center gap-2 mt-1">
@@ -918,7 +918,7 @@ export default function RoleDetailPage() {
                                   )}
                                 </div>
                               </div>
-                              <ArrowLeft className="h-4 w-4 text-muted-foreground rotate-180 group-hover:text-emerald-400 transition-colors shrink-0" />
+                              <ArrowLeft className="h-4 w-4 text-muted-foreground rotate-180 group-hover:text-success transition-colors shrink-0" />
                             </div>
                           </Link>
                         ))}

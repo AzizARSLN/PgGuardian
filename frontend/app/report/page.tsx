@@ -54,13 +54,13 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: "summary", title: "Özet", description: "Raporun genel özeti ve ana metrikler", icon: Activity, color: "from-indigo-500 to-emerald-500" },
-  { id: "health", title: "Sağlık Kontrolleri", description: "Her bir sağlık kontrolünün detayı ve durumu", icon: Shield, color: "from-emerald-500 to-teal-500" },
-  { id: "diagnostics", title: "Tanı Bulguları", description: "CRITICAL / WARNING / INFO seviyesinde bulgular", icon: AlertTriangle, color: "from-amber-500 to-orange-500" },
-  { id: "storage", title: "Depolama: Top 10", description: "En büyük 10 tablo, indeks ve veritabanı", icon: HardDrive, color: "from-purple-500 to-pink-500" },
-  { id: "replication", title: "Replikasyon", description: "Replica lag, slotlar ve streaming durumu", icon: Copy, color: "from-sky-500 to-blue-500" },
-  { id: "connections", title: "Bağlantılar", description: "Aktif / boşta / bekleyen bağlantılar özeti", icon: Users, color: "from-rose-500 to-red-500" },
-  { id: "roles", title: "Roller", description: "Süper kullanıcı, login, yetki özeti", icon: Server, color: "from-violet-500 to-indigo-500" },
+  { id: "summary", title: "Özet", description: "Raporun genel özeti ve ana metrikler", icon: Activity, color: "from-info to-success" },
+  { id: "health", title: "Sağlık Kontrolleri", description: "Her bir sağlık kontrolünün detayı ve durumu", icon: Shield, color: "from-success to-success" },
+  { id: "diagnostics", title: "Tanı Bulguları", description: "CRITICAL / WARNING / INFO seviyesinde bulgular", icon: AlertTriangle, color: "from-warning to-warning" },
+  { id: "storage", title: "Depolama: Top 10", description: "En büyük 10 tablo, indeks ve veritabanı", icon: HardDrive, color: "from-info to-info" },
+  { id: "replication", title: "Replikasyon", description: "Replica lag, slotlar ve streaming durumu", icon: Copy, color: "from-info to-info" },
+  { id: "connections", title: "Bağlantılar", description: "Aktif / boşta / bekleyen bağlantılar özeti", icon: Users, color: "from-destructive to-destructive" },
+  { id: "roles", title: "Roller", description: "Süper kullanıcı, login, yetki özeti", icon: Server, color: "from-info to-info" },
 ];
 
 function extractArray(report: ReportDict | undefined, key: string): unknown[] {
@@ -237,8 +237,8 @@ export default function ReportPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <FileBarChart2 className="h-8 w-8 text-emerald-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <FileBarChart2 className="h-8 w-8 text-success" />
             Report
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -256,7 +256,7 @@ export default function ReportPage() {
             <FileJson className="h-4 w-4 mr-2" /> JSON İndir
           </Button>
           <Button
-            className="h-12 px-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+            className="h-12 px-6 bg-gradient-to-r from-success to-success hover:from-success hover:to-success"
             onClick={handleDownloadHtml}
           >
             <FileCode className="h-5 w-5 mr-2" /> HTML İndir
@@ -277,14 +277,14 @@ export default function ReportPage() {
               / 100
             </RiskBadge>
           }
-          gradient="from-emerald-500/10 to-teal-500/10"
+          gradient="from-success/10 to-success/10"
         />
         <SummaryCard
           label="Veritabanı"
           value={isLoading ? undefined : summaryKPIs.db}
           sub={isLoading ? undefined : summaryKPIs.version}
           icon={<Database className="h-4 w-4" />}
-          gradient="from-indigo-500/10 to-violet-500/10"
+          gradient="from-info/10 to-info/10"
         />
         <SummaryCard
           label="Bağlantılar"
@@ -304,7 +304,7 @@ export default function ReportPage() {
               {summaryKPIs.max > 0 ? `${Math.round((summaryKPIs.current / summaryKPIs.max) * 100)}%` : "0%"}
             </RiskBadge>
           }
-          gradient="from-sky-500/10 to-blue-500/10"
+          gradient="from-info/10 to-info/10"
         />
         <SummaryCard
           label="Kilitler"
@@ -320,7 +320,7 @@ export default function ReportPage() {
               <RiskBadge riskLevel="OK" size="sm">Temiz</RiskBadge>
             )
           }
-          gradient="from-amber-500/10 to-orange-500/10"
+          gradient="from-warning/10 to-warning/10"
         />
       </div>
 
@@ -368,7 +368,7 @@ function SummaryCard({
         {value === undefined ? (
           <Skeleton className="h-10 w-32 mb-1.5" />
         ) : (
-          <div className="text-3xl font-bold text-white break-words">{value}</div>
+          <div className="text-3xl font-bold text-foreground break-words">{value}</div>
         )}
         {sub !== undefined && <div className="text-xs text-muted-foreground mt-1.5">{sub}</div>}
       </CardContent>
@@ -388,18 +388,18 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="overflow-hidden border-white/10">
+    <Card className="overflow-hidden border-border">
       <button
         type="button"
         onClick={onToggle}
         className="w-full text-left"
       >
-        <CardHeader className="pb-5 cursor-pointer hover:bg-white/5 transition-colors">
+        <CardHeader className="pb-5 cursor-pointer hover:bg-card transition-colors">
           <div className="flex items-center gap-3">
             <div
-              className={`h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br ${sec.color} flex items-center justify-center shadow-lg`}
+              className={`h-12 w-12 shrink-0 rounded-md bg-gradient-to-br ${sec.color} flex items-center justify-center shadow-sm`}
             >
-              <sec.icon className="h-6 w-6 text-white" />
+              <sec.icon className="h-6 w-6 text-foreground" />
             </div>
             <div className="flex-1 min-w-0">
               <CardTitle className="text-xl flex items-center gap-2">
@@ -467,10 +467,10 @@ function ObjectJsonView({ data, maxLen = 20 }: { data: unknown; maxLen?: number 
   if (text.length <= maxLen) return <code className="text-xs font-mono text-muted-foreground break-words">{text}</code>;
   return (
     <details className="group">
-      <summary className="cursor-pointer text-xs font-mono text-muted-foreground hover:text-white">
+      <summary className="cursor-pointer text-xs font-mono text-muted-foreground hover:text-foreground">
         {text.slice(0, maxLen)}... (genişlet)
       </summary>
-      <pre className="mt-2 p-4 rounded-2xl bg-black/30 text-xs text-emerald-300 overflow-auto max-h-96 font-mono whitespace-pre-wrap break-all">
+      <pre className="mt-2 p-4 rounded-md bg-black/30 text-xs text-success overflow-auto max-h-96 font-mono whitespace-pre-wrap break-all">
         {text}
       </pre>
     </details>
@@ -479,7 +479,7 @@ function ObjectJsonView({ data, maxLen = 20 }: { data: unknown; maxLen?: number 
 
 function SummarySection({ report }: { report: ReportDict | undefined }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-black/20 p-6">
+    <div className="rounded-lg border border-border bg-black/20 p-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {[
           { label: "Tam Rapor Anahtarları", val: Object.keys(report ?? {}).length + " adet" },
@@ -487,7 +487,7 @@ function SummarySection({ report }: { report: ReportDict | undefined }) {
           { label: "Durum", val: getReportVal<string>(report, "health.status", "-") || getReportVal<string>(report, "summary.status", "-") },
           { label: "Üretim Zamanı", val: getReportVal<string>(report, "health.generated_at", "-") || getReportVal<string>(report, "summary.generated_at", formatDate(new Date())) },
         ].map((r) => (
-          <div key={r.label} className="rounded-2xl bg-white/5 px-4 py-3">
+          <div key={r.label} className="rounded-md bg-card px-4 py-3">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{r.label}</div>
             <div className="text-sm font-semibold mt-1">{r.val}</div>
           </div>
@@ -509,12 +509,12 @@ function HealthSection({ report }: { report: ReportDict | undefined }) {
     return <EmptyState text="Sağlık kontrolü verisi bulunamadı" />;
   }
   return (
-    <div className="divide-y divide-white/5 rounded-3xl border border-white/10 overflow-hidden">
+    <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
       {checks.slice(0, 100).map((c, i) => {
         const sev = String(c.severity ?? c.status ?? "UNKNOWN").toUpperCase();
         const risk = sev === "OK" ? "OK" : sev === "WARNING" || sev === "INFO" ? "WARNING" : "DANGEROUS";
         return (
-          <div key={i} className="p-5 hover:bg-white/5 transition-colors flex items-start gap-4 flex-wrap">
+          <div key={i} className="p-5 hover:bg-card transition-colors flex items-start gap-4 flex-wrap">
             <RiskBadge riskLevel={risk as "OK" | "WARNING" | "INFO" | "DANGEROUS"} size="md" className="shrink-0 mt-0.5">
               {sev}
             </RiskBadge>
@@ -522,7 +522,7 @@ function HealthSection({ report }: { report: ReportDict | undefined }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="font-semibold">{String(c.name ?? c.title ?? c.description ?? `check-${i}`)}</div>
                 {c.value !== undefined && c.value !== null && (
-                  <code className="text-[10px] font-mono bg-white/5 px-2 py-0.5 rounded-full text-emerald-300">{String(c.value)}</code>
+                  <code className="text-[10px] font-mono bg-card px-2 py-0.5 rounded-md text-success">{String(c.value)}</code>
                 )}
                 {c.threshold !== undefined && c.threshold !== null && (
                   <Badge variant="outline" className="text-[10px] font-mono">threshold={String(c.threshold)}</Badge>
@@ -544,23 +544,23 @@ function DiagnosticsSection({ report }: { report: ReportDict | undefined }) {
   const diags = findings.length > 0 ? findings : (extractArray(report, "diagnostics") as unknown as Record<string, unknown>[]);
   if (diags.length === 0) return <EmptyState text="Tanı bulgusu bulunamadı" />;
   return (
-    <div className="divide-y divide-white/5 rounded-3xl border border-white/10 overflow-hidden">
+    <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
       {diags.slice(0, 100).map((f, i) => {
         const sev = String(f.severity ?? "INFO").toUpperCase();
         const risk = sev === "CRITICAL" ? "DANGEROUS" : sev === "WARNING" ? "WARNING" : sev === "OK" ? "OK" : "INFO";
         return (
-          <div key={i} className="p-5 hover:bg-white/5 transition-colors flex items-start gap-4 flex-wrap">
+          <div key={i} className="p-5 hover:bg-card transition-colors flex items-start gap-4 flex-wrap">
             <RiskBadge riskLevel={risk as "OK" | "WARNING" | "INFO" | "DANGEROUS"} size="md" className="shrink-0 mt-0.5">
               {sev}
             </RiskBadge>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="font-semibold">{String(f.title ?? f.code ?? `finding-${i}`)}</div>
-                {Boolean(f.code) && <code className="text-[10px] font-mono bg-white/5 px-2 py-0.5 rounded-full">{String(f.code)}</code>}
+                {Boolean(f.code) && <code className="text-[10px] font-mono bg-card px-2 py-0.5 rounded-md">{String(f.code)}</code>}
               </div>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{String(f.description ?? "")}</p>
               {Boolean(f.recommendation) && (
-                <p className="text-xs text-emerald-400 mt-2 flex items-start gap-1.5">
+                <p className="text-xs text-success mt-2 flex items-start gap-1.5">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   {String(f.recommendation)}
                 </p>
@@ -591,7 +591,7 @@ function StorageSection({ report }: { report: ReportDict | undefined }) {
     .slice(0, 10);
   if (top.length === 0) return <EmptyState text="Depolama verisi bulunamadı" />;
   return (
-    <div className="space-y-2 rounded-3xl border border-white/10 overflow-hidden">
+    <div className="space-y-2 rounded-lg border border-border overflow-hidden">
       {top.map((t, i) => {
         const o = t.obj as Record<string, unknown>;
         const name =
@@ -608,16 +608,16 @@ function StorageSection({ report }: { report: ReportDict | undefined }) {
         const maxB = Math.max(1, top[0]?.bytes ?? 1);
         const pct = (t.bytes / maxB) * 100;
         return (
-          <div key={i} className="p-5 hover:bg-white/5 transition-colors">
+          <div key={i} className="p-5 hover:bg-card transition-colors">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <span className="font-mono text-sm font-semibold min-w-[3ch] text-muted-foreground">#{i + 1}</span>
               <Badge variant="outline" className="text-[10px] font-mono">{kind}</Badge>
               <code className="text-sm font-mono">{name}</code>
-              <span className="ml-auto font-mono text-sm font-semibold text-amber-300">{formatBytes(t.bytes, 1)}</span>
+              <span className="ml-auto font-mono text-sm font-semibold text-warning">{formatBytes(t.bytes, 1)}</span>
             </div>
-            <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+            <div className="h-2 rounded-md bg-card overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all"
+                className="h-full rounded-md bg-gradient-to-r from-info to-info transition-all"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -645,10 +645,10 @@ function ReplicationSection({ report }: { report: ReportDict | undefined }) {
               const state = String(r.state ?? "-");
               const active = state.toLowerCase() === "streaming";
               return (
-                <div key={i} className="rounded-2xl bg-white/5 p-4 border border-white/10">
+                <div key={i} className="rounded-md bg-card p-4 border border-border">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-emerald-400 shadow-lg shadow-emerald-400/30" : "bg-amber-400"}`} />
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-success shadow-sm shadow-success/30" : "bg-warning"}`} />
                       <code className="font-mono text-sm font-semibold truncate">
                         {String(r.application_name ?? r.client_address ?? r.username ?? `replica-${i + 1}`)}
                       </code>
@@ -658,7 +658,7 @@ function ReplicationSection({ report }: { report: ReportDict | undefined }) {
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <div className="text-muted-foreground">Lag</div>
-                      <div className="font-mono font-semibold text-purple-300">{formatBytes(lag, 1)}</div>
+                      <div className="font-mono font-semibold text-info">{formatBytes(lag, 1)}</div>
                     </div>
                     <div>
                       <div className="text-muted-foreground">Adres / Kullanıcı</div>
@@ -680,9 +680,9 @@ function ReplicationSection({ report }: { report: ReportDict | undefined }) {
             {slots.map((s, i) => {
               const active = Boolean(s.active);
               return (
-                <div key={i} className="rounded-2xl bg-white/5 p-4 border border-white/10 flex items-center justify-between gap-3">
+                <div key={i} className="rounded-md bg-card p-4 border border-border flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-emerald-400 shadow-lg shadow-emerald-400/30" : "bg-amber-400"}`} />
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-success shadow-sm shadow-success/30" : "bg-warning"}`} />
                     <div className="min-w-0">
                       <code className="font-mono text-sm font-semibold truncate block">{String(s.slot_name ?? `slot-${i}`)}</code>
                       {Boolean(s.slot_type) && (
@@ -718,35 +718,35 @@ function ConnectionsSection({ report }: { report: ReportDict | undefined }) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "Aktif", val: Number(summary.active ?? 0), color: "text-emerald-400" },
+          { label: "Aktif", val: Number(summary.active ?? 0), color: "text-success" },
           { label: "Boşta", val: Number(summary.idle ?? 0), color: "text-muted-foreground" },
-          { label: "İşlemde Bekleyen", val: Number(summary.idle_in_transaction ?? 0), color: "text-amber-400" },
-          { label: "Bekleyen", val: Number(summary.waiting ?? 0), color: "text-red-400" },
+          { label: "İşlemde Bekleyen", val: Number(summary.idle_in_transaction ?? 0), color: "text-warning" },
+          { label: "Bekleyen", val: Number(summary.waiting ?? 0), color: "text-destructive" },
         ].map((k) => (
-          <div key={k.label} className="rounded-2xl bg-white/5 p-4 border border-white/10">
+          <div key={k.label} className="rounded-md bg-card p-4 border border-border">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{k.label}</div>
             <div className={`text-2xl font-bold mt-1 ${k.color}`}>{formatNumber(k.val)}</div>
           </div>
         ))}
       </div>
-      <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
+      <div className="rounded-md bg-card p-4 border border-border">
         <div className="flex items-center justify-between mb-2 text-xs">
           <span className="text-muted-foreground font-semibold uppercase tracking-wider">Kullanım</span>
           <span className="font-mono font-semibold">
             {formatNumber(current)} / {formatNumber(max)} · %{usage.toFixed(1)}
           </span>
         </div>
-        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-2 rounded-md bg-muted overflow-hidden">
           <div
-            className={`h-full rounded-full bg-gradient-to-r ${usage >= 85 ? "from-red-500 to-rose-500" : usage >= 60 ? "from-amber-500 to-orange-500" : "from-emerald-500 to-teal-500"}`}
+            className={`h-full rounded-md bg-gradient-to-r ${usage >= 85 ? "from-destructive to-destructive" : usage >= 60 ? "from-warning to-warning" : "from-success to-success"}`}
             style={{ width: `${Math.min(100, usage)}%` }}
           />
         </div>
       </div>
       {show.length > 0 && (
-        <div className="rounded-3xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+        <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
           {show.map((c, i) => (
-            <div key={i} className="p-4 hover:bg-white/5 transition-colors flex items-center gap-3 flex-wrap">
+            <div key={i} className="p-4 hover:bg-card transition-colors flex items-center gap-3 flex-wrap">
               <Badge variant="outline" className="font-mono text-[10px] shrink-0">pid={String(c.pid ?? "-")}</Badge>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -826,7 +826,7 @@ function RolesSection({ report }: { report: ReportDict | undefined }) {
           { label: "DB Oluşturma", val: counts.createdb, icon: <Database className="h-3.5 w-3.5" /> },
           { label: "Rol Oluşturma", val: counts.createrole, icon: <Shield className="h-3.5 w-3.5" /> },
         ].map((k) => (
-          <div key={k.label} className="rounded-2xl bg-white/5 p-4 border border-white/10">
+          <div key={k.label} className="rounded-md bg-card p-4 border border-border">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
               {k.icon} {k.label}
             </div>
@@ -837,7 +837,7 @@ function RolesSection({ report }: { report: ReportDict | undefined }) {
     );
   }
   return (
-    <div className="rounded-3xl border border-white/10 divide-y divide-white/5 overflow-hidden">
+    <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
       {roles.slice(0, 50).map((r, i) => {
         const name = String(r.name ?? `role-${i}`);
         const su = Boolean(r.superuser);
@@ -846,7 +846,7 @@ function RolesSection({ report }: { report: ReportDict | undefined }) {
         const crole = Boolean(r.createrole);
         const limit = Number(r.connection_limit ?? -1);
         return (
-          <div key={i} className="p-4 hover:bg-white/5 transition-colors flex items-center gap-3 flex-wrap">
+          <div key={i} className="p-4 hover:bg-card transition-colors flex items-center gap-3 flex-wrap">
             <code className="font-mono text-sm font-semibold min-w-[160px]">{name}</code>
             <div className="flex flex-wrap gap-2">
               <RiskBadge riskLevel={su ? "DANGEROUS" : "INFO"} size="sm">
@@ -871,7 +871,7 @@ function RolesSection({ report }: { report: ReportDict | undefined }) {
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="p-12 text-center rounded-3xl border border-dashed border-white/10 bg-white/5">
+    <div className="p-12 text-center rounded-lg border border-dashed border-border bg-card">
       <Info className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
       <p className="font-semibold">{text}</p>
       <p className="text-xs text-muted-foreground mt-1">Backend endpointinden bu bölüm için veri dönmedi.</p>

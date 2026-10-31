@@ -80,10 +80,10 @@ function StatusProgressBar({ status }: { status: string }) {
     failed: 100,
   };
   const colorMap: Record<BackupStatus, string> = {
-    queued: "from-slate-400 to-slate-500",
-    running: "from-amber-400 to-orange-500",
-    done: "from-emerald-400 to-teal-500",
-    failed: "from-red-400 to-rose-500",
+    queued: "from-muted to-muted",
+    running: "from-warning to-warning",
+    done: "from-success to-success",
+    failed: "from-destructive to-destructive",
   };
   const pct = progressMap[level];
   return (
@@ -107,9 +107,9 @@ function StatusProgressBar({ status }: { status: string }) {
           </span>
         </RiskBadge>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+      <div className="h-1.5 w-full rounded-md bg-muted overflow-hidden">
         <div
-          className={`h-full rounded-full bg-gradient-to-r ${colorMap[level]} transition-all duration-500`}
+          className={`h-full rounded-md bg-gradient-to-r ${colorMap[level]} transition-all duration-500`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -340,8 +340,8 @@ export default function BackupsPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <DatabaseBackup className="h-8 w-8 text-indigo-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <DatabaseBackup className="h-8 w-8 text-info" />
             Backup / Restore
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -354,7 +354,7 @@ export default function BackupsPage() {
           </Button>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="h-12 px-6 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600">
+              <Button className="h-12 px-6 bg-gradient-to-r from-info to-success hover:from-info hover:to-success">
                 <Play className="h-5 w-5 mr-2" />
                 Yedek Oluştur
               </Button>
@@ -362,7 +362,7 @@ export default function BackupsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <DatabaseBackup className="h-6 w-6 text-indigo-400" />
+                  <DatabaseBackup className="h-6 w-6 text-info" />
                   Yeni Yedek Oluştur
                 </DialogTitle>
                 <DialogDescription>
@@ -436,8 +436,8 @@ export default function BackupsPage() {
                     />
                   </div>
                 </div>
-                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-                  <p className="text-xs text-amber-400 flex items-start gap-2">
+                <div className="rounded-md border border-warning/20 bg-warning/5 p-4">
+                  <p className="text-xs text-warning flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     Bu işlem MAINTENANCE onayı gerektirir ve sunucu I/O&apos;sunu artırabilir.
                   </p>
@@ -450,7 +450,7 @@ export default function BackupsPage() {
                 <Button
                   onClick={handleCreate}
                   disabled={createBackupMutation.isPending}
-                  className="bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600"
+                  className="bg-gradient-to-r from-info to-success hover:from-info hover:to-success"
                 >
                   {createBackupMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   <Play className="h-4 w-4 mr-2" />
@@ -463,29 +463,29 @@ export default function BackupsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <Card className="relative overflow-hidden border-indigo-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-emerald-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-info/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-info/10 via-transparent to-success/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Toplam İş</span>
             </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-indigo-400 to-emerald-400">
+            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-info to-success">
               {stats.total}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              Başarılı: <span className="text-emerald-400 font-semibold">{stats.success}</span> · Hata:{" "}
-              <span className="text-red-400 font-semibold">{stats.failed}</span>
+              Başarılı: <span className="text-success font-semibold">{stats.success}</span> · Hata:{" "}
+              <span className="text-destructive font-semibold">{stats.failed}</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-emerald-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-teal-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-success/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-success/10 via-transparent to-success/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Başarılı Yedek</span>
             </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-emerald-400 to-teal-400">
+            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-success to-success">
               {stats.success}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
@@ -494,26 +494,26 @@ export default function BackupsPage() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-amber-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-warning/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-warning/10 via-transparent to-warning/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Toplam Boyut</span>
             </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-amber-400 to-orange-400">
+            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning">
               {formatBytes(stats.size, 1)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Sadece başarılı yedekler</div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-red-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-rose-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-destructive/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-destructive/10 via-transparent to-destructive/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hatalı İş</span>
             </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-red-400 to-rose-400">
+            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-destructive to-destructive">
               {stats.failed}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Retry veya log kontrolü gerekli</div>
@@ -524,7 +524,7 @@ export default function BackupsPage() {
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
           <CardTitle className="text-xl flex items-center gap-2">
-            <DatabaseBackup className="h-5 w-5 text-indigo-400" />
+            <DatabaseBackup className="h-5 w-5 text-info" />
             Yedek İşleri Listesi
           </CardTitle>
           <CardDescription>Poll: {refMs ? `${refMs / 1000} sn` : "manuel"} · {sortedBackups.length} iş kaydı</CardDescription>
@@ -575,7 +575,7 @@ export default function BackupsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HardDriveUpload className="h-6 w-6 text-red-400" />
+              <HardDriveUpload className="h-6 w-6 text-destructive" />
               Geri Yükle — DANGEROUS
             </DialogTitle>
             <DialogDescription>
@@ -585,7 +585,7 @@ export default function BackupsPage() {
           <div className="space-y-5 py-4">
             <div className="space-y-2">
               <Label htmlFor="restore-db">
-                Hedef Veritabanı Adı <span className="text-red-400">*</span>
+                Hedef Veritabanı Adı <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="restore-db"
@@ -598,7 +598,7 @@ export default function BackupsPage() {
                 Bu adı onay ekranında aynen tekrar yazmanız istenecektir.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="flex items-center justify-between rounded-md border border-border bg-card p-5">
               <div>
                 <Label className="cursor-pointer">CLEAN (mevcut objeleri temizle)</Label>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -607,13 +607,13 @@ export default function BackupsPage() {
               </div>
               <input
                 type="checkbox"
-                className="h-6 w-6 rounded border-white/20 bg-white/10 accent-red-500"
+                className="h-6 w-6 rounded border-border bg-muted accent-red-500"
                 checked={restoreClean}
                 onChange={(e) => setRestoreClean(e.target.checked)}
               />
             </div>
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4">
-              <p className="text-xs text-red-400 flex items-start gap-2 leading-relaxed">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4">
+              <p className="text-xs text-destructive flex items-start gap-2 leading-relaxed">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                 Geri yükleme, veritabanı objelerinin üzerine yazabilir ve veri kaybına neden olabilir.
                 İşlem DANGEROUS onayı gerektirir.

@@ -25,31 +25,31 @@ const riskConfig: Record<
     label: "OK",
     icon: CheckCircle2,
     className:
-      "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25",
+      "bg-success/15 text-success border-success/30 hover:bg-success/25",
   },
   INFO: {
     label: "Bilgi",
     icon: Info,
     className:
-      "bg-sky-500/15 text-sky-400 border-sky-500/30 hover:bg-sky-500/25",
+      "bg-info/15 text-info border-info/30 hover:bg-info/25",
   },
   WARNING: {
     label: "Uyarı",
     icon: AlertTriangle,
     className:
-      "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25",
+      "bg-warning/15 text-warning border-warning/30 hover:bg-warning/25",
   },
   MAINTENANCE: {
     label: "Bakım",
     icon: Wrench,
     className:
-      "bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25",
+      "bg-warning/15 text-warning border-warning/30 hover:bg-warning/25",
   },
   DANGEROUS: {
     label: "Tehlikeli",
     icon: Skull,
     className:
-      "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25",
+      "bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/25",
   },
 };
 

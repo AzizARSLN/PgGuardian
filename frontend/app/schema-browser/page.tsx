@@ -82,10 +82,10 @@ export default function SchemaBrowserPage() {
         header: 'Tablo Adı',
         cell: ({ getValue }) => (
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500/20 to-emerald-500/20 border border-indigo-500/20 flex items-center justify-center shrink-0">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-r from-info/20 to-success/20 border border-info/20 flex items-center justify-center shrink-0">
               <Table2 className="h-4 w-4 text-gradient" />
             </div>
-            <span className="font-semibold text-white">{getValue<string>()}</span>
+            <span className="font-semibold text-foreground">{getValue<string>()}</span>
           </div>
         ),
       },
@@ -95,8 +95,8 @@ export default function SchemaBrowserPage() {
         size: 140,
         cell: ({ getValue }) => (
           <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-            <span className="text-sm text-zinc-300 truncate">
+            <User className="h-3.5 w-3.5 text-info shrink-0" />
+            <span className="text-sm text-muted-foreground truncate">
               {getValue<string | null | undefined>() ?? '-'}
             </span>
           </div>
@@ -110,8 +110,8 @@ export default function SchemaBrowserPage() {
           (a.original.total_size_bytes ?? 0) - (b.original.total_size_bytes ?? 0),
         cell: ({ getValue }) => (
           <div className="flex items-center gap-2">
-            <HardDrive className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-            <span className="font-mono text-sm text-zinc-300">
+            <HardDrive className="h-3.5 w-3.5 text-warning shrink-0" />
+            <span className="font-mono text-sm text-muted-foreground">
               {formatBytes(getValue<number>() ?? 0)}
             </span>
           </div>
@@ -124,7 +124,7 @@ export default function SchemaBrowserPage() {
         sortingFn: (a, b) =>
           (a.original.live_tuples ?? 0) - (b.original.live_tuples ?? 0),
         cell: ({ getValue }) => (
-          <span className="font-mono text-sm text-zinc-300">
+          <span className="font-mono text-sm text-muted-foreground">
             {formatNumber(getValue<number>() ?? 0)}
           </span>
         ),
@@ -145,10 +145,10 @@ export default function SchemaBrowserPage() {
               className={cn(
                 'font-mono',
                 critical
-                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
                   : warn
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400'
-                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                    ? 'border-warning/40 bg-warning/10 text-warning'
+                    : 'border-success/30 bg-success/10 text-success'
               )}
             >
               <Bug className="h-3 w-3 mr-1" />
@@ -193,7 +193,7 @@ export default function SchemaBrowserPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white">Şema Tarayıcı</h1>
+        <h1 className="text-3xl font-bold text-foreground">Şema Tarayıcı</h1>
         <p className="text-muted-foreground mt-1">
           Şemalar · Tablolar · Bloat · Boyut analizleri
         </p>
@@ -201,7 +201,7 @@ export default function SchemaBrowserPage() {
 
       <div className="grid grid-cols-12 gap-6" style={{ minHeight: 720 }}>
         <Card className="col-span-12 lg:col-span-3 overflow-hidden flex flex-col">
-          <CardHeader className="!p-5 border-b border-white/10">
+          <CardHeader className="!p-5 border-b border-border">
             <CardTitle className="text-lg flex items-center gap-2">
               <Database className="h-5 w-5 text-gradient" />
               Şemalar
@@ -217,7 +217,7 @@ export default function SchemaBrowserPage() {
               </div>
             )}
             {schemasQuery.error && (
-              <div className="text-sm text-red-400 p-3">
+              <div className="text-sm text-destructive p-3">
                 Şemalar yüklenemedi
               </div>
             )}
@@ -256,7 +256,7 @@ export default function SchemaBrowserPage() {
         </Card>
 
         <Card className="col-span-12 lg:col-span-9 overflow-hidden flex flex-col">
-          <CardHeader className="!p-5 border-b border-white/10 flex flex-row items-center justify-between gap-4 flex-wrap">
+          <CardHeader className="!p-5 border-b border-border flex flex-row items-center justify-between gap-4 flex-wrap">
             <div>
               <CardTitle className="text-lg flex items-center gap-3">
                 <Table2 className="h-5 w-5 text-gradient" />
@@ -277,7 +277,7 @@ export default function SchemaBrowserPage() {
           <CardContent className="!p-0 flex-1 flex flex-col overflow-hidden">
             <div className="overflow-x-auto flex-1">
               <UITable>
-                <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
+                <TableHeader className="sticky top-0 bg-card/90 z-10">
                   {table.getHeaderGroups().map((hg) => (
                     <TableRow key={hg.id}>
                       {hg.headers.map((h) => (
@@ -303,7 +303,7 @@ export default function SchemaBrowserPage() {
                       key={r.id}
                       data-state={r.getIsSelected() && 'selected'}
                       onClick={() => goToDetail(r.original)}
-                      className="cursor-pointer hover:bg-white/10"
+                      className="cursor-pointer hover:bg-muted"
                     >
                       {r.getVisibleCells().map((c) => (
                         <TableCell
@@ -337,7 +337,7 @@ export default function SchemaBrowserPage() {
               </UITable>
             </div>
             {table.getPageCount() > 1 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-white/10">
+              <div className="flex items-center justify-between px-5 py-3 border-t border-border">
                 <div className="text-xs text-muted-foreground">
                   Sayfa {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
                 </div>
@@ -384,32 +384,32 @@ function SchemaItem({
       type="button"
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors group',
+        'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md text-left transition-colors group',
         selected
-          ? 'bg-gradient-to-r from-indigo-500/20 to-emerald-500/10 border border-indigo-500/30'
-          : 'hover:bg-white/5 border border-transparent'
+          ? 'bg-gradient-to-r from-info/20 to-success/10 border border-info/30'
+          : 'hover:bg-card border border-transparent'
       )}
     >
       <ChevronRight
         className={cn(
           'h-4 w-4 shrink-0 transition-transform',
-          selected && 'rotate-90 text-emerald-400'
+          selected && 'rotate-90 text-success'
         )}
       />
       <Database
         className={cn(
           'h-4 w-4 shrink-0',
-          muted ? 'text-zinc-500' : selected ? 'text-indigo-400' : 'text-zinc-400'
+          muted ? 'text-muted-foreground' : selected ? 'text-info' : 'text-muted-foreground'
         )}
       />
       <span
         className={cn(
           'text-sm font-medium truncate flex-1',
           selected
-            ? 'text-white'
+            ? 'text-foreground'
             : muted
-              ? 'text-zinc-500'
-              : 'text-zinc-300 group-hover:text-white'
+              ? 'text-muted-foreground'
+              : 'text-muted-foreground group-hover:text-foreground'
         )}
       >
         {schema.name}

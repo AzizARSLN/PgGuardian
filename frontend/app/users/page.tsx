@@ -112,12 +112,12 @@ const resetPasswordSchema = z.object({
 function roleBadgeClass(role: UserRole): string {
   switch (role) {
     case "Admin":
-      return "bg-red-500/20 text-red-300 border-red-500/30";
+      return "bg-destructive/20 text-destructive border-destructive/30";
     case "DBA":
-      return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+      return "bg-warning/20 text-warning border-warning/30";
     case "Viewer":
     default:
-      return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
+      return "bg-success/20 text-success border-success/30";
   }
 }
 
@@ -399,7 +399,7 @@ export default function UsersPage() {
         </Dialog>
       </div>
 
-      <Card className="border-white/10 bg-white/5 backdrop-blur-xl shadow-xl">
+      <Card className="border-border bg-card shadow-sm">
         <CardHeader className="p-4 md:p-6 pb-2">
           <CardTitle className="text-lg">Kullanıcılar ({users.length})</CardTitle>
         </CardHeader>
@@ -569,7 +569,7 @@ export default function UsersPage() {
                               </AlertDialogTitle>
                               <AlertDialogDescription>
                                 Kullanıcıyı silmek istediğine emin misin?
-                                <div className="mt-2 p-3 rounded-xl bg-white/5 border border-white/10 font-mono text-sm break-all">
+                                <div className="mt-2 p-3 rounded-md bg-card border border-border font-mono text-sm break-all">
                                   EMAİL: {deletingUser?.email}
                                 </div>
                               </AlertDialogDescription>
@@ -673,7 +673,7 @@ export default function UsersPage() {
                 control={editForm.control}
                 name="is_active"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-xl border border-white/10 p-4 space-y-0">
+                  <FormItem className="flex flex-row items-center justify-between rounded-md border border-border p-4 space-y-0">
                     <div className="space-y-0.5">
                       <FormLabel>Aktif</FormLabel>
                       <p className="text-sm text-muted-foreground">

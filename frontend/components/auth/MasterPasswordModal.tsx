@@ -91,8 +91,8 @@ export function MasterPasswordModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader className="text-center sm:text-left">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/20 to-emerald-500/20 sm:mx-0">
-            <Lock className="h-8 w-8 text-indigo-400" />
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-info/20 to-success/20 sm:mx-0">
+            <Lock className="h-8 w-8 text-info" />
           </div>
           <DialogTitle className="text-2xl">PgGuardian&apos;a Bağlan</DialogTitle>
           <DialogDescription>
@@ -112,14 +112,14 @@ export function MasterPasswordModal({
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
               autoFocus
-              className="h-14 rounded-2xl"
+              className="h-14 rounded-md"
             />
           </div>
 
           <DialogFooter>
             <Button
               type="submit"
-              className="w-full h-12 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600"
+              className="w-full h-12 bg-gradient-to-r from-info to-success hover:from-info hover:to-success"
               disabled={loading || !password.trim()}
             >
               {loading ? (

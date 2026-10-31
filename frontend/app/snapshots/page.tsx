@@ -36,7 +36,7 @@ import { formatBytes, formatDate, formatDateAgo, formatNumber, formatPercent } f
 function ScoreGauge({ score }: { score: number }) {
   const clamped = Math.max(0, Math.min(100, score));
   const color =
-    clamped >= 85 ? "#10b981" : clamped >= 60 ? "#f59e0b" : "#ef4444";
+    clamped >= 85 ? "var(--chart-2)" : clamped >= 60 ? "var(--chart-3)" : "var(--chart-4)";
   const circumference = 2 * Math.PI * 26;
   const offset = circumference - (clamped / 100) * circumference;
 
@@ -190,8 +190,8 @@ export default function SnapshotsPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Camera className="h-8 w-8 text-purple-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Camera className="h-8 w-8 text-info" />
             Snapshots
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -204,7 +204,7 @@ export default function SnapshotsPage() {
           </Button>
           <Button
             variant="destructive"
-            className="h-12 px-6 bg-red-500 hover:bg-red-600 text-white"
+            className="h-12 px-6 bg-destructive hover:bg-destructive text-destructive-foreground"
             onClick={handlePrune}
             disabled={pruneMutation.isPending}
           >
@@ -213,10 +213,10 @@ export default function SnapshotsPage() {
             ) : (
               <Trash2 className="h-4 w-4 mr-2" />
             )}
-            Prune (90g+) {stats.pruneCount > 0 && <span className="bg-black/20 px-2 py-0.5 rounded-full text-xs">{stats.pruneCount}</span>}
+            Prune (90g+) {stats.pruneCount > 0 && <span className="bg-black/20 px-2 py-0.5 rounded-md text-xs">{stats.pruneCount}</span>}
           </Button>
           <Button
-            className="h-12 px-6 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600"
+            className="h-12 px-6 bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
             onClick={handleCapture}
             disabled={captureMutation.isPending}
           >
@@ -231,22 +231,22 @@ export default function SnapshotsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <Card className="relative overflow-hidden border-purple-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-indigo-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-info/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-info/10 via-transparent to-info/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Camera className="h-3.5 w-3.5 text-purple-400" />
+                <Camera className="h-3.5 w-3.5 text-info" />
                 Toplam Snapshot
               </span>
             </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-purple-400 to-indigo-400">
+            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-info to-info">
               {stats.total}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               {stats.pruneCount > 0 ? (
                 <>
-                  <span className="text-red-400 font-semibold">{stats.pruneCount}</span> adet 90g+ eski
+                  <span className="text-destructive font-semibold">{stats.pruneCount}</span> adet 90g+ eski
                 </>
               ) : (
                 "90g+ eski snapshot yok"
@@ -255,12 +255,12 @@ export default function SnapshotsPage() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-emerald-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-teal-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-success/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-success/10 via-transparent to-success/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
+                <TrendingUp className="h-3.5 w-3.5 text-success" />
                 Ortalama Skor
               </span>
             </div>
@@ -279,18 +279,18 @@ export default function SnapshotsPage() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-sky-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-info/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-info/10 via-transparent to-info/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Users className="h-3.5 w-3.5 text-sky-400" />
+                <Users className="h-3.5 w-3.5 text-info" />
                 Son — Bağlantı
               </span>
             </div>
             <div className="flex items-end gap-3">
               <div>
-                <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-sky-400 to-blue-400">
+                <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-info to-info">
                   {stats.latest?.connections ?? 0}
                 </div>
                 <div className="text-xs text-muted-foreground -mt-1">
@@ -320,16 +320,16 @@ export default function SnapshotsPage() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-amber-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/10 pointer-events-none" />
+        <Card className="relative overflow-hidden border-warning/20">
+          <div className="absolute inset-0 bg-gradient-to-br from-warning/10 via-transparent to-warning/10 pointer-events-none" />
           <CardContent className="p-6 relative">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <HardDrive className="h-3.5 w-3.5 text-amber-400" />
+                <HardDrive className="h-3.5 w-3.5 text-warning" />
                 Son — DB Boyutu
               </span>
             </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-amber-400 to-orange-400">
+            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning">
               {formatBytes(stats.latest?.db_size_bytes ?? 0, 1)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
@@ -344,7 +344,7 @@ export default function SnapshotsPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-xl flex items-center gap-2">
-                <Camera className="h-5 w-5 text-purple-400" />
+                <Camera className="h-5 w-5 text-info" />
                 Snapshot Listesi
               </CardTitle>
               <CardDescription>
@@ -377,7 +377,7 @@ export default function SnapshotsPage() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-border">
               {filteredSnapshots.map((s, idx) => (
                 <SnapshotRow key={`${s.id}-${idx}`} snap={s} />
               ))}
@@ -399,13 +399,13 @@ function SnapshotRow({ snap }: { snap: Snapshot }) {
       : 0;
 
   return (
-    <div className="p-6 hover:bg-white/5 transition-colors">
+    <div className="p-6 hover:bg-card transition-colors">
       <div className="flex items-start gap-5 flex-wrap">
         <div className="flex items-center gap-4">
           <ScoreGauge score={snap.score ?? 0} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <code className="text-sm font-mono font-semibold text-white">#{snap.id}</code>
+              <code className="text-sm font-mono font-semibold text-foreground">#{snap.id}</code>
               <Badge variant="outline" className="text-[10px] font-mono">
                 {snap.status || "-"}
               </Badge>
@@ -433,35 +433,35 @@ function SnapshotRow({ snap }: { snap: Snapshot }) {
 
         <div className="ml-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 flex-1 max-w-4xl">
           <MiniStat
-            icon={<Users className="h-3.5 w-3.5 text-sky-400" />}
+            icon={<Users className="h-3.5 w-3.5 text-info" />}
             label="Conn"
             value={`${snap.connections ?? 0}/${snap.max_connections ?? 0}`}
           />
           <MiniStat
-            icon={<HardDrive className="h-3.5 w-3.5 text-amber-400" />}
+            icon={<HardDrive className="h-3.5 w-3.5 text-warning" />}
             label="Boyut"
             value={formatBytes(snap.db_size_bytes ?? 0, 0)}
           />
           <MiniStat
-            icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-400" />}
+            icon={<AlertTriangle className="h-3.5 w-3.5 text-warning" />}
             label="Dead"
             value={formatNumber(snap.dead_tuples ?? 0)}
             risk={deadTupleRatio > 0.2 ? "WARNING" : deadTupleRatio > 0.4 ? "DANGEROUS" : "OK"}
           />
           <MiniStat
-            icon={<Lock className="h-3.5 w-3.5 text-red-400" />}
+            icon={<Lock className="h-3.5 w-3.5 text-destructive" />}
             label="Bloke"
             value={String(blocking)}
             risk={blocking > 0 ? "DANGEROUS" : blocking > 0 ? "WARNING" : "OK"}
           />
           <MiniStat
-            icon={<Skull className="h-3.5 w-3.5 text-red-400" />}
+            icon={<Skull className="h-3.5 w-3.5 text-destructive" />}
             label="Deadlock"
             value={String(deadlocks)}
             risk={deadlocks > 0 ? "DANGEROUS" : "OK"}
           />
           <MiniStat
-            icon={<CheckCircle2 className="h-3.5 w-3.5 text-indigo-400" />}
+            icon={<CheckCircle2 className="h-3.5 w-3.5 text-info" />}
             label="Uzun Sorgu"
             value={String(longQ)}
             risk={longQ > 5 ? "WARNING" : longQ > 20 ? "DANGEROUS" : "OK"}
@@ -484,7 +484,7 @@ function MiniStat({
   risk?: "OK" | "INFO" | "WARNING" | "MAINTENANCE" | "DANGEROUS";
 }) {
   return (
-    <div className="rounded-2xl bg-white/5 px-3 py-2.5 min-w-[90px]">
+    <div className="rounded-md bg-card px-3 py-2.5 min-w-[90px]">
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {icon}
         {label}

@@ -162,7 +162,7 @@ function DataTable<TData, TValue>({
         />
       </div>
 
-      <div className="rounded-3xl overflow-hidden">
+      <div className="rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -215,7 +215,7 @@ function DataTable<TData, TValue>({
             {Math.max(1, pageCount)} · Toplam{" "}
             <span className="font-semibold text-foreground">{data.length}</span> kayıt
           </p>
-          <div className="h-6 w-px bg-white/10" />
+          <div className="h-6 w-px bg-muted" />
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Sayfa başına:</span>
             <Select
@@ -226,7 +226,7 @@ function DataTable<TData, TValue>({
                 table.setPageSize(n);
               }}
             >
-              <SelectTrigger className="h-9 w-[88px] rounded-full">
+              <SelectTrigger className="h-9 w-[88px] rounded-md">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -245,7 +245,7 @@ function DataTable<TData, TValue>({
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!canPrev}
-            className="h-9 rounded-full"
+            className="h-9 rounded-md"
           >
             <ChevronLeft className="h-4 w-4" />
             Önceki
@@ -255,7 +255,7 @@ function DataTable<TData, TValue>({
             size="sm"
             onClick={() => table.nextPage()}
             disabled={!canNext}
-            className="h-9 rounded-full"
+            className="h-9 rounded-md"
           >
             Sonraki
             <ChevronRight className="h-4 w-4" />
@@ -447,7 +447,7 @@ export default function DiagnosticsPage() {
         accessorKey: "code",
         header: "Kod",
         cell: ({ row }) => (
-          <code className="text-[11px] font-mono text-muted-foreground bg-white/5 px-2.5 py-1 rounded-full">
+          <code className="text-[11px] font-mono text-muted-foreground bg-card px-2.5 py-1 rounded-md">
             {row.original.code}
           </code>
         ),
@@ -478,7 +478,7 @@ export default function DiagnosticsPage() {
         header: "Öneri",
         cell: ({ row }) => (
           row.original.recommendation ? (
-            <p className="text-xs text-emerald-400/90 flex items-start gap-1.5 max-w-md">
+            <p className="text-xs text-success/90 flex items-start gap-1.5 max-w-md">
               <ArrowUpRight className="h-3 w-3 shrink-0 mt-0.5" />
               <span className="line-clamp-2">{row.original.recommendation}</span>
             </p>
@@ -497,7 +497,7 @@ export default function DiagnosticsPage() {
         accessorKey: "pid",
         header: "PID",
         cell: ({ row }) => (
-          <code className="text-xs font-mono font-semibold text-indigo-400">
+          <code className="text-xs font-mono font-semibold text-info">
             {row.original.pid}
           </code>
         ),
@@ -550,9 +550,9 @@ export default function DiagnosticsPage() {
               className={
                 "text-sm font-mono " +
                 (n !== null && n > 300
-                  ? "text-red-400"
+                  ? "text-destructive"
                   : n !== null && n > 60
-                  ? "text-amber-400"
+                  ? "text-warning"
                   : "")
               }
             >
@@ -584,7 +584,7 @@ export default function DiagnosticsPage() {
                 size="sm"
                 disabled={busy || cancelMutation.isPending}
                 onClick={() => handleCancel(pid)}
-                className="h-9 rounded-full"
+                className="h-9 rounded-md"
               >
                 <StopCircle className="h-3.5 w-3.5" />
                 Cancel
@@ -594,7 +594,7 @@ export default function DiagnosticsPage() {
                 size="sm"
                 disabled={busy || termMutation.isPending}
                 onClick={() => handleTerminate(pid)}
-                className="h-9 rounded-full text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50"
+                className="h-9 rounded-md text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
               >
                 <Skull className="h-3.5 w-3.5" />
                 Terminate
@@ -612,7 +612,7 @@ export default function DiagnosticsPage() {
       accessorKey: "pid",
       header: "PID",
       cell: ({ row }) => (
-        <code className="text-xs font-mono font-semibold text-indigo-400">
+        <code className="text-xs font-mono font-semibold text-info">
           {row.original.pid}
         </code>
       ),
@@ -637,7 +637,7 @@ export default function DiagnosticsPage() {
       accessorKey: "duration_seconds",
       header: "Süre",
       cell: ({ row }) => (
-        <span className="text-sm font-mono text-amber-400">
+        <span className="text-sm font-mono text-warning">
           {typeof row.original.duration_seconds === "number"
             ? formatInterval(row.original.duration_seconds)
             : "-"}
@@ -650,7 +650,7 @@ export default function DiagnosticsPage() {
       cell: ({ row }) => (
         <div className="text-xs text-muted-foreground">
           {row.original.wait_event_type ? (
-            <code className="bg-white/5 px-2 py-0.5 rounded-full">
+            <code className="bg-card px-2 py-0.5 rounded-md">
               {row.original.wait_event_type}
               {row.original.wait_event ? `:${row.original.wait_event}` : ""}
             </code>
@@ -664,7 +664,7 @@ export default function DiagnosticsPage() {
       accessorKey: "query",
       header: "Sorgu",
       cell: ({ row }) => (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-white/5 rounded-xl p-3 max-h-20 overflow-hidden whitespace-pre-wrap line-clamp-3 max-w-[480px]">
+        <pre className="text-[11px] font-mono text-muted-foreground bg-card rounded-md p-3 max-h-20 overflow-hidden whitespace-pre-wrap line-clamp-3 max-w-[480px]">
           {row.original.query ?? "-"}
         </pre>
       ),
@@ -676,7 +676,7 @@ export default function DiagnosticsPage() {
       accessorKey: "blocking_pid",
       header: "Blok Eden PID",
       cell: ({ row }) => (
-        <code className="text-xs font-mono font-semibold text-red-400">
+        <code className="text-xs font-mono font-semibold text-destructive">
           {row.original.blocking_pid}
         </code>
       ),
@@ -685,7 +685,7 @@ export default function DiagnosticsPage() {
       accessorKey: "blocked_pid",
       header: "Blok Olan PID",
       cell: ({ row }) => (
-        <code className="text-xs font-mono font-semibold text-amber-400">
+        <code className="text-xs font-mono font-semibold text-warning">
           {row.original.blocked_pid}
         </code>
       ),
@@ -694,7 +694,7 @@ export default function DiagnosticsPage() {
       accessorKey: "relation",
       header: "İlişki",
       cell: ({ row }) => (
-        <code className="text-xs font-mono text-muted-foreground bg-white/5 px-2 py-1 rounded-full">
+        <code className="text-xs font-mono text-muted-foreground bg-card px-2 py-1 rounded-md">
           {row.original.relation ?? "-"}
         </code>
       ),
@@ -721,7 +721,7 @@ export default function DiagnosticsPage() {
       accessorKey: "blocking_duration_seconds",
       header: "Bekleme",
       cell: ({ row }) => (
-        <span className="text-sm font-mono text-red-400">
+        <span className="text-sm font-mono text-destructive">
           {typeof row.original.blocking_duration_seconds === "number"
             ? formatInterval(row.original.blocking_duration_seconds)
             : "-"}
@@ -732,7 +732,7 @@ export default function DiagnosticsPage() {
       accessorKey: "blocking_query",
       header: "Blok Eden Sorgu",
       cell: ({ row }) => (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-white/5 rounded-xl p-3 max-h-16 overflow-hidden whitespace-pre-wrap line-clamp-2 max-w-[400px]">
+        <pre className="text-[11px] font-mono text-muted-foreground bg-card rounded-md p-3 max-h-16 overflow-hidden whitespace-pre-wrap line-clamp-2 max-w-[400px]">
           {row.original.blocking_query ?? "-"}
         </pre>
       ),
@@ -792,9 +792,9 @@ export default function DiagnosticsPage() {
         const pct = (i / t) * 100;
         return (
           <div className="flex items-center gap-3">
-            <div className="h-2 w-24 rounded-full bg-white/5 overflow-hidden">
+            <div className="h-2 w-24 rounded-full bg-card overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full"
+                className="h-full bg-gradient-to-r from-info to-success rounded-md"
                 style={{ width: `${Math.min(100, pct)}%` }}
               />
             </div>
@@ -833,7 +833,7 @@ export default function DiagnosticsPage() {
       accessorKey: "index_scans",
       header: "Scan",
       cell: ({ row }) => (
-        <span className="font-mono text-sm text-emerald-400">
+        <span className="font-mono text-sm text-success">
           {formatNumber(row.original.index_scans ?? 0)}
         </span>
       ),
@@ -890,9 +890,9 @@ export default function DiagnosticsPage() {
         const pct = row.original.dead_tuple_percent ?? 0;
         return (
           <div className="flex items-center gap-3 min-w-[180px]">
-            <div className="h-2 flex-1 rounded-full bg-white/5 overflow-hidden">
+            <div className="h-2 flex-1 rounded-md bg-card overflow-hidden">
               <div
-                className={`h-full rounded-full ${pct > 40 ? "bg-red-500" : pct > 20 ? "bg-amber-500" : "bg-emerald-500"}`}
+                className={`h-full rounded-md ${pct > 40 ? "bg-destructive" : pct > 20 ? "bg-warning" : "bg-success"}`}
                 style={{ width: `${Math.min(100, pct)}%` }}
               />
             </div>
@@ -908,8 +908,8 @@ export default function DiagnosticsPage() {
       header: "Canlı / Ölü",
       cell: ({ row }) => (
         <div className="text-xs font-mono space-y-0.5">
-          <div className="text-emerald-400">Live: {formatNumber(row.original.live_tuples ?? 0)}</div>
-          <div className="text-red-400">Dead: {formatNumber(row.original.dead_tuples ?? 0)}</div>
+          <div className="text-success">Live: {formatNumber(row.original.live_tuples ?? 0)}</div>
+          <div className="text-destructive">Dead: {formatNumber(row.original.dead_tuples ?? 0)}</div>
         </div>
       ),
     },
@@ -935,7 +935,7 @@ export default function DiagnosticsPage() {
       accessorKey: "queryid",
       header: "QueryID",
       cell: ({ row }) => (
-        <code className="text-[11px] font-mono text-indigo-400 bg-white/5 px-2 py-1 rounded-full">
+        <code className="text-[11px] font-mono text-info bg-card px-2 py-1 rounded-md">
           {String(row.original.queryid ?? "-")}
         </code>
       ),
@@ -944,7 +944,7 @@ export default function DiagnosticsPage() {
       accessorKey: "calls",
       header: "Çağrı",
       cell: ({ row }) => (
-        <span className="font-mono font-semibold text-emerald-400">
+        <span className="font-mono font-semibold text-success">
           {formatNumber(Number(row.original.calls ?? 0))}
         </span>
       ),
@@ -953,7 +953,7 @@ export default function DiagnosticsPage() {
       accessorKey: "total_exec_time",
       header: "Toplam Zaman",
       cell: ({ row }) => (
-        <span className="font-mono text-amber-400">
+        <span className="font-mono text-warning">
           {formatDuration(Number(row.original.total_exec_time ?? 0))}
         </span>
       ),
@@ -980,7 +980,7 @@ export default function DiagnosticsPage() {
       accessorKey: "query",
       header: "Sorgu",
       cell: ({ row }) => (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-white/5 rounded-xl p-3 max-h-20 overflow-hidden whitespace-pre-wrap line-clamp-3 max-w-[520px]">
+        <pre className="text-[11px] font-mono text-muted-foreground bg-card rounded-md p-3 max-h-20 overflow-hidden whitespace-pre-wrap line-clamp-3 max-w-[520px]">
           {String(row.original.query ?? "-")}
         </pre>
       ),
@@ -1029,14 +1029,14 @@ export default function DiagnosticsPage() {
           pct >= 90 ? "DANGEROUS" : pct >= 75 ? "WARNING" : "OK";
         return (
           <div className="flex items-center gap-4 min-w-[260px]">
-            <div className="h-2 flex-1 rounded-full bg-white/5 overflow-hidden">
+            <div className="h-2 flex-1 rounded-md bg-card overflow-hidden">
               <div
-                className={`h-full rounded-full ${
+                className={`h-full rounded-md ${
                   pct >= 90
-                    ? "bg-red-500"
+                    ? "bg-destructive"
                     : pct >= 75
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
+                    ? "bg-warning"
+                    : "bg-success"
                 }`}
                 style={{ width: `${Math.min(100, pct)}%` }}
               />
@@ -1070,8 +1070,8 @@ export default function DiagnosticsPage() {
     <div className="space-y-8">
       <ConfirmDialog />
       <div>
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <Activity className="h-8 w-8 text-purple-400" />
+        <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+          <Activity className="h-8 w-8 text-info" />
           Diagnostics
         </h1>
         <p className="text-muted-foreground mt-1">
@@ -1082,7 +1082,7 @@ export default function DiagnosticsPage() {
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
           <CardTitle className="text-xl flex items-center gap-2">
-            <Database className="h-5 w-5 text-purple-400" />
+            <Database className="h-5 w-5 text-info" />
             Tanı Paneli
           </CardTitle>
           <CardDescription>
@@ -1182,10 +1182,10 @@ export default function DiagnosticsPage() {
             </TabsContent>
 
             <TabsContent value="long" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 flex items-start gap-3">
-                <Clock className="h-5 w-5 text-amber-400 mt-0.5 shrink-0" />
+              <div className="mb-5 rounded-md border border-warning/30 bg-warning/10 p-5 flex items-start gap-3">
+                <Clock className="h-5 w-5 text-warning mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-amber-400">
+                  <p className="font-semibold text-warning">
                     5 dakikadan uzun çalışan sorgular
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1257,13 +1257,13 @@ export default function DiagnosticsPage() {
             </TabsContent>
 
             <TabsContent value="indexes" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 p-5 flex items-start gap-3">
-                <Database className="h-5 w-5 text-indigo-400 mt-0.5 shrink-0" />
+              <div className="mb-5 rounded-md border border-border bg-card p-5 flex items-start gap-3">
+                <Database className="h-5 w-5 text-info mt-0.5 shrink-0" />
                 <div>
                   <p className="font-semibold">İndeks durumu</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Toplam {idxData.length} indeks ·{" "}
-                    <span className="text-amber-400">
+                    <span className="text-warning">
                       {idxData.filter((i) => i.potentially_unused).length} adedi
                       kullanılmamış olabilir
                     </span>{" "}
@@ -1323,8 +1323,8 @@ export default function DiagnosticsPage() {
             </TabsContent>
 
             <TabsContent value="pgss" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 p-5 flex items-start gap-3">
-                <ListOrdered className="h-5 w-5 text-emerald-400 mt-0.5 shrink-0" />
+              <div className="mb-5 rounded-md border border-border bg-card p-5 flex items-start gap-3">
+                <ListOrdered className="h-5 w-5 text-success mt-0.5 shrink-0" />
                 <div>
                   <p className="font-semibold">pg_stat_statements — Top sorgular</p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1348,10 +1348,10 @@ export default function DiagnosticsPage() {
             </TabsContent>
 
             <TabsContent value="sequences" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-5 flex items-start gap-3">
-                <Hash className="h-5 w-5 text-red-400 mt-0.5 shrink-0" />
+              <div className="mb-5 rounded-md border border-destructive/30 bg-destructive/10 p-5 flex items-start gap-3">
+                <Hash className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-red-400">
+                  <p className="font-semibold text-destructive">
                     Sequence Cycle Riski
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1387,12 +1387,12 @@ export default function DiagnosticsPage() {
 type Tone = "emerald" | "muted" | "amber" | "red" | "indigo" | "purple";
 
 const toneMap: Record<Tone, string> = {
-  emerald: "from-emerald-500/15 to-emerald-500/0 text-emerald-400 border-emerald-500/20",
-  muted: "from-white/10 to-white/0 text-muted-foreground border-white/10",
-  amber: "from-amber-500/15 to-amber-500/0 text-amber-400 border-amber-500/20",
-  red: "from-red-500/15 to-red-500/0 text-red-400 border-red-500/20",
-  indigo: "from-indigo-500/15 to-indigo-500/0 text-indigo-400 border-indigo-500/20",
-  purple: "from-purple-500/15 to-purple-500/0 text-purple-400 border-purple-500/20",
+  emerald: "from-success/15 to-success/0 text-success border-success/20",
+  muted: "from-muted/10 to-muted/0 text-muted-foreground border-border",
+  amber: "from-warning/15 to-warning/0 text-warning border-warning/20",
+  red: "from-destructive/15 to-destructive/0 text-destructive border-destructive/20",
+  indigo: "from-info/15 to-info/0 text-info border-info/20",
+  purple: "from-info/15 to-info/0 text-info border-info/20",
 };
 
 function StatCard({
@@ -1406,7 +1406,7 @@ function StatCard({
 }) {
   return (
     <div
-      className={`relative rounded-2xl border bg-gradient-to-br ${toneMap[tone]} p-5 overflow-hidden`}
+      className={`relative rounded-md border bg-gradient-to-br ${toneMap[tone]} p-5 overflow-hidden`}
     >
       <div className="relative">
         <p className="text-[11px] uppercase tracking-wider font-semibold opacity-75">

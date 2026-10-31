@@ -237,12 +237,12 @@ export default function RolesPage() {
         return (
           <Link href={`/roles/${encodeURIComponent(r.name)}`} className="block group">
             <div className="flex items-center gap-3">
-              <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-emerald-500/20 border border-white/10 flex items-center justify-center shrink-0 group-hover:from-indigo-500/30 group-hover:to-emerald-500/30 transition-all">
-                <Users className="h-5 w-5 text-emerald-400" />
+              <div className="h-11 w-11 rounded-md bg-gradient-to-br from-info/20 to-success/20 border border-border flex items-center justify-center shrink-0 group-hover:from-info/30 group-hover:to-success/30 transition-all">
+                <Users className="h-5 w-5 text-success" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm truncate group-hover:text-emerald-400 transition-colors">
+                  <p className="font-semibold text-sm truncate group-hover:text-success transition-colors">
                     {r.name}
                   </p>
                   <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -289,7 +289,7 @@ export default function RolesPage() {
       cell: ({ row }) => {
         const lim = row.original.connection_limit;
         return (
-          <code className="text-xs font-mono bg-white/5 px-3 py-1.5 rounded-full">
+          <code className="text-xs font-mono bg-card px-3 py-1.5 rounded-md">
             {lim === -1 || lim === null ? "∞" : lim}
           </code>
         );
@@ -309,7 +309,7 @@ export default function RolesPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleEdit(r)}
-                className="h-9 rounded-full"
+                className="h-9 rounded-md"
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Düzenle
@@ -321,9 +321,9 @@ export default function RolesPage() {
               disabled={busy || r.name === "postgres"}
               onClick={() => handleDelete(r)}
               className={cn(
-                "h-9 rounded-full",
+                "h-9 rounded-md",
                 r.name !== "postgres" &&
-                  "text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50"
+                  "text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
               )}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -372,8 +372,8 @@ export default function RolesPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Shield className="h-8 w-8 text-indigo-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Shield className="h-8 w-8 text-info" />
             Roller ve İzinler
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -384,14 +384,14 @@ export default function RolesPage() {
           <Button
             variant="outline"
             onClick={() => refetch()}
-            className="h-12 px-6 rounded-full"
+            className="h-12 px-6 rounded-md"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Yenile
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="h-12 px-6 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600">
+              <Button className="h-12 px-6 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success">
                 <Plus className="h-4 w-4 mr-2" />
                 Yeni Rol
               </Button>
@@ -399,7 +399,7 @@ export default function RolesPage() {
             <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-emerald-400" />
+                  <Shield className="h-5 w-5 text-success" />
                   Yeni Rol Oluştur
                 </DialogTitle>
                 <DialogDescription>
@@ -412,10 +412,10 @@ export default function RolesPage() {
                   <Input
                     {...register("name", { required: "Zorunlu alan" })}
                     placeholder="app_user"
-                    className={cn(errors.name && "border-red-500/50")}
+                    className={cn(errors.name && "border-destructive/50")}
                   />
                   {errors.name && (
-                    <p className="text-xs text-red-400">{errors.name.message}</p>
+                    <p className="text-xs text-destructive">{errors.name.message}</p>
                   )}
                 </div>
 
@@ -428,7 +428,7 @@ export default function RolesPage() {
                   />
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+                <div className="rounded-md border border-border bg-card p-5 space-y-4">
                   <Label className="font-semibold">Rol Öznitelikleri</Label>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex items-center gap-3">
@@ -463,7 +463,7 @@ export default function RolesPage() {
                       <div>
                         <label
                           htmlFor="attr-superuser"
-                          className="text-sm font-medium cursor-pointer text-amber-400"
+                          className="text-sm font-medium cursor-pointer text-warning"
                         >
                           Süper Kullanıcı (SUPERUSER)
                         </label>
@@ -546,14 +546,14 @@ export default function RolesPage() {
                       setDialogOpen(false);
                       reset();
                     }}
-                    className="h-11 rounded-full"
+                    className="h-11 rounded-md"
                   >
                     İptal
                   </Button>
                   <Button
                     type="submit"
                     disabled={isSubmitting || createMutation.isPending}
-                    className="h-11 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600"
+                    className="h-11 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success"
                   >
                     {isSubmitting || createMutation.isPending ? (
                       <>
@@ -580,37 +580,37 @@ export default function RolesPage() {
             label: "Toplam Rol",
             val: roles?.length ?? 0,
             icon: Users,
-            from: "from-indigo-500",
-            to: "to-blue-500",
+            from: "from-info",
+            to: "to-info",
           },
           {
             label: "Süper Kullanıcı",
             val: superuserCount,
             icon: Shield,
-            from: "from-amber-500",
-            to: "to-orange-500",
+            from: "from-warning",
+            to: "to-warning",
             warn: superuserCount > 3,
           },
           {
             label: "Giriş Yapabilen",
             val: canLoginCount,
             icon: CheckCircle2,
-            from: "from-emerald-500",
-            to: "to-teal-500",
+            from: "from-success",
+            to: "to-success",
           },
           {
             label: "DB + Rol Yetkisi",
             val: createdbCount + createroleCount,
             icon: Edit3,
-            from: "from-purple-500",
-            to: "to-pink-500",
+            from: "from-info",
+            to: "to-info",
           },
         ].map((m) => (
           <Card
             key={m.label}
             className={cn(
               "relative overflow-hidden",
-              m.warn && "border-amber-500/30"
+              m.warn && "border-warning/30"
             )}
           >
             <div
@@ -638,14 +638,14 @@ export default function RolesPage() {
                 </div>
                 <div
                   className={cn(
-                    "h-12 w-12 rounded-2xl bg-gradient-to-br flex items-center justify-center",
+                    "h-12 w-12 rounded-md bg-gradient-to-br flex items-center justify-center",
                     m.from,
                     m.to,
                     "bg-opacity-20"
                   )}
                   style={{ opacity: 0.85 }}
                 >
-                  <m.icon className="h-6 w-6 text-white" />
+                  <m.icon className="h-6 w-6 text-foreground" />
                 </div>
               </div>
             </CardContent>
@@ -658,7 +658,7 @@ export default function RolesPage() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <CardTitle className="text-xl flex items-center gap-2">
-                <Users className="h-5 w-5 text-indigo-400" />
+                <Users className="h-5 w-5 text-info" />
                 Roller
               </CardTitle>
               <CardDescription>
@@ -677,7 +677,7 @@ export default function RolesPage() {
           </div>
         </CardHeader>
         <CardContent className="!p-0">
-          <div className="rounded-3xl overflow-hidden">
+          <div className="rounded-lg overflow-hidden">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((hg) => (
@@ -709,7 +709,7 @@ export default function RolesPage() {
                       </p>
                       <Button
                         onClick={() => setDialogOpen(true)}
-                        className="h-11 px-6 rounded-full"
+                        className="h-11 px-6 rounded-md"
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         İlk Rolü Oluştur
@@ -731,7 +731,7 @@ export default function RolesPage() {
             </Table>
           </div>
           {!isLoading && (roles?.length ?? 0) > 0 && (
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-white/5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-border">
               <div className="flex items-center gap-3 text-sm">
                 <p className="text-muted-foreground">
                   Sayfa{" "}
@@ -744,7 +744,7 @@ export default function RolesPage() {
                   </span>{" "}
                   kayıt
                 </p>
-                <div className="h-6 w-px bg-white/10" />
+                <div className="h-6 w-px bg-muted" />
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Sayfa başına:</span>
                   <Select
@@ -755,7 +755,7 @@ export default function RolesPage() {
                       table.setPageSize(n);
                     }}
                   >
-                    <SelectTrigger className="h-9 w-[88px] rounded-full">
+                    <SelectTrigger className="h-9 w-[88px] rounded-md">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -774,7 +774,7 @@ export default function RolesPage() {
                   size="sm"
                   onClick={() => table.previousPage()}
                   disabled={!canPrev}
-                  className="h-9 rounded-full"
+                  className="h-9 rounded-md"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Önceki
@@ -784,7 +784,7 @@ export default function RolesPage() {
                   size="sm"
                   onClick={() => table.nextPage()}
                   disabled={!canNext}
-                  className="h-9 rounded-full"
+                  className="h-9 rounded-md"
                 >
                   Sonraki
                   <ChevronRight className="h-4 w-4" />

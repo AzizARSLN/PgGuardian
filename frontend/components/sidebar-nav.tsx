@@ -63,8 +63,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex flex-col h-full">
       <div className="mb-8 px-3">
         <Link href="/dashboard" className="flex items-center gap-3" onClick={onNavigate}>
-          <div className="h-12 w-12 rounded-full bg-gradient-accent flex items-center justify-center shadow-lg">
-            <DatabaseZap className="h-6 w-6 text-white" />
+          <div className="h-12 w-12 rounded-full bg-gradient-accent flex items-center justify-center shadow-sm">
+            <DatabaseZap className="h-6 w-6 text-foreground" />
           </div>
           <div className="flex flex-col leading-tight">
             <span className="text-xl font-bold text-gradient">PgGuardian</span>
@@ -84,10 +84,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               href={item.href}
               onClick={onNavigate}
               className={cn(
-                "group flex items-center gap-3 rounded-full px-4 py-3 text-sm font-medium transition-all",
+                "group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all",
                 isActive
-                  ? "bg-gradient-to-r from-indigo-500/20 to-emerald-500/20 text-white border border-white/10 shadow-inner"
-                  : "text-muted-foreground hover:bg-white/10 hover:text-white"
+                  ? "bg-gradient-to-r from-info/20 to-success/20 text-foreground border border-border shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               <Icon
@@ -95,7 +95,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                   "h-5 w-5 shrink-0 transition-colors",
                   isActive
                     ? "text-gradient"
-                    : "text-muted-foreground group-hover:text-white"
+                    : "text-muted-foreground group-hover:text-foreground"
                 )}
                 style={
                   isActive
@@ -108,8 +108,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <svg width="0" height="0" className="absolute">
                 <defs>
                   <linearGradient id="sideGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#10b981" />
+                    <stop offset="0%" stopColor="var(--chart-1)" />
+                    <stop offset="100%" stopColor="var(--chart-2)" />
                   </linearGradient>
                 </defs>
               </svg>
@@ -122,20 +122,20 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
-      <div className="mt-auto pt-4 border-t border-white/10 space-y-2">
+      <div className="mt-auto pt-4 border-t border-border space-y-2">
         <button
           onClick={handleLogout}
-          className="w-full group flex items-center gap-3 rounded-full px-4 py-3 text-sm font-medium transition-all text-muted-foreground hover:bg-white/10 hover:text-destructive"
+          className="w-full group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all text-muted-foreground hover:bg-muted hover:text-destructive"
         >
           <LogOut className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-destructive" />
           <span className="truncate">Logout</span>
         </button>
-        <div className="px-3 py-3 rounded-full bg-white/5 backdrop-blur-sm border border-white/5">
+        <div className="px-3 py-3 rounded-md bg-card border border-border">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <p className="text-xs text-muted-foreground truncate">v1.0.0</p>
-              <p className="text-xs text-emerald-400 truncate flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <p className="text-xs text-success truncate flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                 API: 127.0.0.1:8000
               </p>
             </div>
@@ -152,7 +152,7 @@ export default function SidebarNav() {
 
   if (isDesktop) {
     return (
-      <aside className="w-64 shrink-0 min-h-screen sticky top-0 left-0 h-screen border-r border-white/10 bg-white/5 backdrop-blur-md p-6 flex flex-col gap-2 overflow-hidden">
+      <aside className="w-64 shrink-0 min-h-screen sticky top-0 left-0 h-screen border-r border-border bg-card p-6 flex flex-col gap-2 overflow-hidden">
         <SidebarContent />
       </aside>
     );
@@ -162,7 +162,7 @@ export default function SidebarNav() {
     <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <SheetContent
         side="left"
-        className="w-[85%] max-w-[85%] border-r border-white/10 bg-sidebar p-6"
+        className="w-[85%] max-w-[85%] border-r border-border bg-sidebar p-6"
       >
         <SheetHeader className="mb-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>

@@ -361,8 +361,8 @@ export default function MaintenancePage() {
 
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Wrench className="h-8 w-8 text-amber-400" />
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Wrench className="h-8 w-8 text-warning" />
             Veritabanı Bakımı
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -375,7 +375,7 @@ export default function MaintenancePage() {
             queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance() });
             toast.success("Bakım durumu yenilendi");
           }}
-          className="h-12 px-6 rounded-full"
+          className="h-12 px-6 rounded-md"
         >
           <RefreshCw className="h-4 w-4 mr-2" />
           Durumu Yenile
@@ -398,8 +398,8 @@ export default function MaintenancePage() {
               label: "Toplam Tablo",
               val: formatNumber(totalTables),
               icon: Database,
-              from: "from-indigo-500",
-              to: "to-blue-500",
+              from: "from-info",
+              to: "to-info",
               risk: null as RiskLevel | null,
             },
             {
@@ -407,8 +407,8 @@ export default function MaintenancePage() {
               val: `%${deadPercent.toFixed(1)}`,
               icon: Trash2,
               from:
-                deadPercent > 10 ? "from-red-500" : deadPercent > 3 ? "from-amber-500" : "from-emerald-500",
-              to: deadPercent > 10 ? "to-orange-500" : deadPercent > 3 ? "to-yellow-500" : "to-teal-500",
+                deadPercent > 10 ? "from-destructive" : deadPercent > 3 ? "from-warning" : "from-success",
+              to: deadPercent > 10 ? "to-warning" : deadPercent > 3 ? "to-warning" : "to-success",
               risk:
                 deadPercent > 10 ? "DANGEROUS" : deadPercent > 3 ? "WARNING" : "OK",
             },
@@ -416,24 +416,24 @@ export default function MaintenancePage() {
               label: "Vacuum İhtiyacı",
               val: neverVacuumed,
               icon: Wrench,
-              from: neverVacuumed > 0 ? "from-red-500" : "from-emerald-500",
-              to: neverVacuumed > 0 ? "to-orange-500" : "to-teal-500",
+              from: neverVacuumed > 0 ? "from-destructive" : "from-success",
+              to: neverVacuumed > 0 ? "to-warning" : "to-success",
               risk: neverVacuumed > 3 ? "DANGEROUS" : neverVacuumed > 0 ? "WARNING" : "OK",
             },
             {
               label: "Analyze İhtiyacı",
               val: neverAnalyzed,
               icon: Sparkles,
-              from: neverAnalyzed > 0 ? "from-amber-500" : "from-emerald-500",
-              to: neverAnalyzed > 0 ? "to-orange-500" : "to-teal-500",
+              from: neverAnalyzed > 0 ? "from-warning" : "from-success",
+              to: neverAnalyzed > 0 ? "to-warning" : "to-success",
               risk: neverAnalyzed > 3 ? "WARNING" : neverAnalyzed > 0 ? "INFO" : "OK",
             },
             {
               label: "Autovacuum Worker",
               val: summary?.autovacuum_workers ?? 0,
               icon: PlayCircle,
-              from: "from-purple-500",
-              to: "to-pink-500",
+              from: "from-info",
+              to: "to-info",
               risk: null as RiskLevel | null,
             },
           ].map((m) => (
@@ -441,8 +441,8 @@ export default function MaintenancePage() {
               key={m.label}
               className={cn(
                 "relative overflow-hidden",
-                m.risk === "DANGEROUS" && "border-red-500/30",
-                m.risk === "WARNING" && "border-amber-500/30"
+                m.risk === "DANGEROUS" && "border-destructive/30",
+                m.risk === "WARNING" && "border-warning/30"
               )}
             >
               <div
@@ -470,13 +470,13 @@ export default function MaintenancePage() {
                   </div>
                   <div
                     className={cn(
-                      "h-11 w-11 rounded-2xl bg-gradient-to-br flex items-center justify-center",
+                      "h-11 w-11 rounded-md bg-gradient-to-br flex items-center justify-center",
                       m.from,
                       m.to
                     )}
                     style={{ opacity: 0.85 }}
                   >
-                    <m.icon className="h-5 w-5 text-white" />
+                    <m.icon className="h-5 w-5 text-foreground" />
                   </div>
                 </div>
                 {m.risk && (
@@ -492,7 +492,7 @@ export default function MaintenancePage() {
 
       <Card className="overflow-hidden">
         <CardContent className="!p-0">
-          <div className="p-6 border-b border-white/5">
+          <div className="p-6 border-b border-border">
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
                 <TabsTrigger value="vacuum">VACUUM</TabsTrigger>
@@ -503,9 +503,9 @@ export default function MaintenancePage() {
               <TabsContent value="vacuum" className="mt-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="space-y-6">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-5">
+                    <div className="rounded-lg border border-border bg-card p-6 space-y-5">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Trash2 className="h-5 w-5 text-amber-400" />
+                        <Trash2 className="h-5 w-5 text-warning" />
                         VACUUM Seçenekleri
                       </h3>
                       <form className="space-y-5">
@@ -530,7 +530,7 @@ export default function MaintenancePage() {
                         </p>
 
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="flex items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
+                          <div className="flex items-center gap-3 rounded-md border border-destructive/20 bg-destructive/5 p-4">
                             <Checkbox
                               id="vac-full"
                               checked={vacWatch("full")}
@@ -541,7 +541,7 @@ export default function MaintenancePage() {
                             <div>
                               <label
                                 htmlFor="vac-full"
-                                className="text-sm font-medium cursor-pointer text-red-400"
+                                className="text-sm font-medium cursor-pointer text-destructive"
                               >
                                 FULL
                               </label>
@@ -551,7 +551,7 @@ export default function MaintenancePage() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-3 rounded-md border border-border bg-card p-4">
                             <Checkbox
                               id="vac-analyze"
                               checked={vacWatch("analyze")}
@@ -572,7 +572,7 @@ export default function MaintenancePage() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-3 rounded-md border border-border bg-card p-4">
                             <Checkbox
                               id="vac-freeze"
                               checked={vacWatch("freeze")}
@@ -593,7 +593,7 @@ export default function MaintenancePage() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                          <div className="flex items-center gap-3 rounded-md border border-border bg-card p-4">
                             <Checkbox
                               id="vac-verbose"
                               checked={vacWatch("verbose")}
@@ -621,7 +621,7 @@ export default function MaintenancePage() {
                             variant="outline"
                             onClick={handleVacuumDryRun}
                             disabled={vacSubmitting}
-                            className="h-12 flex-1 rounded-full"
+                            className="h-12 flex-1 rounded-md"
                           >
                             <TerminalSquare className="h-4 w-4 mr-2" />
                             Dry Run (SQL Önizleme)
@@ -631,10 +631,10 @@ export default function MaintenancePage() {
                             onClick={handleVacuumApply}
                             disabled={!vacuumPreview || vacuumMutation.isPending}
                             className={cn(
-                              "h-12 flex-1 rounded-full font-bold",
+                              "h-12 flex-1 rounded-md font-bold",
                               vacWatch("full")
-                                ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600"
-                                : "bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
+                                ? "bg-gradient-to-r from-destructive to-warning hover:from-destructive hover:to-warning"
+                                : "bg-gradient-to-r from-warning to-warning hover:from-warning hover:to-warning"
                             )}
                           >
                             {vacuumMutation.isPending ? (
@@ -656,10 +656,10 @@ export default function MaintenancePage() {
 
                   <div className="space-y-6">
                     {vacuumPreview ? (
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
+                      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
                         <div className="flex items-center justify-between flex-wrap gap-3">
                           <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <TerminalSquare className="h-5 w-5 text-emerald-400" />
+                            <TerminalSquare className="h-5 w-5 text-success" />
                             SQL Önizlemesi
                           </h3>
                           <RiskBadge riskLevel={vacuumPreview.risk} size="md" />
@@ -668,20 +668,20 @@ export default function MaintenancePage() {
                           {vacuumPreview.sql.map((sql, idx) => (
                             <pre
                               key={idx}
-                              className="text-sm font-mono text-emerald-300 whitespace-pre-wrap break-all bg-black/40 rounded-2xl p-4 border border-white/5"
+                              className="text-sm font-mono text-success whitespace-pre-wrap break-all bg-black/40 rounded-md p-4 border border-border"
                             >
                               {sql}
                             </pre>
                           ))}
                         </div>
-                        <p className="text-xs text-muted-foreground italic border-t border-white/5 pt-4">
+                        <p className="text-xs text-muted-foreground italic border-t border-border pt-4">
                           {vacuumPreview.risk === "DANGEROUS"
                             ? "Bu işlem ACCESS EXCLUSIVE LOCK alabilir. Düşük trafikte çalıştırın."
                             : "Standart VACUUM, tablo kilitlenmeden arka planda çalışır."}
                         </p>
                       </div>
                     ) : (
-                      <div className="rounded-3xl border border-dashed border-white/10 p-10 text-center">
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center">
                         <TerminalSquare className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
                         <p className="font-semibold text-lg">SQL Önizlemesi</p>
                         <p className="text-sm text-muted-foreground mt-2">
@@ -696,9 +696,9 @@ export default function MaintenancePage() {
               <TabsContent value="analyze" className="mt-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="space-y-6">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-5">
+                    <div className="rounded-lg border border-border bg-card p-6 space-y-5">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-indigo-400" />
+                        <Sparkles className="h-5 w-5 text-info" />
                         ANALYZE Seçenekleri
                       </h3>
                       <form className="space-y-5">
@@ -728,7 +728,7 @@ export default function MaintenancePage() {
                             variant="outline"
                             onClick={handleAnalyzeDryRun}
                             disabled={anaSubmitting}
-                            className="h-12 flex-1 rounded-full"
+                            className="h-12 flex-1 rounded-md"
                           >
                             <TerminalSquare className="h-4 w-4 mr-2" />
                             Dry Run (SQL Önizleme)
@@ -737,7 +737,7 @@ export default function MaintenancePage() {
                             type="button"
                             onClick={handleAnalyzeApply}
                             disabled={!analyzePreview || analyzeMutation.isPending}
-                            className="h-12 flex-1 rounded-full font-bold bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600"
+                            className="h-12 flex-1 rounded-md font-bold bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
                           >
                             {analyzeMutation.isPending ? (
                               <>
@@ -758,10 +758,10 @@ export default function MaintenancePage() {
 
                   <div className="space-y-6">
                     {analyzePreview ? (
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
+                      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
                         <div className="flex items-center justify-between flex-wrap gap-3">
                           <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <TerminalSquare className="h-5 w-5 text-emerald-400" />
+                            <TerminalSquare className="h-5 w-5 text-success" />
                             SQL Önizlemesi
                           </h3>
                           <RiskBadge riskLevel={analyzePreview.risk} size="md" />
@@ -770,18 +770,18 @@ export default function MaintenancePage() {
                           {analyzePreview.sql.map((sql, idx) => (
                             <pre
                               key={idx}
-                              className="text-sm font-mono text-emerald-300 whitespace-pre-wrap break-all bg-black/40 rounded-2xl p-4 border border-white/5"
+                              className="text-sm font-mono text-success whitespace-pre-wrap break-all bg-black/40 rounded-md p-4 border border-border"
                             >
                               {sql}
                             </pre>
                           ))}
                         </div>
-                        <p className="text-xs text-muted-foreground italic border-t border-white/5 pt-4">
+                        <p className="text-xs text-muted-foreground italic border-t border-border pt-4">
                           ANALYZE sadece okuma kilidi alır ve sorgu planlayıcıya yardım eder.
                         </p>
                       </div>
                     ) : (
-                      <div className="rounded-3xl border border-dashed border-white/10 p-10 text-center">
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center">
                         <TerminalSquare className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
                         <p className="font-semibold text-lg">SQL Önizlemesi</p>
                         <p className="text-sm text-muted-foreground mt-2">
@@ -796,9 +796,9 @@ export default function MaintenancePage() {
               <TabsContent value="reindex" className="mt-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="space-y-6">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-5">
+                    <div className="rounded-lg border border-border bg-card p-6 space-y-5">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Database className="h-5 w-5 text-emerald-400" />
+                        <Database className="h-5 w-5 text-success" />
                         REINDEX Seçenekleri
                       </h3>
                       <form className="space-y-5">
@@ -829,7 +829,7 @@ export default function MaintenancePage() {
                           Hedefi daraltmak için soldan sağa doldurun; boş = tüm kapsam
                         </p>
 
-                        <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                        <div className="flex items-center gap-3 rounded-md border border-success/20 bg-success/5 p-4">
                           <Checkbox
                             id="rei-concurrent"
                             checked={reiWatch("concurrently")}
@@ -840,7 +840,7 @@ export default function MaintenancePage() {
                           <div>
                             <label
                               htmlFor="rei-concurrent"
-                              className="text-sm font-medium cursor-pointer text-emerald-400"
+                              className="text-sm font-medium cursor-pointer text-success"
                             >
                               CONCURRENTLY
                             </label>
@@ -856,7 +856,7 @@ export default function MaintenancePage() {
                             variant="outline"
                             onClick={handleReindexDryRun}
                             disabled={reiSubmitting}
-                            className="h-12 flex-1 rounded-full"
+                            className="h-12 flex-1 rounded-md"
                           >
                             <TerminalSquare className="h-4 w-4 mr-2" />
                             Dry Run (SQL Önizleme)
@@ -865,7 +865,7 @@ export default function MaintenancePage() {
                             type="button"
                             onClick={handleReindexApply}
                             disabled={!reindexPreview || reindexMutation.isPending}
-                            className="h-12 flex-1 rounded-full font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                            className="h-12 flex-1 rounded-md font-bold bg-gradient-to-r from-success to-success hover:from-success hover:to-success"
                           >
                             {reindexMutation.isPending ? (
                               <>
@@ -886,10 +886,10 @@ export default function MaintenancePage() {
 
                   <div className="space-y-6">
                     {reindexPreview ? (
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
+                      <div className="rounded-lg border border-border bg-card p-6 space-y-4">
                         <div className="flex items-center justify-between flex-wrap gap-3">
                           <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <TerminalSquare className="h-5 w-5 text-emerald-400" />
+                            <TerminalSquare className="h-5 w-5 text-success" />
                             SQL Önizlemesi
                           </h3>
                           <RiskBadge riskLevel={reindexPreview.risk} size="md" />
@@ -898,20 +898,20 @@ export default function MaintenancePage() {
                           {reindexPreview.sql.map((sql, idx) => (
                             <pre
                               key={idx}
-                              className="text-sm font-mono text-emerald-300 whitespace-pre-wrap break-all bg-black/40 rounded-2xl p-4 border border-white/5"
+                              className="text-sm font-mono text-success whitespace-pre-wrap break-all bg-black/40 rounded-md p-4 border border-border"
                             >
                               {sql}
                             </pre>
                           ))}
                         </div>
-                        <p className="text-xs text-muted-foreground italic border-t border-white/5 pt-4">
+                        <p className="text-xs text-muted-foreground italic border-t border-border pt-4">
                           {reiWatch("concurrently")
                             ? "CONCURRENTLY mod: yazma işlemlerini engellemez ama daha uzun sürer."
                             : "Standart REINDEX: ilgili nesneleri geçici olarak kilitleyebilir."}
                         </p>
                       </div>
                     ) : (
-                      <div className="rounded-3xl border border-dashed border-white/10 p-10 text-center">
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center">
                         <TerminalSquare className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
                         <p className="font-semibold text-lg">SQL Önizlemesi</p>
                         <p className="text-sm text-muted-foreground mt-2">
@@ -932,7 +932,7 @@ export default function MaintenancePage() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <CardTitle className="text-xl flex items-center gap-2">
-                <Search className="h-5 w-5 text-indigo-400" />
+                <Search className="h-5 w-5 text-info" />
                 Tablo Bakım Durumu
               </CardTitle>
               <CardDescription>
@@ -968,11 +968,11 @@ export default function MaintenancePage() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-white/5 max-h-[520px] overflow-y-auto">
+            <div className="divide-y divide-border max-h-[520px] overflow-y-auto">
               {tables.map((t: TableMaintenance, idx) => (
                 <div
                   key={`${t.schema_name ?? "public"}.${t.table_name}-${idx}`}
-                  className="p-5 hover:bg-white/5 transition-colors"
+                  className="p-5 hover:bg-card transition-colors"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -1009,9 +1009,9 @@ export default function MaintenancePage() {
                               className={cn(
                                 "font-mono",
                                 t.dead_tuple_percent > 10
-                                  ? "text-red-400"
+                                  ? "text-destructive"
                                   : t.dead_tuple_percent > 3
-                                  ? "text-amber-400"
+                                  ? "text-warning"
                                   : "text-foreground"
                               )}
                             >
@@ -1024,10 +1024,10 @@ export default function MaintenancePage() {
                               className={cn(
                                 "font-mono font-semibold",
                                 t.dead_tuple_percent > 10
-                                  ? "text-red-400"
+                                  ? "text-destructive"
                                   : t.dead_tuple_percent > 3
-                                  ? "text-amber-400"
-                                  : "text-emerald-400"
+                                  ? "text-warning"
+                                  : "text-success"
                               )}
                             >
                               %{t.dead_tuple_percent.toFixed(1)}
@@ -1037,15 +1037,15 @@ export default function MaintenancePage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                      <div className="w-40 h-2 rounded-full bg-white/10 overflow-hidden">
+                      <div className="w-40 h-2 rounded-full bg-muted overflow-hidden">
                         <div
                           className={cn(
-                            "h-full rounded-full transition-all",
+                            "h-full rounded-md transition-all",
                             t.dead_tuple_percent > 10
-                              ? "bg-gradient-to-r from-red-500 to-orange-500"
+                              ? "bg-gradient-to-r from-destructive to-warning"
                               : t.dead_tuple_percent > 3
-                              ? "bg-gradient-to-r from-amber-500 to-yellow-500"
-                              : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                              ? "bg-gradient-to-r from-warning to-warning"
+                              : "bg-gradient-to-r from-success to-success"
                           )}
                           style={{
                             width: `${Math.min(100, t.dead_tuple_percent * 5)}%`,

@@ -169,9 +169,9 @@ export default function LoginPage() {
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 items-center">
         <div className="space-y-8 order-2 lg:order-1 hidden lg:block">
           <div className="space-y-5">
-            <div className="inline-flex items-center gap-3 rounded-full bg-white/5 border border-white/10 backdrop-blur-md px-5 py-3">
+            <div className="inline-flex items-center gap-3 rounded-md bg-card border border-border px-5 py-3">
               <div className="h-9 w-9 rounded-full bg-gradient-accent flex items-center justify-center">
-                <DatabaseZap className="h-5 w-5 text-white" />
+                <DatabaseZap className="h-5 w-5 text-foreground" />
               </div>
               <div>
                 <p className="text-sm font-bold text-gradient">PgGuardian</p>
@@ -217,13 +217,13 @@ export default function LoginPage() {
             ].map((f) => (
               <Card
                 key={f.title}
-                className="bg-white/5 backdrop-blur-md border-white/10 shadow-xl"
+                className="bg-card border-border shadow-sm"
               >
                 <CardContent className="p-4 space-y-2">
                   <div className="h-9 w-9 rounded-full bg-gradient-accent/20 flex items-center justify-center">
                     <f.icon className="h-4 w-4 text-gradient" />
                   </div>
-                  <h3 className="font-semibold text-white text-sm">
+                  <h3 className="font-semibold text-foreground text-sm">
                     {f.title}
                   </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -235,11 +235,11 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <Card className="order-1 lg:order-2 border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl w-full">
+        <Card className="order-1 lg:order-2 border-border bg-card shadow-sm w-full">
           <CardContent className="p-6 md:p-10 space-y-8">
             <div className="lg:hidden flex items-center gap-3 mb-2">
               <div className="h-9 w-9 rounded-full bg-gradient-accent flex items-center justify-center">
-                <DatabaseZap className="h-5 w-5 text-white" />
+                <DatabaseZap className="h-5 w-5 text-foreground" />
               </div>
               <div>
                 <p className="text-sm font-bold text-gradient">PgGuardian</p>
@@ -248,7 +248,7 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-3">
-              <h2 className="text-3xl font-bold text-white">Panele Giriş</h2>
+              <h2 className="text-3xl font-bold text-foreground">Panele Giriş</h2>
               <p className="text-muted-foreground">
                 Korumalı rotalara erişmek için lütfen giriş yapın.
               </p>
@@ -341,7 +341,7 @@ export default function LoginPage() {
                 </div>
 
                 {isThrottled && (
-                  <div className="text-sm text-amber-500 font-medium">
+                  <div className="text-sm text-warning font-medium">
                     Giriş 5 saniye boyunca geçici olarak kilitlendi.{" "}
                     {throttleRemaining}sn kaldı.
                   </div>
