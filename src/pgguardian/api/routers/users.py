@@ -8,7 +8,7 @@ import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from pgguardian.api.deps import require_role, resolve_client, verify_jwt
+from pgguardian.api.deps import require_role, resolve_auth_client, verify_jwt
 from pgguardian.database.connection import DbClient
 
 router = APIRouter(
@@ -72,7 +72,7 @@ def _row_to_public(row: dict) -> UserPublic:
 @router.get("", response_model=list[UserPublic])
 def list_users(
     search: str | None = Query(default=None, description="Email substring filter"),
-    client: DbClient = Depends(resolve_client),
+    client: DbClient = Depends(resolve_auth_client),
 ) -> list[UserPublic]:
     """List all users; optional email substring search (case-insensitive)."""
     if search:
@@ -92,7 +92,7 @@ def list_users(
 @router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate,
-    client: DbClient = Depends(resolve_client),
+    client: DbClient = Depends(resolve_auth_client),
 ) -> UserPublic:
     """Create a new user (Admin-only). Valid app_role: Admin/DBA/Viewer."""
     if body.app_role not in VALID_ROLES:
@@ -130,7 +130,7 @@ def create_user(
 def update_user(
     user_id: int,
     body: UserUpdate,
-    client: DbClient = Depends(resolve_client),
+    client: DbClient = Depends(resolve_auth_client),
 ) -> UserPublic:
     """Update user metadata (role, active state, name, email). Admin-only."""
     existing = client.fetch_one(
@@ -189,7 +189,7 @@ def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user(
     user_id: int,
-    client: DbClient = Depends(resolve_client),
+    client: DbClient = Depends(resolve_auth_client),
     claims: dict[str, Any] = Depends(verify_jwt),
 ) -> None:
     """Soft-delete (is_active=false) a user. Admin cannot delete themselves (400)."""
@@ -213,7 +213,7 @@ def deactivate_user(
 def reset_password(
     user_id: int,
     body: ResetPassword,
-    client: DbClient = Depends(resolve_client),
+    client: DbClient = Depends(resolve_auth_client),
 ) -> None:
     """Set a new password for any user (Admin-only). Also flags must_change=false."""
     if len(body.new_password) < 8:

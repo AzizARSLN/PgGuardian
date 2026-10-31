@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore, PROFILE_NAME_PATTERN
 
+read_router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
+
+# password_env may only reference a dedicated password variable. Without this a
+# profile pointing at a hostile server could exfiltrate any process secret.
+_PASSWORD_ENV_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*(PASS|PASSWORD|PWD)[A-Z0-9_]*$")
+_PASSWORD_ENV_DENIED = re.compile(r"^(PGGUARDIAN_|PGPASSWORD$)")
 
 
 class ProfileCreate(BaseModel):
@@ -35,12 +43,24 @@ class ProfileCreate(BaseModel):
             )
         return value
 
+    @field_validator("password_env")
+    @classmethod
+    def _validate_password_env(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        if not _PASSWORD_ENV_PATTERN.match(value) or _PASSWORD_ENV_DENIED.match(value):
+            raise ValueError(
+                "password_env must name a dedicated password variable such as "
+                "PROD_DB_PASSWORD; PGGUARDIAN_* and PGPASSWORD are not allowed."
+            )
+        return value
+
 
 def _store() -> ProfileStore:
     return ProfileStore()
 
 
-@router.get("", response_model=list[Profile])
+@read_router.get("", response_model=list[Profile])
 def list_profiles() -> list[Profile]:
     """Saved profiles with inline passwords stripped."""
     return [profile.redacted() for profile in _store().list()]

@@ -154,15 +154,15 @@ def login(
     client = _auth_db_client(settings)
     row = client.fetch_one(
         "SELECT id, email, full_name, password_hash, app_role, is_active, password_must_change "
-        "FROM pgguardian_users WHERE email = %s",
+        "FROM pgguardian_users WHERE lower(email) = %s",
         (body.email.lower().strip(),),
     )
     if row is None:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
-    if not row["is_active"]:
-        raise HTTPException(status_code=401, detail="Account disabled.")
     if not _verify(body.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials.")
+    if not row["is_active"]:
+        raise HTTPException(status_code=401, detail="Account disabled.")
 
     user_id = int(row["id"])
     access, refresh, expires_in = _mint_tokens(
@@ -195,7 +195,7 @@ def login(
         key=REFRESH_COOKIE,
         value=refresh,
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
         samesite="lax",
         max_age=int(REFRESH_TTL.total_seconds()),
     )
@@ -217,7 +217,6 @@ def login(
 def logout(
     response: Response,
     settings: ApiSettings = Depends(get_api_settings),
-    _claims: dict[str, Any] = Depends(verify_jwt),
     refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ) -> None:
     """Invalidate the stored refresh session and clear the cookie."""
@@ -314,7 +313,7 @@ def refresh(
         key=REFRESH_COOKIE,
         value=new_refresh,
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
         samesite="lax",
         max_age=int(REFRESH_TTL.total_seconds()),
     )
@@ -348,7 +347,7 @@ def change_password(
     if row is None:
         raise HTTPException(status_code=404, detail="User not found.")
     if not _verify(body.current_password, str(row["password_hash"])):
-        raise HTTPException(status_code=401, detail="Incorrect current password.")
+        raise HTTPException(status_code=400, detail="Incorrect current password.")
     client.execute_raw(
         "UPDATE pgguardian_users SET password_hash = %s, password_must_change = FALSE WHERE id = %s",
         (_hash(body.new_password), user_id),

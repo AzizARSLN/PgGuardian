@@ -14,6 +14,7 @@ UNREACHABLE = {
     "PGUSER": "tester",
     "PGPASSWORD": "secret-test-pw-xyz",
     "PGGUARDIAN_CONNECT_TIMEOUT": "1",
+    "PGGUARDIAN_AUTH_DISABLED": "1",
 }
 
 
@@ -22,6 +23,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     for key, value in UNREACHABLE.items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv("PGGUARDIAN_API_TOKEN", raising=False)
+    monkeypatch.setenv("PGGUARDIAN_AUTH_DISABLED", "1")
     monkeypatch.delenv("PGGUARDIAN_ALLOW_WRITES", raising=False)
     monkeypatch.delenv("PGGUARDIAN_ALLOW_DANGEROUS", raising=False)
     return TestClient(create_app())
