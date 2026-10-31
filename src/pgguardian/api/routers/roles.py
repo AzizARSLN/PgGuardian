@@ -164,7 +164,8 @@ def create_role(
     name = validate_new_role_name(body.name)
     query = SQL("CREATE ROLE {} {}").format(Identifier(name), SQL(" ").join(_role_options(body)))
     if body.dry_run:
-        return DryRunResult(action="role.create", risk=risk, sql=[query.as_string()], target=name)
+        planned = "CREATE ROLE <name> WITH ... (secret redacted)" if body.password else query.as_string()
+        return DryRunResult(action="role.create", risk=risk, sql=[planned], target=name)
     require_confirm(body, "role.create")
     with mapped_errors(settings):
         client.ping()
@@ -431,7 +432,7 @@ def list_role_grants(name: str, client: DbClient = Depends(resolve_client)) -> l
             " SELECT grantee, object_schema, object_name, privilege_type, object_type"
             " FROM information_schema.role_usage_grants WHERE grantee = %s"
             " UNION ALL"
-            " SELECT grantee, NULL, object_name, privilege_type, object_type"
+            " SELECT grantee, routine_schema, routine_name, privilege_type, 'routine'"
             " FROM information_schema.role_routine_grants WHERE grantee = %s"
             " ORDER BY 5, 2, 3 LIMIT 500",
             (role_name, role_name, role_name),
@@ -462,6 +463,19 @@ def list_table_grants(
     return [dict(row) for row in rows]
 
 
+_SERVER_POWER_ROLES = frozenset(
+    {"pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"}
+)
+
+
+def _grants_server_power(client: DbClient, role: str) -> bool:
+    """Membership in a superuser or server-access role is as strong as CREATE SUPERUSER."""
+    if role in _SERVER_POWER_ROLES:
+        return True
+    row = client.fetch_one("SELECT rolsuper FROM pg_roles WHERE rolname = %s", (role,))
+    return bool(row and row.get("rolsuper"))
+
+
 @router.post("/{name}/grant-membership", response_model=DryRunResult | dict)
 def grant_membership(
     name: str,
@@ -473,6 +487,9 @@ def grant_membership(
     ensure_writes_allowed(settings, "role.grant_membership")
     target = validate_identifier(name, what="role name")
     member = validate_identifier(body.member, what="member name")
+    with mapped_errors(settings):
+        if _grants_server_power(client, target):
+            ensure_dangerous_allowed(settings, "role.grant_membership")
     query = SQL("GRANT {} TO {}").format(Identifier(target), Identifier(member))
     if body.dry_run:
         return DryRunResult(

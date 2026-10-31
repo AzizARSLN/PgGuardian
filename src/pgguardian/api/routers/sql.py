@@ -19,7 +19,12 @@ from pgguardian.api.safety import (
 )
 from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
-from pgguardian.sqlexec.classifier import SqlRejectedError, StatementKind, classify
+from pgguardian.sqlexec.classifier import (
+    SqlRejectedError,
+    StatementKind,
+    classify,
+    split_statements,
+)
 from pgguardian.sqlexec.executor import DEFAULT_MAX_ROWS, HARD_MAX_ROWS, SqlResult, run_sql
 from pgguardian.sqlexec.formatter import format_sql
 
@@ -86,26 +91,34 @@ def explain_sql(
             status_code=403, detail="EXPLAIN ANALYZE needs PGGUARDIAN_ALLOW_WRITES=1"
         )
     prefix = "EXPLAIN (FORMAT JSON) " if not body.analyze else "EXPLAIN (ANALYZE, FORMAT JSON) "
-    # Validate the inner SQL is at least parseable
     try:
-        classify(body.sql)
+        kind = classify(body.sql)
+        statements = split_statements(body.sql)
     except SqlRejectedError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if len(statements) != 1:
+        raise HTTPException(status_code=400, detail="EXPLAIN needs exactly one statement.")
+    # ANALYZE really executes the statement, so only plain reads are accepted.
+    if body.analyze and kind != StatementKind.READ:
+        raise HTTPException(
+            status_code=400,
+            detail=f"EXPLAIN ANALYZE only runs read statements; this one is {kind.value}.",
+        )
     with mapped_errors(settings):
         client.ping()
-        # Use get_connection with statement_timeout for safety
-        from pgguardian.database.connection import get_connection
-
-        with get_connection(client.settings) as conn:
-            with conn.cursor() as cur:
-                cur.execute(prefix + body.sql)
-                row = cur.fetchone()
-                # pg returns JSON in first column
-                if row:
-                    # row is dict with key maybe "QUERY PLAN"
-                    val = next(iter(row.values())) if isinstance(row, dict) else row[0]
-                    return {"plan": val, "analyze": body.analyze}
-                return {"plan": [], "analyze": body.analyze}
+        with client.connection() as conn:
+            conn.autocommit = False
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SET TRANSACTION READ ONLY")
+                    cur.execute(prefix + statements[0])
+                    row = cur.fetchone()
+            finally:
+                conn.rollback()
+        if row:
+            val = next(iter(row.values())) if isinstance(row, dict) else row[0]
+            return {"plan": val, "analyze": body.analyze}
+        return {"plan": [], "analyze": body.analyze}
 
 
 @router.post("", response_model=SqlResult | DryRunResult)

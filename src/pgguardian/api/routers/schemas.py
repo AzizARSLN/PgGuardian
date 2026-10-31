@@ -255,7 +255,7 @@ def list_objects(
             "SELECT n.nspname AS schema_name, c.relname AS object_name,"
             " CASE c.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'matview'"
             " WHEN 'S' THEN 'sequence' WHEN 'p' THEN 'partition' WHEN 'f' THEN 'foreign_table'"
-            " ELSE c.relkind END AS object_type,"
+            " ELSE c.relkind::text END AS object_type,"
             " pg_get_userbyid(c.relowner) AS owner, pg_relation_size(c.oid) AS size_bytes"
             " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
             " WHERE n.nspname = %s AND c.relkind IN ('r','v','m','S','p','f','i')"
@@ -308,7 +308,7 @@ def describe_table(
             (schema_name, table_name),
         )
         size = client.fetch_one(
-            "SELECT pg_total_relation_size(format('%%I.%%I', %s, %s)::regclass)"
+            "SELECT pg_total_relation_size(format('%%I.%%I', %s::text, %s::text)::regclass)"
             " AS total_size_bytes",
             (schema_name, table_name),
         )

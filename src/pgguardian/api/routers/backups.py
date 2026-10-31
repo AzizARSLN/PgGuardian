@@ -7,6 +7,7 @@ answer 501 with a clear message instead of pretending to work.
 
 from __future__ import annotations
 
+import re
 import os
 import shutil
 import subprocess
@@ -138,6 +139,17 @@ def _dump_env(client: DbClient) -> tuple[dict[str, str], str, str, str, str]:
     return env, host, port, database, username
 
 
+# pg_dump/pg_restore parse "host=x dbname=y" as a conninfo, and the name also
+# becomes part of the backup file path.
+_DATABASE_NAME = re.compile(r"^[^\W\d][\w$ .-]{0,62}$")
+
+
+def _safe_database_name(name: str) -> str:
+    if not _DATABASE_NAME.match(name) or ".." in name:
+        raise HTTPException(status_code=400, detail="Invalid database name.")
+    return name
+
+
 def _require_binary(name: str) -> str:
     path = shutil.which(name)
     if not path:
@@ -214,7 +226,7 @@ def start_backup(
     with mapped_errors(settings):
         client.ping()
         env, host, port, default_db, username = _dump_env(client)
-    database = body.database or default_db
+    database = _safe_database_name(body.database or default_db)
     job_id = uuid.uuid4().hex[:12]
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     suffix = {"custom": "dump", "plain": "sql", "directory": "dir"}[fmt]
@@ -296,6 +308,7 @@ def start_restore(
     ensure_dangerous_allowed(settings, "backup.restore")
     if body.dry_run:
         raise HTTPException(status_code=400, detail="dry_run is a no-op for restores; omit it.")
+    _safe_database_name(body.database)
     require_confirm(body, "backup.restore", target=body.database)
     directory = _backup_dir(settings)
     job = _load_job(directory, _jobs(request), body.backup_id)
