@@ -34,6 +34,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "sqlparse>=0.5",
+    "sqlglot>=27,<31",
     "python-multipart>=0.0.9",
     "PyJWT[crypto]>=2.9",
     "bcrypt>=4.0",
