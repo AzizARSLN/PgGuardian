@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { tGlobal } from "@/lib/i18n";
 import { useAuthStore } from "@/store/useAuthStore";
 import { getSelectedProfileFromStore } from "@/store/useProfileStore";
 
@@ -134,15 +135,8 @@ async function performFetch<T = unknown>(
       return data as T;
     }
 
+    // apiFetch retries with a fresh token and signs out if that fails too.
     if (response.status === 401) {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("auth:401"));
-      }
-      if (!skipToast) {
-        toast.error("Oturum süresi doldu. Lütfen tekrar bağlanın.", {
-          description: "API token geçersiz veya eksik.",
-        });
-      }
       throw new ApiError(401, "Unauthorized", data as ApiErrorResponse);
     }
 
@@ -163,21 +157,21 @@ async function performFetch<T = unknown>(
 
     if (!skipToast) {
       if (response.status === 422) {
-        toast.error("Doğrulama hatası", {
+        toast.error(tGlobal("api.validation"), {
           description: errorMessage,
         });
       } else if (response.status >= 500) {
-        toast.error("Sunucu hatası", {
+        toast.error(tGlobal("api.server"), {
           description: errorMessage,
         });
       } else if (response.status === 403) {
-        toast.error("Yetki hatası", {
+        toast.error(tGlobal("api.forbidden"), {
           description: errorMessage,
         });
       } else if (response.status === 404) {
-        toast.error("Bulunamadı", { description: errorMessage });
+        toast.error(tGlobal("api.notFound"), { description: errorMessage });
       } else if (response.status >= 400) {
-        toast.error("İstek hatası", { description: errorMessage });
+        toast.error(tGlobal("api.request"), { description: errorMessage });
       }
     }
 
@@ -187,8 +181,8 @@ async function performFetch<T = unknown>(
 
     if (error instanceof DOMException && error.name === "AbortError") {
       if (!skipToast) {
-        toast.error("İstek zaman aşımına uğradı", {
-          description: "Sunucu yanıt vermedi. Lütfen daha sonra tekrar deneyin.",
+        toast.error(tGlobal("api.timeout"), {
+          description: tGlobal("api.timeoutHint"),
         });
       }
       throw new ApiError(408, "Request timeout");
@@ -196,7 +190,7 @@ async function performFetch<T = unknown>(
 
     if (error instanceof Error) {
       if (!skipToast) {
-        toast.error("Bağlantı hatası", { description: error.message });
+        toast.error(tGlobal("api.network"), { description: error.message });
       }
       throw new ApiError(0, error.message);
     }
@@ -280,6 +274,7 @@ export async function apiFetch<T = unknown>(
 
       await useAuthStore.getState().logout();
       if (typeof window !== "undefined") {
+        if (!skipToast) toast.error(tGlobal("api.sessionExpired"));
         window.dispatchEvent(new CustomEvent("auth:401"));
       }
       throw error;

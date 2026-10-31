@@ -1,13 +1,12 @@
 "use client";
 
 import * as React from "react";
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { Loader2 } from "lucide-react";
 
-import MasterPasswordModal from "@/components/auth/MasterPasswordModal";
+import { PUBLIC_PATHS } from "@/components/app-shell";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const STALE_TIME = 3000;
@@ -44,62 +43,58 @@ function getQueryClient(): QueryClient {
   return browserQueryClient;
 }
 
+function toLogin() {
+  const next = window.location.pathname + window.location.search;
+  window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const queryClient = React.useMemo(() => getQueryClient(), []);
-  const [modalOpen, setModalOpen] = React.useState(false);
+  const pathname = usePathname();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const logout = useAuthStore((s) => s.logout);
+  const isPublic = PUBLIC_PATHS.includes(pathname);
+  const [restoring, setRestoring] = React.useState(!isPublic && !isAuthenticated);
 
   React.useEffect(() => {
-    function handleAuth401() {
-      logout();
-      setModalOpen(true);
-    }
+    window.addEventListener("auth:401", toLogin);
+    return () => window.removeEventListener("auth:401", toLogin);
+  }, []);
 
-    if (typeof window !== "undefined") {
-      window.addEventListener("auth:401", handleAuth401);
-      return () => {
-        window.removeEventListener("auth:401", handleAuth401);
-      };
-    }
-  }, [logout]);
-
+  // The access token lives in memory, so a reload starts without one. The
+  // refresh cookie is HttpOnly and invisible here: just ask for a new token
+  // before any page query runs.
   React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const cookieExists =
-        document.cookie
-          .split(";")
-          .some(
-            (c) =>
-              c.trim().startsWith("pgg_refresh=") ||
-              c.trim().startsWith("auth=")
-          ) || false;
-      const hasAuth =
-        cookieExists ||
-        Boolean(window.sessionStorage.getItem("pgguardian_api_token"));
-      if (hasAuth && !isAuthenticated) {
-        useAuthStore.getState().refreshAccessToken().then((tok) => {
-          if (!tok) {
-            useAuthStore.getState().setAuthenticated(true);
-          }
-        });
-      }
-    } catch {
+    if (isPublic || useAuthStore.getState().isAuthenticated) {
+      setRestoring(false);
+      return;
     }
-  }, [isAuthenticated]);
+    let cancelled = false;
+    useAuthStore
+      .getState()
+      .refreshAccessToken()
+      .then((token) => {
+        if (cancelled) return;
+        if (token) {
+          setRestoring(false);
+        } else {
+          toLogin();
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPublic]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
-      <MasterPasswordModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-      />
-      <ReactQueryDevtools
-        initialIsOpen={false}
-        buttonPosition="bottom-right"
-      />
+      {restoring ? (
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        children
+      )}
+      <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
     </QueryClientProvider>
   );
 }

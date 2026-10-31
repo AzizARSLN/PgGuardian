@@ -1,0 +1,114 @@
+{
+  "common": {
+    "language": "Dil",
+    "logout": "Oturumu kapat",
+    "refresh": "Yenile",
+    "cancel": "Vazgeç",
+    "confirm": "Onayla",
+    "save": "Kaydet",
+    "delete": "Sil",
+    "create": "Oluştur",
+    "close": "Kapat",
+    "search": "Ara",
+    "copy": "Kopyala",
+    "copied": "Kopyalandı",
+    "retry": "Tekrar dene",
+    "loading": "Yükleniyor...",
+    "noData": "Kayıt yok",
+    "loadFailed": "Veri alınamadı"
+  },
+  "api": {
+    "sessionExpired": "Oturumunuzun süresi doldu, lütfen tekrar giriş yapın.",
+    "validation": "Doğrulama hatası",
+    "server": "Sunucu hatası",
+    "forbidden": "Yetki hatası",
+    "request": "İstek hatası",
+    "notFound": "Bulunamadı",
+    "network": "Sunucuya ulaşılamıyor",
+    "timeout": "İstek zaman aşımına uğradı",
+    "timeoutHint": "Sunucu yanıt vermedi. Uzun işlemler arka planda devam ediyor olabilir.",
+    "loginFailed": "Giriş başarısız"
+  },
+  "nav": {
+    "tagline": "PostgreSQL DBA konsolu",
+    "menu": "Menü",
+    "groups": {
+      "monitor": "İzleme",
+      "explore": "Veri",
+      "operate": "Operasyon",
+      "access": "Erişim",
+      "system": "Sistem"
+    },
+    "items": {
+      "dashboard": "Genel Bakış",
+      "statements": "SQL Analizi",
+      "queryManagement": "Canlı Sorgular",
+      "diagnostics": "Teşhis",
+      "replication": "Replikasyon",
+      "sqlEditor": "SQL Editörü",
+      "schemaBrowser": "Şema Gezgini",
+      "databases": "Veritabanları",
+      "maintenance": "Bakım",
+      "backups": "Yedekler",
+      "snapshots": "Anlık Görüntüler",
+      "config": "Yapılandırma",
+      "connections": "Bağlantı Profilleri",
+      "roles": "Roller",
+      "users": "Kullanıcılar",
+      "report": "Rapor",
+      "settings": "Ayarlar"
+    }
+  },
+  "header": {
+    "loadingProfiles": "Profiller yükleniyor...",
+    "noProfile": "Profil yok",
+    "connectionProfile": "Bağlantı profili",
+    "manage": "Yönet",
+    "emptyProfiles": "Henüz bağlantı profili yok",
+    "createFirstProfile": "İlk profili oluştur",
+    "toggleTheme": "Temayı değiştir",
+    "account": "Hesap"
+  },
+  "login": {
+    "headline": "Veritabanınızda neyin yavaşladığını ve neyi değiştirmeniz gerektiğini görün.",
+    "features": {
+      "statements": {
+        "title": "Tekrar eden SQL analizi",
+        "desc": "Her profil için en sık çalışan sorgular, maliyetleri, planları ve önerilen düzeltmeler."
+      },
+      "diagnostics": {
+        "title": "Canlı teşhis",
+        "desc": "Kilitler, uzun süren sorgular, şişkinlik, replikasyon gecikmesi ve sağlık puanı."
+      },
+      "operations": {
+        "title": "Korumalı operasyonlar",
+        "desc": "VACUUM, yedekleme ve rol yönetimi; önizleme ve açık onay ile."
+      }
+    },
+    "title": "Giriş yap",
+    "subtitle": "Devam etmek için hesabınızla oturum açın.",
+    "email": "E-posta",
+    "password": "Şifre",
+    "showPassword": "Şifreyi göster",
+    "hidePassword": "Şifreyi gizle",
+    "submit": "Giriş yap",
+    "locked": "Çok fazla hatalı deneme. {seconds} sn sonra tekrar deneyin.",
+    "passwordChanged": "Şifreniz değiştirildi",
+    "changeTitle": "Şifrenizi değiştirin",
+    "changeDescription": "Devam etmeden önce hesabınız için yeni bir şifre belirlemeniz gerekiyor.",
+    "currentPassword": "Mevcut şifre",
+    "newPassword": "Yeni şifre",
+    "confirmPassword": "Yeni şifre (tekrar)",
+    "changeSubmit": "Şifreyi değiştir",
+    "errors": {
+      "emailShort": "E-posta en az 3 karakter olmalı",
+      "emailFormat": "Geçerli bir e-posta girin (ör: admin@local)",
+      "passwordRequired": "Şifre boş olamaz",
+      "currentRequired": "Mevcut şifre boş olamaz",
+      "newShort": "Şifre en az 8 karakter olmalı",
+      "mismatch": "Şifreler eşleşmiyor",
+      "failed": "Giriş başarısız",
+      "changeFailed": "Şifre değiştirilemedi"
+    }
+  }
+}

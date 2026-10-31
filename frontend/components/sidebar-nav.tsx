@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   DatabaseZap,
@@ -19,140 +18,166 @@ import {
   FileBarChart2,
   Settings,
   LogOut,
+  Gauge,
+  Database,
+  Users,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import { useRole } from "@/lib/hooks/use-role";
 import { useUIStore } from "@/store/use-ui-store";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/connections", label: "Connections", icon: DatabaseZap },
-  { href: "/diagnostics", label: "Diagnostics", icon: Activity },
-  { href: "/sql-editor", label: "SQL Editor", icon: TerminalSquare },
-  { href: "/query-management", label: "Query Management", icon: ListFilter },
-  { href: "/schema-browser", label: "Schema Browser", icon: Table2 },
-  { href: "/roles", label: "Roles", icon: ShieldCheck },
-  { href: "/maintenance", label: "Maintenance", icon: Wrench },
-  { href: "/config", label: "Config", icon: Settings2 },
-  { href: "/replication", label: "Replication", icon: GitBranch },
-  { href: "/backups", label: "Backups", icon: DatabaseBackup },
-  { href: "/snapshots", label: "Snapshots", icon: Camera },
-  { href: "/report", label: "Report", icon: FileBarChart2 },
-  { href: "/settings", label: "Settings", icon: Settings },
-] as const;
+interface NavItem {
+  href: string;
+  key: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+  writerOnly?: boolean;
+}
+
+const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
+  {
+    key: "monitor",
+    items: [
+      { href: "/dashboard", key: "dashboard", icon: LayoutDashboard },
+      { href: "/statements", key: "statements", icon: Gauge },
+      { href: "/query-management", key: "queryManagement", icon: ListFilter },
+      { href: "/diagnostics", key: "diagnostics", icon: Activity },
+      { href: "/replication", key: "replication", icon: GitBranch },
+    ],
+  },
+  {
+    key: "explore",
+    items: [
+      { href: "/sql-editor", key: "sqlEditor", icon: TerminalSquare, writerOnly: true },
+      { href: "/schema-browser", key: "schemaBrowser", icon: Table2 },
+      { href: "/databases", key: "databases", icon: Database },
+    ],
+  },
+  {
+    key: "operate",
+    items: [
+      { href: "/maintenance", key: "maintenance", icon: Wrench, writerOnly: true },
+      { href: "/backups", key: "backups", icon: DatabaseBackup, writerOnly: true },
+      { href: "/snapshots", key: "snapshots", icon: Camera, writerOnly: true },
+      { href: "/config", key: "config", icon: Settings2, writerOnly: true },
+    ],
+  },
+  {
+    key: "access",
+    items: [
+      { href: "/connections", key: "connections", icon: DatabaseZap, writerOnly: true },
+      { href: "/roles", key: "roles", icon: ShieldCheck, writerOnly: true },
+      { href: "/users", key: "users", icon: Users, adminOnly: true },
+    ],
+  },
+  {
+    key: "system",
+    items: [
+      { href: "/report", key: "report", icon: FileBarChart2 },
+      { href: "/settings", key: "settings", icon: Settings },
+    ],
+  },
+];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
-  const { logout } = useAuthStore();
+  const logout = useAuthStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
+  const { isAdmin, isDBA } = useRole();
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
+  const handleLogout = async () => {
+    await logout();
     onNavigate?.();
+    router.push("/login");
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="mb-8 px-3">
-        <Link href="/dashboard" className="flex items-center gap-3" onClick={onNavigate}>
-          <div className="h-12 w-12 rounded-full bg-gradient-accent flex items-center justify-center shadow-sm">
-            <DatabaseZap className="h-6 w-6 text-foreground" />
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-xl font-bold text-gradient">PgGuardian</span>
-            <span className="text-xs text-muted-foreground">PostgreSQL Panel</span>
-          </div>
-        </Link>
-      </div>
+    <div className="flex h-full flex-col">
+      <Link
+        href="/dashboard"
+        onClick={onNavigate}
+        className="mb-4 flex items-center gap-2.5 px-2"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-accent">
+          <ShieldCheck className="h-4.5 w-4.5" />
+        </span>
+        <span className="flex flex-col leading-tight">
+          <span className="text-sm font-bold text-sidebar-foreground">PgGuardian</span>
+          <span className="text-[11px] text-sidebar-foreground/60">{t("nav.tagline")}</span>
+        </span>
+      </Link>
 
-      <nav className="flex-1 flex flex-col gap-1.5 overflow-y-auto pr-1">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            pathname === item.href || pathname?.startsWith(item.href + "/");
+      <nav className="-mr-1 flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
+        {NAV_GROUPS.map((group) => {
+          // Roles load after the session refresh; hide nothing until they are known.
+          const items = group.items.filter(
+            (item) =>
+              !user || ((!item.adminOnly || isAdmin) && (!item.writerOnly || isDBA))
+          );
+          if (items.length === 0) return null;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all",
-                isActive
-                  ? "bg-gradient-to-r from-info/20 to-success/20 text-foreground border border-border shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-5 w-5 shrink-0 transition-colors",
-                  isActive
-                    ? "text-gradient"
-                    : "text-muted-foreground group-hover:text-foreground"
-                )}
-                style={
-                  isActive
-                    ? {
-                        stroke: "url(#sideGradient)",
-                      }
-                    : undefined
-                }
-              />
-              <svg width="0" height="0" className="absolute">
-                <defs>
-                  <linearGradient id="sideGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="var(--chart-1)" />
-                    <stop offset="100%" stopColor="var(--chart-2)" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <span className="truncate">{item.label}</span>
-              {isActive && (
-                <span className="ml-auto h-2.5 w-2.5 rounded-full bg-gradient-accent" />
-              )}
-            </Link>
+            <div key={group.key}>
+              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+                {t(`nav.groups.${group.key}`)}
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive =
+                    pathname === item.href || pathname?.startsWith(item.href + "/");
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={isActive ? "page" : undefined}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-md border-l-2 px-2 py-1.5 text-[13px] font-medium transition-colors",
+                        isActive
+                          ? "border-guardian-lime bg-sidebar-accent text-sidebar-foreground"
+                          : "border-transparent text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{t(`nav.items.${item.key}`)}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </nav>
 
-      <div className="mt-auto pt-4 border-t border-border space-y-2">
+      <div className="mt-3 border-t border-sidebar-border pt-2">
         <button
+          type="button"
           onClick={handleLogout}
-          className="w-full group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all text-muted-foreground hover:bg-muted hover:text-destructive"
+          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
-          <LogOut className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-destructive" />
-          <span className="truncate">Logout</span>
+          <LogOut className="h-4 w-4 shrink-0" />
+          {t("common.logout")}
         </button>
-        <div className="px-3 py-3 rounded-md bg-card border border-border">
-          <div className="flex items-center gap-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground truncate">v1.0.0</p>
-              <p className="text-xs text-success truncate flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                API: 127.0.0.1:8000
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
 export default function SidebarNav() {
+  const t = useT();
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const { sidebarOpen, setSidebarOpen } = useUIStore();
 
   if (isDesktop) {
     return (
-      <aside className="w-64 shrink-0 min-h-screen sticky top-0 left-0 h-screen border-r border-border bg-card p-6 flex flex-col gap-2 overflow-hidden">
+      <aside className="sticky left-0 top-0 h-screen w-56 shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar p-3">
         <SidebarContent />
       </aside>
     );
@@ -162,10 +187,10 @@ export default function SidebarNav() {
     <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <SheetContent
         side="left"
-        className="w-[85%] max-w-[85%] border-r border-border bg-sidebar p-6"
+        className="w-[85%] max-w-[300px] border-r border-sidebar-border bg-sidebar p-3"
       >
         <SheetHeader className="mb-0">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <SheetTitle className="sr-only">{t("nav.menu")}</SheetTitle>
         </SheetHeader>
         <SidebarContent onNavigate={() => setSidebarOpen(false)} />
       </SheetContent>

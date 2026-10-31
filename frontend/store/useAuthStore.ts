@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { api, setApiTokenInMemory, clearApiTokenInMemory } from "@/lib/api/client";
+import { tGlobal } from "@/lib/i18n";
 
 export type UserRole = "Admin" | "DBA" | "Viewer";
 
@@ -41,6 +42,8 @@ interface AuthState {
   clearAuth: () => void;
 }
 
+let refreshInFlight: Promise<string | null> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   access_token: null,
@@ -60,7 +63,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (!res.ok) {
-        let detail = "Giriş başarısız";
+        let detail = tGlobal("api.loginFailed");
         try {
           const err = await res.json();
           if (err?.detail) detail = err.detail;
@@ -85,7 +88,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  refreshAccessToken: async () => {
+  refreshAccessToken: () => {
+    refreshInFlight ??= (async () => {
     try {
       const res = await fetch("/api/auth", {
         method: "PATCH",
@@ -110,7 +114,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return newToken;
     } catch {
       return null;
+    } finally {
+      refreshInFlight = null;
     }
+    })();
+    return refreshInFlight;
   },
 
   logout: async () => {
