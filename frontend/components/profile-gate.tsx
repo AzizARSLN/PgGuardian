@@ -1,28 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowRight,
+  ChevronRight,
   Database,
   Loader2,
   LogOut,
   Plus,
   RefreshCw,
-  ShieldCheck,
-  Star,
+  Search,
+  Settings2,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
-import PggBackdrop from "@/components/pgg-backdrop";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";
 import { endpoints, type Profile } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
+import { useRole } from "@/lib/hooks/use-role";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useProfileStore } from "@/store/useProfileStore";
+
+const SEARCH_THRESHOLD = 6;
+
+function connectionLabel(profile: Profile): string {
+  return `${profile.username}@${profile.host}:${profile.port}/${profile.database}`;
+}
 
 /**
  * Blocks the whole application until a connection profile is chosen. Without a
@@ -34,13 +42,23 @@ export default function ProfileGate() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const setSelectedProfileName = useProfileStore((s) => s.setSelectedProfileName);
+  const { isDBA } = useRole();
   const [pending, setPending] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const { data: profiles, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: qk.profiles.all(),
     queryFn: () => endpoints.listProfiles(),
     retry: 1,
   });
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return profiles ?? [];
+    return (profiles ?? []).filter((profile) =>
+      `${profile.name} ${connectionLabel(profile)}`.toLowerCase().includes(term)
+    );
+  }, [profiles, search]);
 
   const handleSelect = (profile: Profile) => {
     if (pending) return;
@@ -57,125 +75,142 @@ export default function ProfileGate() {
   };
 
   return (
-    <div className="pgg-stage flex min-h-screen flex-col overflow-hidden">
-      <PggBackdrop />
-
-      <header className="relative z-10 flex items-center justify-between gap-3 px-4 py-4 sm:px-6">
-        <div className="dark flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-accent">
-            <ShieldCheck className="h-5 w-5" />
-          </span>
-          <span className="text-sm font-bold text-guardian-white">PgGuardian</span>
-        </div>
-        <div className="dark flex items-center gap-2">
-          <LanguageSwitcher className="hidden sm:inline-flex" />
+    <div className="dark pgg-stage flex min-h-screen flex-col text-foreground">
+      <header className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-6">
+        <BrandMark />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
           {user && (
-            <span className="hidden max-w-[180px] truncate text-xs text-guardian-lavender-soft/70 md:inline">
+            <span className="hidden max-w-[200px] truncate text-xs text-muted-foreground md:inline">
               {user.email}
             </span>
           )}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={handleLogout}
-            className="border-white/15 bg-white/5 text-guardian-white hover:bg-white/10 hover:text-guardian-white"
+            aria-label={t("profileGate.logout")}
+            className="text-muted-foreground"
           >
-            <LogOut /> {t("profileGate.logout")}
+            <LogOut />
+            <span className="hidden sm:inline">{t("profileGate.logout")}</span>
           </Button>
         </div>
       </header>
 
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-8">
-        <div className="dark w-full max-w-3xl">
-          <div className="mb-7 text-center">
-            <h1 className="text-2xl font-bold tracking-tight text-guardian-white">
-              {t("profileGate.title")}
-            </h1>
-            <p className="mx-auto mt-2 max-w-xl text-[13px] leading-relaxed text-guardian-lavender-soft/70">
-              {t("profileGate.subtitle")}
-            </p>
-          </div>
+      <main className="flex flex-1 justify-center px-4 pb-10 pt-[12vh]">
+        <div className="pgg-rise w-full max-w-xl">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("profileGate.title")}</h1>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+            {t("profileGate.subtitle")}
+          </p>
 
-          {isLoading ? (
-            <div className="flex flex-col items-center gap-3 py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-guardian-lime" />
-              <p className="text-[13px] text-guardian-lavender-soft/60">
+          <div className="mt-6">
+            {isLoading ? (
+              <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-4 py-5 text-[13px] text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
                 {t("profileGate.loading")}
-              </p>
-            </div>
-          ) : isError ? (
-            <div className="pgg-card mx-auto max-w-md p-6 text-center">
-              <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-warning" />
-              <p className="mb-4 text-sm text-muted-foreground">{t("profileGate.error")}</p>
-              <Button onClick={() => refetch()} disabled={isFetching}>
-                {isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                {t("profileGate.retry")}
-              </Button>
-            </div>
-          ) : !profiles || profiles.length === 0 ? (
-            <div className="pgg-card mx-auto max-w-md p-8 text-center">
-              <Database className="mx-auto mb-3 h-7 w-7 text-guardian-lavender" />
-              <p className="text-sm font-semibold text-guardian-white">{t("profileGate.empty")}</p>
-              <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
-                {t("profileGate.emptyHint")}
-              </p>
-              <Button asChild>
-                <Link href="/connections">
-                  <Plus /> {t("profileGate.createProfile")}
-                </Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {profiles.map((profile) => (
-                <button
-                  key={profile.name}
-                  type="button"
-                  onClick={() => handleSelect(profile)}
-                  disabled={pending !== null}
-                  className="pgg-tile group flex flex-col gap-3 rounded-2xl border border-white/15 bg-white/[0.06] p-4 text-left backdrop-blur-md disabled:opacity-60"
+              </div>
+            ) : isError ? (
+              <div className="rounded-lg border border-destructive/40 bg-card p-4">
+                <p className="flex items-center gap-2 text-[13px] font-medium">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+                  {t("profileGate.error")}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
-                      <Database className="h-4 w-4 text-guardian-lime" />
-                    </span>
-                    {profile.is_default && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-warning">
-                        <Star className="h-3 w-3 fill-warning" />
-                        {t("profileGate.default")}
-                      </span>
-                    )}
+                  {isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                  {t("profileGate.retry")}
+                </Button>
+              </div>
+            ) : !profiles || profiles.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border bg-card/50 px-6 py-10 text-center">
+                <Database className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
+                <p className="text-sm font-semibold">{t("profileGate.empty")}</p>
+                <p className="mx-auto mt-1 max-w-sm text-[13px] text-muted-foreground">
+                  {t(isDBA ? "profileGate.emptyHint" : "profileGate.emptyViewerHint")}
+                </p>
+                {isDBA && (
+                  <Button asChild className="mt-5">
+                    <Link href="/connections">
+                      <Plus /> {t("profileGate.createProfile")}
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                {profiles.length >= SEARCH_THRESHOLD && (
+                  <div className="relative mb-2">
+                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder={t("profileGate.searchPlaceholder")}
+                      aria-label={t("profileGate.searchPlaceholder")}
+                      autoFocus
+                      className="pl-8"
+                    />
                   </div>
+                )}
 
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-guardian-white">
-                      {profile.name}
-                    </p>
-                    <p className="mt-0.5 truncate font-mono text-[11px] text-guardian-lavender-soft/60">
-                      {profile.username}@{profile.host}:{profile.port}/{profile.database}
-                    </p>
-                  </div>
+                {visible.length === 0 ? (
+                  <p className="rounded-lg border border-border bg-card px-4 py-6 text-center text-[13px] text-muted-foreground">
+                    {t("profileGate.noMatch")}
+                  </p>
+                ) : (
+                  <ul className="max-h-[52vh] divide-y divide-border overflow-y-auto rounded-lg border border-border bg-card">
+                    {visible.map((profile) => (
+                      <li key={profile.name}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelect(profile)}
+                          disabled={pending !== null}
+                          className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:opacity-60"
+                        >
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                            <Database className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              <span className="truncate text-sm font-semibold">{profile.name}</span>
+                              {profile.is_default && (
+                                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  {t("profileGate.default")}
+                                </span>
+                              )}
+                            </span>
+                            <span className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
+                              {connectionLabel(profile)}
+                            </span>
+                          </span>
+                          {pending === profile.name ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-guardian-lime opacity-0 transition-opacity group-hover:opacity-100">
-                    {pending === profile.name ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <ArrowRight className="h-3 w-3" />
-                    )}
-                    {t("profileGate.connect")}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-7 text-center">
-            <Link
-              href="/connections"
-              className="text-xs font-medium text-guardian-lavender-soft/60 underline-offset-4 transition hover:text-guardian-lime hover:underline"
-            >
-              {t("profileGate.manageProfiles")}
-            </Link>
+                {isDBA && (
+                  <Link
+                    href="/connections"
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                    {t("profileGate.manageProfiles")}
+                  </Link>
+                )}
+              </>
+            )}
           </div>
         </div>
       </main>
