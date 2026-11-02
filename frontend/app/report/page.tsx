@@ -5,84 +5,46 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  FileBarChart2,
-  FileJson,
-  FileCode,
-  Download,
-  RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
-  AlertTriangle,
-  Skull,
+  FileBarChart2,
+  FileCode,
+  FileJson,
   Info,
-  Activity,
-  HardDrive,
-  Users,
-  Database,
-  Shield,
-  Copy,
-  ExternalLink,
-  Server,
+  RefreshCw,
 } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RiskBadge } from "@/components/ui/risk-badge";
+import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { endpoints, ReportDict } from "@/lib/api/types";
+import { endpoints, type ReportDict } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { formatBytes, formatDate, formatNumber } from "@/lib/utils";
+import { useI18n, type TFunction } from "@/lib/i18n";
+import { formatBytes } from "@/lib/utils";
 
-type ReportSectionId =
-  | "summary"
-  | "health"
-  | "diagnostics"
-  | "storage"
-  | "replication"
-  | "connections"
-  | "roles";
+const SECTION_IDS = [
+  "summary",
+  "health",
+  "diagnostics",
+  "storage",
+  "replication",
+  "connections",
+  "roles",
+] as const;
+type ReportSectionId = (typeof SECTION_IDS)[number];
 
-interface SectionDef {
-  id: ReportSectionId;
-  title: string;
-  description: string;
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-}
-
-const SECTIONS: SectionDef[] = [
-  { id: "summary", title: "Özet", description: "Raporun genel özeti ve ana metrikler", icon: Activity, color: "from-info to-success" },
-  { id: "health", title: "Sağlık Kontrolleri", description: "Her bir sağlık kontrolünün detayı ve durumu", icon: Shield, color: "from-success to-success" },
-  { id: "diagnostics", title: "Tanı Bulguları", description: "CRITICAL / WARNING / INFO seviyesinde bulgular", icon: AlertTriangle, color: "from-warning to-warning" },
-  { id: "storage", title: "Depolama: Top 10", description: "En büyük 10 tablo, indeks ve veritabanı", icon: HardDrive, color: "from-info to-info" },
-  { id: "replication", title: "Replikasyon", description: "Replica lag, slotlar ve streaming durumu", icon: Copy, color: "from-info to-info" },
-  { id: "connections", title: "Bağlantılar", description: "Aktif / boşta / bekleyen bağlantılar özeti", icon: Users, color: "from-destructive to-destructive" },
-  { id: "roles", title: "Roller", description: "Süper kullanıcı, login, yetki özeti", icon: Server, color: "from-info to-info" },
-];
-
-function extractArray(report: ReportDict | undefined, key: string): unknown[] {
-  if (!report) return [];
-  const v = report[key];
-  if (Array.isArray(v)) return v as unknown[];
-  if (v && typeof v === "object" && Array.isArray((v as Record<string, unknown>)[key])) return (v as Record<string, unknown>)[key] as unknown[];
-  if (v && typeof v === "object" && Array.isArray((v as Record<string, unknown>).items)) return (v as Record<string, unknown>).items as unknown[];
-  if (v && typeof v === "object") {
-    const arr = Object.values(v as Record<string, unknown>).filter((x) => x && typeof x === "object");
-    if (arr.length > 0) return arr;
-  }
-  return [];
-}
+type Row = Record<string, unknown>;
 
 function getReportVal<T>(report: ReportDict | undefined, path: string, fallback: T): T {
   if (!report) return fallback;
-  const parts = path.split(".");
   let cur: unknown = report;
-  for (const p of parts) {
-    if (cur && typeof cur === "object" && p in (cur as Record<string, unknown>)) {
-      cur = (cur as Record<string, unknown>)[p];
+  for (const part of path.split(".")) {
+    if (cur && typeof cur === "object" && part in (cur as Row)) {
+      cur = (cur as Row)[part];
     } else {
       return fallback;
     }
@@ -90,64 +52,160 @@ function getReportVal<T>(report: ReportDict | undefined, path: string, fallback:
   return (cur ?? fallback) as T;
 }
 
+function getRows(report: ReportDict | undefined, path: string): Row[] {
+  const value = getReportVal<unknown>(report, path, []);
+  return Array.isArray(value) ? (value as Row[]) : [];
+}
 
+function severityToRisk(severity: string): RiskLevel {
+  switch (severity) {
+    case "OK":
+      return "OK";
+    case "INFO":
+      return "INFO";
+    case "WARNING":
+      return "WARNING";
+    default:
+      return "DANGEROUS";
+  }
+}
 
-function buildHtmlReport(report: ReportDict, generatedAt: string): string {
-  const json = JSON.stringify(report, null, 2);
-  const score = getReportVal<number>(report, "health.score", 0) || getReportVal<number>(report, "summary.score", 0) || 0;
-  const db = getReportVal<string>(report, "health.database", "") || getReportVal<string>(report, "summary.database", "-") || "-";
-  const version = getReportVal<string>(report, "health.server_version", "") || getReportVal<string>(report, "summary.server_version", "-") || "-";
-  const connections = getReportVal<number>(report, "connections.summary.current_connections", 0);
-  const maxConn = getReportVal<number>(report, "connections.summary.max_connections", 0);
+function escapeHtml(value: unknown): string {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Standalone export: its own CSS, readable on white paper in any app theme. */
+function buildHtmlReport(
+  report: ReportDict,
+  generatedAt: string,
+  lang: string,
+  t: TFunction,
+  formatNumber: (value: number) => string
+): string {
+  const db = escapeHtml(getReportVal<string>(report, "health.database", "-"));
+  const version = escapeHtml(getReportVal<string>(report, "health.server_version", "-"));
+  const when = escapeHtml(generatedAt);
+  const score = formatNumber(getReportVal<number>(report, "health.score", 0));
+  const current = formatNumber(getReportVal<number>(report, "connections.summary.current_connections", 0));
+  const max = formatNumber(getReportVal<number>(report, "connections.summary.max_connections", 0));
   return `<!doctype html>
-<html lang="tr">
+<html lang="${escapeHtml(lang)}">
 <head>
 <meta charset="utf-8" />
-<title>PgGuardian Report — ${db} — ${generatedAt}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PgGuardian — ${db} — ${when}</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0b1220;color:#e2e8f0;margin:0;padding:32px;line-height:1.6}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#ffffff;color:#412C70;margin:0;padding:24px;line-height:1.5}
   .wrap{max-width:1100px;margin:0 auto}
-  h1{font-size:28px;margin:0 0 8px;background:linear-gradient(135deg,#6366f1,#10b981);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .meta{color:#94a3b8;font-size:13px;margin-bottom:28px}
-  .card{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;margin-bottom:20px}
-  .score{font-size:56px;font-weight:900;background:linear-gradient(135deg,#6366f1,#10b981);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-  .kpi{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px}
-  .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;font-weight:600}
-  .kpi-val{font-size:22px;font-weight:800;margin-top:4px;color:#f1f5f9}
-  h2{font-size:18px;margin:0 0 12px;color:#f1f5f9}
-  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
-  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06)}
-  th{color:#94a3b8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
-  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700}
-  .pill-ok{background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)}
-  .pill-warn{background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)}
-  .pill-crit{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3)}
-  pre{background:#020617;border:1px solid rgba(255,255,255,0.08);padding:16px;border-radius:14px;overflow:auto;max-height:400px;font-size:12px;color:#86efac}
+  h1{font-size:20px;margin:0 0 4px;color:#412C70;border-bottom:3px solid #FFB347;padding-bottom:6px}
+  h2{font-size:14px;margin:0 0 8px;color:#412C70}
+  .meta{font-size:12px;margin-bottom:16px}
+  .card{border:1px solid #8B85C1;border-radius:6px;padding:12px;margin-bottom:12px}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+  .kpi{background:#EAE8FF;border-radius:6px;padding:8px 12px}
+  .kpi-label{font-size:11px}
+  .kpi-val{font-size:20px;font-weight:700;font-family:ui-monospace,Consolas,monospace}
+  pre{background:#412C70;color:#B3F968;padding:12px;border-radius:6px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>PgGuardian — Tam Rapor</h1>
+  <h1>${escapeHtml(t("report.export.title"))}</h1>
   <div class="meta">
-    Veritabanı: <b>${db}</b> · PostgreSQL ${version} · Üretilme: ${generatedAt}
+    ${escapeHtml(t("report.export.meta", { database: "\u0000" })).replace("\u0000", `<b>${db}</b>`)} · PostgreSQL ${version} · ${escapeHtml(t("report.export.generated", { when: generatedAt }))}
   </div>
   <div class="card">
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Sağlık Skoru</div><div class="score" style="font-size:40px">${score}</div></div>
-      <div class="kpi"><div class="kpi-label">Bağlantı</div><div class="kpi-val">${connections} / ${maxConn}</div></div>
+      <div class="kpi"><div class="kpi-label">${escapeHtml(t("report.kpi.score"))}</div><div class="kpi-val">${score}</div></div>
+      <div class="kpi"><div class="kpi-label">${escapeHtml(t("report.kpi.connections"))}</div><div class="kpi-val">${current} / ${max}</div></div>
     </div>
   </div>
   <div class="card">
-    <h2>Tam JSON</h2>
-    <pre>${json.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+    <h2>${escapeHtml(t("report.export.fullJson"))}</h2>
+    <pre>${escapeHtml(JSON.stringify(report, null, 2))}</pre>
   </div>
 </div>
 </body>
 </html>`;
 }
 
+function downloadFile(content: string, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function InlineError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center justify-center gap-3 rounded-md border border-destructive/30 bg-card px-3 py-3 text-xs text-destructive">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      {t("common.loadFailed")}
+      <Button variant="outline" size="sm" className="h-7" onClick={onRetry}>
+        <RefreshCw className="h-3.5 w-3.5" />
+        {t("common.retry")}
+      </Button>
+    </div>
+  );
+}
+
+function RowsSkeleton() {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-1.5" aria-label={t("common.loading")}>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-6 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  sub,
+  badge,
+  valueClass,
+}: {
+  label: string;
+  value?: string;
+  sub?: string;
+  badge?: React.ReactNode;
+  valueClass?: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-xs text-muted-foreground">{label}</span>
+        {badge}
+      </div>
+      {value === undefined ? (
+        <Skeleton className="mt-1 h-5 w-16" />
+      ) : (
+        <div className={`truncate font-mono text-base font-semibold ${valueClass ?? ""}`} title={value}>
+          {value}
+        </div>
+      )}
+      {sub !== undefined && (
+        <div className="truncate font-mono text-xs text-muted-foreground" title={sub}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ReportPage() {
+  const { t, locale, formatDate, formatNumber } = useI18n();
   const [open, setOpen] = useState<Record<ReportSectionId, boolean>>({
     summary: true,
     health: true,
@@ -158,270 +216,231 @@ export default function ReportPage() {
     roles: true,
   });
 
-  const { data: report, isLoading, refetch, dataUpdatedAt } = useQuery({
+  const {
+    data: report,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+    dataUpdatedAt,
+  } = useQuery({
     queryKey: qk.diagnostics.report(50),
     queryFn: () => endpoints.getReport(50),
     staleTime: 30000,
   });
 
-  const toggle = (id: ReportSectionId) =>
-    setOpen((o) => ({ ...o, [id]: !o[id] }));
+  // /report carries neither replication nor roles, so they have their own queries.
+  const replication = useQuery({
+    queryKey: qk.replication.status(),
+    queryFn: () => endpoints.getReplication(),
+  });
+
+  const toggle = (id: ReportSectionId) => setOpen((o) => ({ ...o, [id]: !o[id] }));
 
   const generatedAt = useMemo(
-    () => (dataUpdatedAt ? formatDate(new Date(dataUpdatedAt)) : formatDate(new Date())),
-    [dataUpdatedAt]
+    () => (dataUpdatedAt ? formatDate(dataUpdatedAt) : "-"),
+    [dataUpdatedAt, formatDate]
   );
 
-  const summaryKPIs = useMemo(() => {
-    const score = getReportVal<number>(report, "health.score", 0) || getReportVal<number>(report, "summary.score", 0) || 0;
-    const db = getReportVal<string>(report, "health.database", "") || getReportVal<string>(report, "summary.database", "-") || "-";
-    const version = getReportVal<string>(report, "health.server_version", "") || getReportVal<string>(report, "summary.server_version", "-") || "-";
+  const kpi = useMemo(() => {
     const current = getReportVal<number>(report, "connections.summary.current_connections", 0);
     const max = getReportVal<number>(report, "connections.summary.max_connections", 0);
-    const totalLocks = getReportVal<number>(report, "locks.summary.total_locks", 0);
-    const blocking = getReportVal<number>(report, "locks.summary.blocking_pairs", 0);
-    const replicasArr = extractArray(report, "replicas");
-    const repCount = replicasArr.length > 0 ? replicasArr.length : Number(getReportVal<unknown>(report, "replication.replicas", 0) ?? 0) || 0;
-    const replicas = repCount;
-    const storageArr = extractArray(report, "tables");
-    const topSize = storageArr.length > 0 ? (storageArr[0] as Record<string, unknown>).total_size_bytes ?? 0 : 0;
-    return { score, db, version, current, max, totalLocks, blocking, replicas, topSize: Number(topSize) };
+    return {
+      score: getReportVal<number>(report, "health.score", 0),
+      db: getReportVal<string>(report, "health.database", "-"),
+      version: getReportVal<string>(report, "health.server_version", "-"),
+      current,
+      max,
+      usage: max > 0 ? current / max : 0,
+      totalLocks: getReportVal<number>(report, "locks.summary.total_locks", 0),
+      blocking: getReportVal<number>(report, "locks.summary.blocking_pairs", 0),
+    };
   }, [report]);
 
+  const safeDb = String(kpi.db).replace(/[^\w.-]+/g, "_") || "all";
+
   const handleDownloadJson = () => {
+    if (!report) return;
     try {
-      const blob = new Blob([JSON.stringify(report ?? {}, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `pgguardian-report-${summaryKPIs.db || "all"}-${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success("JSON indirildi");
+      downloadFile(
+        JSON.stringify(report, null, 2),
+        "application/json",
+        `pgguardian-report-${safeDb}-${Date.now()}.json`
+      );
+      toast.success(t("report.toast.jsonDone"));
     } catch {
-      toast.error("JSON indirilemedi");
+      toast.error(t("report.toast.jsonFailed"));
     }
   };
 
   const handleDownloadHtml = () => {
+    if (!report) return;
     try {
-      const html = buildHtmlReport(report ?? {}, generatedAt);
-      const blob = new Blob([html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `pgguardian-report-${summaryKPIs.db || "all"}-${Date.now()}.html`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success("HTML indirildi");
+      downloadFile(
+        buildHtmlReport(report, generatedAt, locale, t, (n) => formatNumber(n)),
+        "text/html",
+        `pgguardian-report-${safeDb}-${Date.now()}.html`
+      );
+      toast.success(t("report.toast.htmlDone"));
     } catch {
-      toast.error("HTML indirilemedi");
+      toast.error(t("report.toast.htmlFailed"));
     }
   };
 
-  const handleOpenScalar = () => {
-    try {
-      window.open("/api/v1/reference", "_blank", "noopener,noreferrer");
-    } catch {
-      toast.error("Scalar UI açılamadı");
-    }
-  };
+  const showValues = !isLoading && !isError;
+  const replicaCount = replication.data?.replicas?.length;
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-            <FileBarChart2 className="h-8 w-8 text-success" />
-            Report
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <FileBarChart2 className="h-4 w-4 text-muted-foreground" />
+            {t("report.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Tam sağlık · tanı · depolama · replikasyon · bağlantı · roller özeti · Üretilme: {generatedAt}
+          <p className="text-xs text-muted-foreground">
+            {t("report.subtitle", { when: generatedAt })}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" className="h-12" onClick={() => refetch()}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} /> Yenile
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            {t("common.refresh")}
           </Button>
-          <Button variant="outline" className="h-12" onClick={handleOpenScalar}>
-            <ExternalLink className="h-4 w-4 mr-2" /> Scalar UI
+          <Button variant="outline" size="sm" onClick={handleDownloadJson} disabled={!report}>
+            <FileJson className="h-3.5 w-3.5" />
+            {t("report.downloadJson")}
           </Button>
-          <Button variant="outline" className="h-12" onClick={handleDownloadJson}>
-            <FileJson className="h-4 w-4 mr-2" /> JSON İndir
-          </Button>
-          <Button
-            className="h-12 px-6 bg-gradient-to-r from-success to-success hover:from-success hover:to-success"
-            onClick={handleDownloadHtml}
-          >
-            <FileCode className="h-5 w-5 mr-2" /> HTML İndir
+          <Button size="sm" onClick={handleDownloadHtml} disabled={!report}>
+            <FileCode className="h-3.5 w-3.5" />
+            {t("report.downloadHtml")}
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <SummaryCard
-          label="Sağlık Skoru"
-          value={isLoading ? undefined : String(summaryKPIs.score)}
-          icon={<Shield className="h-4 w-4" />}
-          badge={
-            <RiskBadge
-              riskLevel={summaryKPIs.score >= 85 ? "OK" : summaryKPIs.score >= 60 ? "WARNING" : "DANGEROUS"}
-              size="sm"
-            >
-              / 100
-            </RiskBadge>
-          }
-          gradient="from-success/10 to-success/10"
-        />
-        <SummaryCard
-          label="Veritabanı"
-          value={isLoading ? undefined : summaryKPIs.db}
-          sub={isLoading ? undefined : summaryKPIs.version}
-          icon={<Database className="h-4 w-4" />}
-          gradient="from-info/10 to-info/10"
-        />
-        <SummaryCard
-          label="Bağlantılar"
-          value={isLoading ? undefined : `${summaryKPIs.current} / ${summaryKPIs.max}`}
-          icon={<Users className="h-4 w-4" />}
-          badge={
-            <RiskBadge
-              riskLevel={
-                summaryKPIs.max > 0 && summaryKPIs.current / summaryKPIs.max >= 0.85
-                  ? "DANGEROUS"
-                  : summaryKPIs.max > 0 && summaryKPIs.current / summaryKPIs.max >= 0.6
-                  ? "WARNING"
-                  : "OK"
+      {isError && !report ? (
+        <InlineError onRetry={() => refetch()} />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <Tile
+              label={t("report.kpi.score")}
+              value={showValues ? `${formatNumber(kpi.score)} / 100` : undefined}
+              badge={
+                showValues ? (
+                  <RiskBadge
+                    riskLevel={kpi.score >= 85 ? "OK" : kpi.score >= 60 ? "WARNING" : "DANGEROUS"}
+                    size="sm"
+                    showIcon={false}
+                  >
+                    {getReportVal<string>(report, "health.status", "-")}
+                  </RiskBadge>
+                ) : undefined
               }
-              size="sm"
-            >
-              {summaryKPIs.max > 0 ? `${Math.round((summaryKPIs.current / summaryKPIs.max) * 100)}%` : "0%"}
-            </RiskBadge>
-          }
-          gradient="from-info/10 to-info/10"
-        />
-        <SummaryCard
-          label="Kilitler"
-          value={isLoading ? undefined : `${summaryKPIs.totalLocks} toplam`}
-          sub={isLoading ? undefined : `${summaryKPIs.blocking} bloke · ${summaryKPIs.replicas} replica`}
-          icon={<Copy className="h-4 w-4" />}
-          badge={
-            summaryKPIs.blocking > 0 ? (
-              <RiskBadge riskLevel="DANGEROUS" size="sm">BLOKE</RiskBadge>
-            ) : summaryKPIs.totalLocks > 0 ? (
-              <RiskBadge riskLevel="WARNING" size="sm">BEKLEYEN</RiskBadge>
-            ) : (
-              <RiskBadge riskLevel="OK" size="sm">Temiz</RiskBadge>
-            )
-          }
-          gradient="from-warning/10 to-warning/10"
-        />
-      </div>
+            />
+            <Tile
+              label={t("report.kpi.database")}
+              value={showValues ? kpi.db : undefined}
+              sub={showValues ? kpi.version : undefined}
+            />
+            <Tile
+              label={t("report.kpi.connections")}
+              value={
+                showValues
+                  ? `${formatNumber(kpi.current)} / ${formatNumber(kpi.max)}`
+                  : undefined
+              }
+              badge={
+                showValues ? (
+                  <RiskBadge
+                    riskLevel={kpi.usage >= 0.85 ? "DANGEROUS" : kpi.usage >= 0.6 ? "WARNING" : "OK"}
+                    size="sm"
+                    showIcon={false}
+                  >
+                    {formatNumber(kpi.usage, { style: "percent" })}
+                  </RiskBadge>
+                ) : undefined
+              }
+            />
+            <Tile
+              label={t("report.kpi.locks")}
+              value={showValues ? formatNumber(kpi.totalLocks) : undefined}
+              sub={
+                showValues
+                  ? t("report.kpi.locksSub", {
+                      blocking: formatNumber(kpi.blocking),
+                      replicas: replicaCount === undefined ? "-" : formatNumber(replicaCount),
+                    })
+                  : undefined
+              }
+              badge={
+                showValues ? (
+                  kpi.blocking > 0 ? (
+                    <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false}>
+                      {t("report.kpi.blocked")}
+                    </RiskBadge>
+                  ) : (
+                    <RiskBadge riskLevel="OK" size="sm" showIcon={false}>
+                      {t("report.kpi.clear")}
+                    </RiskBadge>
+                  )
+                ) : undefined
+              }
+            />
+          </div>
 
-      <div className="space-y-5">
-        {SECTIONS.map((sec) => (
-          <CollapsibleSection
-            key={sec.id}
-            sec={sec}
-            open={open[sec.id]}
-            onToggle={() => toggle(sec.id)}
-          >
-            <SectionContent id={sec.id} report={report} isLoading={isLoading} />
-          </CollapsibleSection>
-        ))}
-      </div>
+          <div className="space-y-2">
+            {SECTION_IDS.map((id) => (
+              <CollapsibleSection
+                key={id}
+                title={t(`report.sections.${id}.title`)}
+                description={t(`report.sections.${id}.description`)}
+                open={open[id]}
+                onToggle={() => toggle(id)}
+              >
+                <SectionContent id={id} report={report} isLoading={isLoading} />
+              </CollapsibleSection>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  sub,
-  icon,
-  badge,
-  gradient,
-}: {
-  label: string;
-  value?: string;
-  sub?: string;
-  icon: React.ReactNode;
-  badge?: React.ReactNode;
-  gradient: string;
-}) {
-  return (
-    <Card className="relative overflow-hidden">
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} pointer-events-none`} />
-      <CardContent className="p-6 relative">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            {icon} {label}
-          </span>
-          {badge}
-        </div>
-        {value === undefined ? (
-          <Skeleton className="h-10 w-32 mb-1.5" />
-        ) : (
-          <div className="text-3xl font-bold text-foreground break-words">{value}</div>
-        )}
-        {sub !== undefined && <div className="text-xs text-muted-foreground mt-1.5">{sub}</div>}
-      </CardContent>
-    </Card>
-  );
-}
-
 function CollapsibleSection({
-  sec,
+  title,
+  description,
   open,
   onToggle,
   children,
 }: {
-  sec: SectionDef;
+  title: string;
+  description: string;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <Card className="overflow-hidden border-border">
+    <section className="overflow-hidden rounded-md border border-border bg-card">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full text-left"
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-muted"
       >
-        <CardHeader className="pb-5 cursor-pointer hover:bg-card transition-colors">
-          <div className="flex items-center gap-3">
-            <div
-              className={`h-12 w-12 shrink-0 rounded-md bg-gradient-to-br ${sec.color} flex items-center justify-center shadow-sm`}
-            >
-              <sec.icon className="h-6 w-6 text-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <CardTitle className="text-xl flex items-center gap-2">
-                {sec.title}
-                <Badge variant="outline" className="text-[10px] font-mono opacity-70">
-                  SECTION · {sec.id.toUpperCase()}
-                </Badge>
-              </CardTitle>
-              <CardDescription className="mt-1">{sec.description}</CardDescription>
-            </div>
-            <div className="shrink-0 opacity-70">
-              {open ? (
-                <ChevronUp className="h-6 w-6" />
-              ) : (
-                <ChevronDown className="h-6 w-6" />
-              )}
-            </div>
-          </div>
-        </CardHeader>
+        <span className="min-w-0">
+          <span className="text-sm font-medium text-foreground">{title}</span>
+          <span className="ml-2 text-xs text-muted-foreground">{description}</span>
+        </span>
+        {open ? (
+          <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
       </button>
-      {open && <CardContent className="pt-0">{children}</CardContent>}
-    </Card>
+      {open && <div className="border-t border-border px-3 py-2">{children}</div>}
+    </section>
   );
 }
 
@@ -434,15 +453,9 @@ function SectionContent({
   report: ReportDict | undefined;
   isLoading: boolean;
 }) {
-  if (isLoading && !report) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-14 w-full" />
-        ))}
-      </div>
-    );
-  }
+  if (id === "replication") return <ReplicationSection />;
+  if (id === "roles") return <RolesSection />;
+  if (isLoading && !report) return <RowsSkeleton />;
 
   switch (id) {
     case "summary":
@@ -453,83 +466,80 @@ function SectionContent({
       return <DiagnosticsSection report={report} />;
     case "storage":
       return <StorageSection report={report} />;
-    case "replication":
-      return <ReplicationSection report={report} />;
     case "connections":
       return <ConnectionsSection report={report} />;
-    case "roles":
-      return <RolesSection report={report} />;
   }
 }
 
-function ObjectJsonView({ data, maxLen = 20 }: { data: unknown; maxLen?: number }) {
-  const text = JSON.stringify(data, null, 2);
-  if (text.length <= maxLen) return <code className="text-xs font-mono text-muted-foreground break-words">{text}</code>;
-  return (
-    <details className="group">
-      <summary className="cursor-pointer text-xs font-mono text-muted-foreground hover:text-foreground">
-        {text.slice(0, maxLen)}... (genişlet)
-      </summary>
-      <pre className="mt-2 p-4 rounded-md bg-black/30 text-xs text-success overflow-auto max-h-96 font-mono whitespace-pre-wrap break-all">
-        {text}
-      </pre>
-    </details>
-  );
-}
-
 function SummarySection({ report }: { report: ReportDict | undefined }) {
+  const { t, formatDate, formatNumber } = useI18n();
+  const generated = getReportVal<string>(report, "health.generated_at", "");
+  const overview = Object.fromEntries(
+    Object.entries(report ?? {}).map(([k, v]) => [
+      k,
+      Array.isArray(v)
+        ? t("report.summary.items", { count: v.length })
+        : typeof v === "object" && v
+          ? "{...}"
+          : v,
+    ])
+  );
+  const rows = [
+    { label: t("report.summary.keys"), val: formatNumber(Object.keys(report ?? {}).length) },
+    { label: t("report.kpi.score"), val: formatNumber(getReportVal<number>(report, "health.score", 0)) },
+    { label: t("report.summary.status"), val: getReportVal<string>(report, "health.status", "-") },
+    { label: t("report.summary.generatedAt"), val: generated ? formatDate(generated) : "-" },
+  ];
   return (
-    <div className="rounded-lg border border-border bg-black/20 p-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {[
-          { label: "Tam Rapor Anahtarları", val: Object.keys(report ?? {}).length + " adet" },
-          { label: "Sağlık Skoru", val: String(getReportVal<number>(report, "health.score", 0) || getReportVal<number>(report, "summary.score", 0) || 0) },
-          { label: "Durum", val: getReportVal<string>(report, "health.status", "-") || getReportVal<string>(report, "summary.status", "-") },
-          { label: "Üretim Zamanı", val: getReportVal<string>(report, "health.generated_at", "-") || getReportVal<string>(report, "summary.generated_at", formatDate(new Date())) },
-        ].map((r) => (
-          <div key={r.label} className="rounded-md bg-card px-4 py-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{r.label}</div>
-            <div className="text-sm font-semibold mt-1">{r.val}</div>
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {rows.map((r) => (
+          <div key={r.label} className="rounded-md border border-border px-3 py-1.5">
+            <div className="text-xs text-muted-foreground">{r.label}</div>
+            <div className="truncate font-mono text-xs font-medium">{r.val}</div>
           </div>
         ))}
       </div>
-      <div className="mt-6">
-        <p className="text-xs text-muted-foreground mb-2 flex items-center gap-2">
-          <Info className="h-3.5 w-3.5" /> ReportDict Raw (üst seviye)
-        </p>
-        <ObjectJsonView data={Object.fromEntries(Object.entries(report ?? {}).map(([k, v]) => [k, Array.isArray(v) ? `${v.length} items` : typeof v === "object" && v ? "{...}" : v]))} maxLen={200} />
-      </div>
+      <details>
+        <summary className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Info className="h-3.5 w-3.5" />
+          {t("report.summary.raw")}
+        </summary>
+        <pre className="mt-1 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">
+          {JSON.stringify(overview, null, 2)}
+        </pre>
+      </details>
     </div>
   );
 }
 
 function HealthSection({ report }: { report: ReportDict | undefined }) {
-  const checks = extractArray(report, "checks") as unknown as Record<string, unknown>[];
-  if (checks.length === 0) {
-    return <EmptyState text="Sağlık kontrolü verisi bulunamadı" />;
-  }
+  const { t } = useI18n();
+  const checks = getRows(report, "health.checks");
+  if (checks.length === 0) return <EmptyState text={t("report.health.empty")} />;
   return (
-    <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+    <div className="divide-y divide-border">
       {checks.slice(0, 100).map((c, i) => {
-        const sev = String(c.severity ?? c.status ?? "UNKNOWN").toUpperCase();
-        const risk = sev === "OK" ? "OK" : sev === "WARNING" || sev === "INFO" ? "WARNING" : "DANGEROUS";
+        const severity = String(c.severity ?? c.status ?? "UNKNOWN").toUpperCase();
         return (
-          <div key={i} className="p-5 hover:bg-card transition-colors flex items-start gap-4 flex-wrap">
-            <RiskBadge riskLevel={risk as "OK" | "WARNING" | "INFO" | "DANGEROUS"} size="md" className="shrink-0 mt-0.5">
-              {sev}
+          <div key={i} className="flex flex-wrap items-start gap-2 py-1.5 text-xs">
+            <RiskBadge riskLevel={severityToRisk(severity)} size="sm" showIcon={false} className="shrink-0">
+              {severity}
             </RiskBadge>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="font-semibold">{String(c.name ?? c.title ?? c.description ?? `check-${i}`)}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono font-medium">{String(c.name ?? `check-${i}`)}</span>
                 {c.value !== undefined && c.value !== null && (
-                  <code className="text-[10px] font-mono bg-card px-2 py-0.5 rounded-md text-success">{String(c.value)}</code>
+                  <code className="font-mono text-info">{String(c.value)}</code>
                 )}
                 {c.threshold !== undefined && c.threshold !== null && (
-                  <Badge variant="outline" className="text-[10px] font-mono">threshold={String(c.threshold)}</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    threshold={String(c.threshold)}
+                  </Badge>
                 )}
               </div>
               {Boolean(c.description) && (
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{String(c.description)}</p>
+                <p className="mt-0.5 text-muted-foreground">{String(c.description)}</p>
               )}
             </div>
           </div>
@@ -540,28 +550,29 @@ function HealthSection({ report }: { report: ReportDict | undefined }) {
 }
 
 function DiagnosticsSection({ report }: { report: ReportDict | undefined }) {
-  const findings = extractArray(report, "findings") as unknown as Record<string, unknown>[];
-  const diags = findings.length > 0 ? findings : (extractArray(report, "diagnostics") as unknown as Record<string, unknown>[]);
-  if (diags.length === 0) return <EmptyState text="Tanı bulgusu bulunamadı" />;
+  const { t } = useI18n();
+  const findings = getRows(report, "findings");
+  if (findings.length === 0) return <EmptyState text={t("report.diagnostics.empty")} />;
   return (
-    <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
-      {diags.slice(0, 100).map((f, i) => {
-        const sev = String(f.severity ?? "INFO").toUpperCase();
-        const risk = sev === "CRITICAL" ? "DANGEROUS" : sev === "WARNING" ? "WARNING" : sev === "OK" ? "OK" : "INFO";
+    <div className="divide-y divide-border">
+      {findings.slice(0, 100).map((f, i) => {
+        const severity = String(f.severity ?? "INFO").toUpperCase();
         return (
-          <div key={i} className="p-5 hover:bg-card transition-colors flex items-start gap-4 flex-wrap">
-            <RiskBadge riskLevel={risk as "OK" | "WARNING" | "INFO" | "DANGEROUS"} size="md" className="shrink-0 mt-0.5">
-              {sev}
+          <div key={i} className="flex flex-wrap items-start gap-2 py-1.5 text-xs">
+            <RiskBadge riskLevel={severityToRisk(severity)} size="sm" showIcon={false} className="shrink-0">
+              {severity}
             </RiskBadge>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="font-semibold">{String(f.title ?? f.code ?? `finding-${i}`)}</div>
-                {Boolean(f.code) && <code className="text-[10px] font-mono bg-card px-2 py-0.5 rounded-md">{String(f.code)}</code>}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{String(f.title ?? f.code ?? `finding-${i}`)}</span>
+                {Boolean(f.code) && (
+                  <code className="font-mono text-muted-foreground">{String(f.code)}</code>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{String(f.description ?? "")}</p>
+              <p className="mt-0.5 text-muted-foreground">{String(f.description ?? "")}</p>
               {Boolean(f.recommendation) && (
-                <p className="text-xs text-success mt-2 flex items-start gap-1.5">
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <p className="mt-0.5 flex items-start gap-1 text-success">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
                   {String(f.recommendation)}
                 </p>
               )}
@@ -574,97 +585,89 @@ function DiagnosticsSection({ report }: { report: ReportDict | undefined }) {
 }
 
 function StorageSection({ report }: { report: ReportDict | undefined }) {
-  const tables = extractArray(report, "tables") as unknown as Record<string, unknown>[];
-  const dbs = extractArray(report, "databases") as unknown as Record<string, unknown>[];
-  const idxs = extractArray(report, "indexes") as unknown as Record<string, unknown>[];
-  const top = [...tables, ...dbs, ...idxs]
-    .map((o) => ({
-      obj: o,
-      bytes: Number(
-        (o as Record<string, unknown>).total_size_bytes ??
-          (o as Record<string, unknown>).size_bytes ??
-          (o as Record<string, unknown>).index_size_bytes ??
-          0
-      ),
-    }))
+  const { t } = useI18n();
+  const top = [
+    ...getRows(report, "storage.tables").map((o) => ({
+      kind: "TABLE",
+      name: [o.schema_name, o.table_name].filter(Boolean).join("."),
+      bytes: Number(o.total_size_bytes ?? 0),
+    })),
+    ...getRows(report, "storage.databases").map((o) => ({
+      kind: "DB",
+      name: String(o.database ?? ""),
+      bytes: Number(o.size_bytes ?? 0),
+    })),
+    ...getRows(report, "storage.indexes").map((o) => ({
+      kind: "IDX",
+      name: [o.schema_name, o.index_name].filter(Boolean).join("."),
+      bytes: Number(o.size_bytes ?? 0),
+    })),
+  ]
     .sort((a, b) => b.bytes - a.bytes)
     .slice(0, 10);
-  if (top.length === 0) return <EmptyState text="Depolama verisi bulunamadı" />;
+  if (top.length === 0) return <EmptyState text={t("report.storage.empty")} />;
+  const maxBytes = Math.max(1, top[0].bytes);
   return (
-    <div className="space-y-2 rounded-lg border border-border overflow-hidden">
-      {top.map((t, i) => {
-        const o = t.obj as Record<string, unknown>;
-        const name =
-          [o.schema_name, o.table_name, o.index_name, o.database, o.name].filter(Boolean).join(".") ||
-          `storage-${i}`;
-        const kind =
-          o.database && !o.table_name
-            ? "DB"
-            : o.index_name
-            ? "IDX"
-            : o.table_name
-            ? "TABLE"
-            : "OBJ";
-        const maxB = Math.max(1, top[0]?.bytes ?? 1);
-        const pct = (t.bytes / maxB) * 100;
-        return (
-          <div key={i} className="p-5 hover:bg-card transition-colors">
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <span className="font-mono text-sm font-semibold min-w-[3ch] text-muted-foreground">#{i + 1}</span>
-              <Badge variant="outline" className="text-[10px] font-mono">{kind}</Badge>
-              <code className="text-sm font-mono">{name}</code>
-              <span className="ml-auto font-mono text-sm font-semibold text-warning">{formatBytes(t.bytes, 1)}</span>
-            </div>
-            <div className="h-2 rounded-md bg-card overflow-hidden">
-              <div
-                className="h-full rounded-md bg-gradient-to-r from-info to-info transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
+    <div className="space-y-1.5">
+      {top.map((item, i) => (
+        <div key={`${item.kind}-${item.name}`} className="text-xs">
+          <div className="mb-0.5 flex flex-wrap items-center gap-2">
+            <span className="w-6 font-mono text-muted-foreground">#{i + 1}</span>
+            <Badge variant="outline" className="font-mono text-[10px]">
+              {item.kind}
+            </Badge>
+            <code className="min-w-0 truncate font-mono">{item.name}</code>
+            <span className="ml-auto font-mono font-semibold">{formatBytes(item.bytes, 1)}</span>
           </div>
-        );
-      })}
+          <div className="h-1 overflow-hidden rounded bg-muted">
+            <div className="h-full rounded bg-info" style={{ width: `${(item.bytes / maxBytes) * 100}%` }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function ReplicationSection({ report }: { report: ReportDict | undefined }) {
-  const replicas = extractArray(report, "replicas") as unknown as Record<string, unknown>[];
-  const slots = extractArray(report, "slots") as unknown as Record<string, unknown>[];
-  if (replicas.length === 0 && slots.length === 0) return <EmptyState text="Replikasyon verisi bulunamadı (replica/slot yok)" />;
+function ReplicationSection() {
+  const { t } = useI18n();
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: qk.replication.status(),
+    queryFn: () => endpoints.getReplication(),
+  });
+  if (isLoading) return <RowsSkeleton />;
+  if (isError) return <InlineError onRetry={() => refetch()} />;
+  const replicas = data?.replicas ?? [];
+  const slots = data?.slots ?? [];
+  if (replicas.length === 0 && slots.length === 0) {
+    return <EmptyState text={t("report.replication.empty")} />;
+  }
   return (
-    <div className="space-y-5">
+    <div className="space-y-2 text-xs">
       {replicas.length > 0 && (
         <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 flex items-center gap-2">
-            <Copy className="h-3.5 w-3.5" /> Replicalar ({replicas.length})
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="mb-1 font-medium">{t("report.replication.replicas", { count: replicas.length })}</div>
+          <div className="divide-y divide-border rounded-md border border-border">
             {replicas.map((r, i) => {
-              const lag = Number(r.replay_lag_bytes ?? r.pending_bytes ?? 0);
-              const state = String(r.state ?? "-");
-              const active = state.toLowerCase() === "streaming";
+              const state = r.state ?? "-";
               return (
-                <div key={i} className="rounded-md bg-card p-4 border border-border">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-success shadow-sm shadow-success/30" : "bg-warning"}`} />
-                      <code className="font-mono text-sm font-semibold truncate">
-                        {String(r.application_name ?? r.client_address ?? r.username ?? `replica-${i + 1}`)}
-                      </code>
-                    </div>
-                    <RiskBadge riskLevel={active ? "OK" : "WARNING"} size="sm">{state}</RiskBadge>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <div className="text-muted-foreground">Lag</div>
-                      <div className="font-mono font-semibold text-info">{formatBytes(lag, 1)}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Adres / Kullanıcı</div>
-                      <div className="font-mono truncate">{String(r.client_address ?? "-")} {Boolean(r.username) ? `(${String(r.username)})` : ""}</div>
-                    </div>
-                  </div>
+                <div key={i} className="flex flex-wrap items-center gap-3 px-3 py-1.5">
+                  <RiskBadge
+                    riskLevel={state.toLowerCase() === "streaming" ? "OK" : "WARNING"}
+                    size="sm"
+                    showIcon={false}
+                  >
+                    {state}
+                  </RiskBadge>
+                  <code className="font-mono font-medium">
+                    {r.application_name || r.client_address || `replica-${i + 1}`}
+                  </code>
+                  <span className="font-mono text-muted-foreground">
+                    {r.client_address ?? "-"}
+                    {r.username ? ` (${r.username})` : ""}
+                  </span>
+                  <span className="ml-auto font-mono">
+                    {t("report.replication.lag", { value: formatBytes(Number(r.replay_lag_bytes ?? 0), 1) })}
+                  </span>
                 </div>
               );
             })}
@@ -673,29 +676,17 @@ function ReplicationSection({ report }: { report: ReportDict | undefined }) {
       )}
       {slots.length > 0 && (
         <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">
-            Replikasyon Slotları ({slots.length})
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {slots.map((s, i) => {
-              const active = Boolean(s.active);
-              return (
-                <div key={i} className="rounded-md bg-card p-4 border border-border flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? "bg-success shadow-sm shadow-success/30" : "bg-warning"}`} />
-                    <div className="min-w-0">
-                      <code className="font-mono text-sm font-semibold truncate block">{String(s.slot_name ?? `slot-${i}`)}</code>
-                      {Boolean(s.slot_type) && (
-                        <div className="text-[10px] text-muted-foreground font-mono">{String(s.slot_type)}</div>
-                      )}
-                    </div>
-                  </div>
-                  <RiskBadge riskLevel={active ? "OK" : "WARNING"} size="sm">
-                    {active ? "Aktif" : "Pasif"}
-                  </RiskBadge>
-                </div>
-              );
-            })}
+          <div className="mb-1 font-medium">{t("report.replication.slots", { count: slots.length })}</div>
+          <div className="divide-y divide-border rounded-md border border-border">
+            {slots.map((s) => (
+              <div key={s.slot_name} className="flex flex-wrap items-center gap-3 px-3 py-1.5">
+                <RiskBadge riskLevel={s.active ? "OK" : "WARNING"} size="sm" showIcon={false}>
+                  {s.active ? t("report.replication.active") : t("report.replication.inactive")}
+                </RiskBadge>
+                <code className="font-mono font-medium">{s.slot_name}</code>
+                {s.slot_type && <span className="font-mono text-muted-foreground">{s.slot_type}</span>}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -704,177 +695,143 @@ function ReplicationSection({ report }: { report: ReportDict | undefined }) {
 }
 
 function ConnectionsSection({ report }: { report: ReportDict | undefined }) {
-  const summary =
-    (getReportVal<Record<string, unknown> | undefined>(report, "connections.summary", undefined) ||
-      getReportVal<Record<string, unknown> | undefined>(report, "connections", undefined) ||
-      {}) as Record<string, unknown>;
-  const conns = extractArray(report, "connections") as unknown as Record<string, unknown>[];
-  const show = conns.slice(0, 20);
-
+  const { t, formatNumber } = useI18n();
+  const summary = getReportVal<Row>(report, "connections.summary", {});
+  const connections = getRows(report, "connections.connections").slice(0, 20);
   const current = Number(summary.current_connections ?? 0);
   const max = Number(summary.max_connections ?? 0);
-  const usage = max > 0 ? (current / max) * 100 : 0;
+  const usage = max > 0 ? current / max : 0;
+  const tiles = [
+    { label: t("report.connections.active"), val: Number(summary.active ?? 0), color: "text-success" },
+    { label: t("report.connections.idle"), val: Number(summary.idle ?? 0), color: "text-muted-foreground" },
+    {
+      label: t("report.connections.idleInTransaction"),
+      val: Number(summary.idle_in_transaction ?? 0),
+      color: "text-warning",
+    },
+    { label: t("report.connections.waiting"), val: Number(summary.waiting ?? 0), color: "text-destructive" },
+  ];
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: "Aktif", val: Number(summary.active ?? 0), color: "text-success" },
-          { label: "Boşta", val: Number(summary.idle ?? 0), color: "text-muted-foreground" },
-          { label: "İşlemde Bekleyen", val: Number(summary.idle_in_transaction ?? 0), color: "text-warning" },
-          { label: "Bekleyen", val: Number(summary.waiting ?? 0), color: "text-destructive" },
-        ].map((k) => (
-          <div key={k.label} className="rounded-md bg-card p-4 border border-border">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{k.label}</div>
-            <div className={`text-2xl font-bold mt-1 ${k.color}`}>{formatNumber(k.val)}</div>
+    <div className="space-y-2 text-xs">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {tiles.map((k) => (
+          <div key={k.label} className="rounded-md border border-border px-3 py-1.5">
+            <div className="text-muted-foreground">{k.label}</div>
+            <div className={`font-mono text-base font-semibold ${k.color}`}>{formatNumber(k.val)}</div>
           </div>
         ))}
       </div>
-      <div className="rounded-md bg-card p-4 border border-border">
-        <div className="flex items-center justify-between mb-2 text-xs">
-          <span className="text-muted-foreground font-semibold uppercase tracking-wider">Kullanım</span>
-          <span className="font-mono font-semibold">
-            {formatNumber(current)} / {formatNumber(max)} · %{usage.toFixed(1)}
+      <div>
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-muted-foreground">{t("report.connections.usage")}</span>
+          <span className="font-mono">
+            {formatNumber(current)} / {formatNumber(max)} ·{" "}
+            {formatNumber(usage, { style: "percent", maximumFractionDigits: 1 })}
           </span>
         </div>
-        <div className="h-2 rounded-md bg-muted overflow-hidden">
+        <div className="h-1 overflow-hidden rounded bg-muted">
           <div
-            className={`h-full rounded-md bg-gradient-to-r ${usage >= 85 ? "from-destructive to-destructive" : usage >= 60 ? "from-warning to-warning" : "from-success to-success"}`}
-            style={{ width: `${Math.min(100, usage)}%` }}
+            className={`h-full rounded ${usage >= 0.85 ? "bg-destructive" : usage >= 0.6 ? "bg-warning" : "bg-success"}`}
+            style={{ width: `${Math.min(100, usage * 100)}%` }}
           />
         </div>
       </div>
-      {show.length > 0 && (
-        <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-          {show.map((c, i) => (
-            <div key={i} className="p-4 hover:bg-card transition-colors flex items-center gap-3 flex-wrap">
-              <Badge variant="outline" className="font-mono text-[10px] shrink-0">pid={String(c.pid ?? "-")}</Badge>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap text-xs">
-                  <span className="font-semibold">{String(c.user ?? c.username ?? "-")}</span>
-                  <span className="text-muted-foreground">@</span>
-                  <code className="font-mono text-muted-foreground">{String(c.database ?? c.db ?? "-")}</code>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="font-mono text-muted-foreground">{String(c.client_address ?? c.host ?? "-")}</span>
-                  {Boolean(c.application_name) && (
-                    <Badge variant="outline" className="text-[10px] font-mono">{String(c.application_name)}</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-1 text-xs">
-                  <RiskBadge
-                    riskLevel={
-                      String(c.state ?? "").toLowerCase().includes("active")
-                        ? "OK"
-                        : String(c.state ?? "").toLowerCase().includes("idle")
-                        ? "INFO"
-                        : "WARNING"
-                    }
-                    size="sm"
-                  >
-                    {String(c.state ?? "-")}
-                  </RiskBadge>
-                  {c.query_duration_seconds !== undefined && (
-                    <span className="text-muted-foreground font-mono">
-                      Sorgu: {formatNumber(Number(c.query_duration_seconds), 1)}sn
-                    </span>
-                  )}
-                  {Boolean(c.backend_type) && (
-                    <span className="text-muted-foreground font-mono">· {String(c.backend_type)}</span>
-                  )}
-                </div>
+      {connections.length > 0 && (
+        <div className="divide-y divide-border rounded-md border border-border">
+          {connections.map((c, i) => {
+            const state = String(c.state ?? "-");
+            const lower = state.toLowerCase();
+            return (
+              <div key={i} className="flex flex-wrap items-center gap-2 px-3 py-1.5 font-mono">
+                <RiskBadge
+                  riskLevel={lower === "active" ? "OK" : lower.includes("idle") ? "INFO" : "WARNING"}
+                  size="sm"
+                  showIcon={false}
+                >
+                  {state}
+                </RiskBadge>
+                <span>pid={String(c.pid ?? "-")}</span>
+                <span className="font-medium">{String(c.user ?? "-")}</span>
+                <span className="text-muted-foreground">
+                  @{String(c.database ?? "-")} · {String(c.client_address ?? "-")}
+                </span>
+                {Boolean(c.application_name) && (
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {String(c.application_name)}
+                  </Badge>
+                )}
+                {c.query_duration_seconds !== undefined && c.query_duration_seconds !== null && (
+                  <span className="ml-auto text-muted-foreground">
+                    {t("report.connections.queryDuration", {
+                      seconds: formatNumber(Number(c.query_duration_seconds), {
+                        maximumFractionDigits: 1,
+                      }),
+                    })}
+                  </span>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function RolesSection({ report }: { report: ReportDict | undefined }) {
-  const roles = extractArray(report, "roles") as unknown as Record<string, unknown>[];
-  if (roles.length === 0) {
-    // Summary count approach
-    const counts = {
-      total: 0,
-      superuser: 0,
-      login: 0,
-      createdb: 0,
-      createrole: 0,
-    };
-    Object.entries(report ?? {}).forEach(([, v]) => {
-      if (Array.isArray(v)) {
-        v.forEach((r: unknown) => {
-          if (r && typeof r === "object") {
-            const o = r as Record<string, unknown>;
-            if ("name" in o) {
-              counts.total++;
-              if (o.superuser) counts.superuser++;
-              if (o.can_login || o.login) counts.login++;
-              if (o.createdb) counts.createdb++;
-              if (o.createrole) counts.createrole++;
-            }
-          }
-        });
-      }
-    });
-    return (
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: "Toplam Rol", val: counts.total, icon: <Info className="h-3.5 w-3.5" /> },
-          { label: "Süper Kullanıcı", val: counts.superuser, icon: <Skull className="h-3.5 w-3.5" /> },
-          { label: "Giriş Yetkisi", val: counts.login, icon: <Users className="h-3.5 w-3.5" /> },
-          { label: "DB Oluşturma", val: counts.createdb, icon: <Database className="h-3.5 w-3.5" /> },
-          { label: "Rol Oluşturma", val: counts.createrole, icon: <Shield className="h-3.5 w-3.5" /> },
-        ].map((k) => (
-          <div key={k.label} className="rounded-md bg-card p-4 border border-border">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-              {k.icon} {k.label}
-            </div>
-            <div className="text-2xl font-bold mt-1">{formatNumber(k.val)}</div>
+function RolesSection() {
+  const { t, formatNumber } = useI18n();
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: qk.roles.all(),
+    queryFn: () => endpoints.listRoles(),
+  });
+  if (isLoading) return <RowsSkeleton />;
+  if (isError) return <InlineError onRetry={() => refetch()} />;
+  const roles = data ?? [];
+  if (roles.length === 0) return <EmptyState text={t("report.roles.empty")} />;
+  const tiles = [
+    { label: t("report.roles.total"), val: roles.length },
+    { label: "SUPERUSER", val: roles.filter((r) => r.superuser).length },
+    { label: "LOGIN", val: roles.filter((r) => r.can_login).length },
+    { label: "CREATEDB", val: roles.filter((r) => r.createdb).length },
+    { label: "CREATEROLE", val: roles.filter((r) => r.createrole).length },
+  ];
+  return (
+    <div className="space-y-2 text-xs">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        {tiles.map((k) => (
+          <div key={k.label} className="rounded-md border border-border px-3 py-1.5">
+            <div className="text-muted-foreground">{k.label}</div>
+            <div className="font-mono text-base font-semibold">{formatNumber(k.val)}</div>
           </div>
         ))}
       </div>
-    );
-  }
-  return (
-    <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-      {roles.slice(0, 50).map((r, i) => {
-        const name = String(r.name ?? `role-${i}`);
-        const su = Boolean(r.superuser);
-        const login = Boolean(r.can_login ?? r.login);
-        const cdb = Boolean(r.createdb);
-        const crole = Boolean(r.createrole);
-        const limit = Number(r.connection_limit ?? -1);
-        return (
-          <div key={i} className="p-4 hover:bg-card transition-colors flex items-center gap-3 flex-wrap">
-            <code className="font-mono text-sm font-semibold min-w-[160px]">{name}</code>
-            <div className="flex flex-wrap gap-2">
-              <RiskBadge riskLevel={su ? "DANGEROUS" : "INFO"} size="sm">
-                {su ? "SUPERUSER" : "Standart"}
-              </RiskBadge>
-              {login && <Badge variant="outline" className="text-[10px] font-mono">LOGIN</Badge>}
-              {cdb && <Badge variant="outline" className="text-[10px] font-mono">CREATEDB</Badge>}
-              {crole && <Badge variant="outline" className="text-[10px] font-mono">CREATEROLE</Badge>}
-              {limit > 0 && (
-                <Badge variant="outline" className="text-[10px] font-mono">conn_limit={limit}</Badge>
-              )}
-              {Boolean(r.valid_until) && (
-                <Badge variant="outline" className="text-[10px] font-mono">valid_until={String(r.valid_until).slice(0, 10)}</Badge>
-              )}
-            </div>
+      <div className="divide-y divide-border rounded-md border border-border">
+        {roles.slice(0, 50).map((r) => (
+          <div key={r.name} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+            <code className="min-w-[160px] font-mono font-medium">{r.name}</code>
+            <RiskBadge riskLevel={r.superuser ? "DANGEROUS" : "INFO"} size="sm" showIcon={false}>
+              {r.superuser ? "SUPERUSER" : t("report.roles.standard")}
+            </RiskBadge>
+            {r.can_login && <Badge variant="outline" className="font-mono text-[10px]">LOGIN</Badge>}
+            {r.createdb && <Badge variant="outline" className="font-mono text-[10px]">CREATEDB</Badge>}
+            {r.createrole && <Badge variant="outline" className="font-mono text-[10px]">CREATEROLE</Badge>}
+            {r.connection_limit >= 0 && (
+              <Badge variant="outline" className="font-mono text-[10px]">
+                conn_limit={r.connection_limit}
+              </Badge>
+            )}
+            {r.valid_until && (
+              <Badge variant="outline" className="font-mono text-[10px]">
+                valid_until={r.valid_until.slice(0, 10)}
+              </Badge>
+            )}
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="p-12 text-center rounded-lg border border-dashed border-border bg-card">
-      <Info className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-      <p className="font-semibold">{text}</p>
-      <p className="text-xs text-muted-foreground mt-1">Backend endpointinden bu bölüm için veri dönmedi.</p>
-    </div>
-  );
+  return <p className="py-2 text-center text-xs text-muted-foreground">{text}</p>;
 }

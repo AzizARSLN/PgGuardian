@@ -5,29 +5,24 @@ import { useState } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
-  Settings,
-  Shield,
+  AlertCircle,
+  KeyRound,
+  Languages,
+  Loader2,
+  Monitor,
+  Moon,
   Palette,
   RefreshCw,
-  KeyRound,
-  Eye,
-  EyeOff,
   Save,
-  Loader2,
+  Settings,
+  Shield,
   Sun,
-  Moon,
-  Monitor,
-  SaveAll,
-  AlertCircle,
-  CheckCircle2,
 } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import {
   Dialog,
@@ -46,556 +41,293 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { LOCALES, useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 import { useAuthStore } from "@/store/useAuthStore";
 
-const POLL_OPTIONS: { value: number; label: string }[] = [
-  { value: 3_000, label: "3 saniye" },
-  { value: 10_000, label: "10 saniye (varsayılan)" },
-  { value: 30_000, label: "30 saniye" },
-  { value: 60_000, label: "1 dakika" },
-  { value: 300_000, label: "5 dakika" },
-];
+const MIN_PASSWORD_LENGTH = 8;
+const POLL_SECONDS = [3, 10, 30, 60, 300];
+
+function Section({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+      <div className="min-w-0 flex-1 basis-64">
+        <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+          {title}
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export default function SettingsPage() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { t, locale, setLocale, formatNumber } = useI18n();
+  const { theme, setTheme } = useTheme();
   const pollInterval = useUIPrefsStore((s) => s.pollInterval);
   const setPollInterval = useUIPrefsStore((s) => s.setPollInterval);
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
   const setAutoRefresh = useUIPrefsStore((s) => s.setAutoRefresh);
+  const changePassword = useAuthStore((s) => s.changePassword);
 
-  const apiToken = useAuthStore((s) => s.apiToken);
-  const setApiToken = useAuthStore((s) => s.setApiToken);
-  const setAuthenticated = useAuthStore((s) => s.setAuthenticated);
+  // next-themes only knows the stored theme in the browser.
+  const [mounted, setMounted] = useState(false);
+  React.useEffect(() => setMounted(true), []);
 
-  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [showToken, setShowToken] = useState(false);
-
-  const [newApiToken, setNewApiToken] = useState("");
-  const [tokenSubmitting, setTokenSubmitting] = useState(false);
-
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
   const [pwSubmitting, setPwSubmitting] = useState(false);
 
-  const displayToken = React.useMemo(() => {
-    if (!apiToken) return "";
-    const first4 = apiToken.slice(0, 4);
-    const last4 = apiToken.slice(-4);
-    return showToken ? apiToken : `${first4}${"*".repeat(Math.max(4, apiToken.length - 8))}${last4}`;
-  }, [apiToken, showToken]);
-
-  const handleSubmitToken = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newApiToken.trim()) {
-      toast.error("API token boş olamaz");
-      return;
-    }
-    setTokenSubmitting(true);
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_token: newApiToken.trim() }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ detail: "Geçersiz yanıt" }));
-        throw new Error(data?.detail || "Token doğrulaması başarısız");
-      }
-      setApiToken(newApiToken.trim());
-      setAuthenticated(true);
-      toast.success("API token güncellendi");
-      setTokenDialogOpen(false);
-      setNewApiToken("");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Hata";
-      toast.error("Token ayarlanamadı", { description: msg });
-    } finally {
-      setTokenSubmitting(false);
-    }
+  const clearPasswordForm = () => {
+    setCurrentPw("");
+    setNewPw("");
+    setNewPw2("");
   };
+
+  const mismatch = Boolean(newPw && newPw2 && newPw !== newPw2);
+  const tooShort = Boolean(newPw && newPw.length < MIN_PASSWORD_LENGTH);
 
   const handleSubmitPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPw.trim() || !newPw2.trim()) {
-      toast.error("Yeni şifre ve tekrarı zorunlu");
-      return;
-    }
-    if (newPw !== newPw2) {
-      toast.error("Yeni şifre ve tekrarı eşleşmiyor");
-      return;
-    }
-    if (newPw.length < 6) {
-      toast.error("Yeni şifre en az 6 karakter olmalı");
-      return;
-    }
+    if (!currentPw || tooShort || mismatch || !newPw || !newPw2) return;
     setPwSubmitting(true);
     try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_token: newPw.trim(), old_api_token: currentPw.trim() }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ detail: "Geçersiz yanıt" }));
-        throw new Error(data?.detail || "Master parola doğrulaması başarısız");
-      }
-      setApiToken(newPw.trim());
-      setAuthenticated(true);
-      toast.success("Master parola başarıyla değiştirildi");
+      await changePassword({ current: currentPw, newPwd: newPw });
+      toast.success(t("settings.security.changed"));
       setPasswordDialogOpen(false);
-      setCurrentPw("");
-      setNewPw("");
-      setNewPw2("");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Hata";
-      toast.error("Parola değiştirilemedi", { description: msg });
+      clearPasswordForm();
+    } catch {
+      // The API client already showed the backend's message; the dialog stays open.
     } finally {
       setPwSubmitting(false);
     }
   };
 
+  const themeOptions = [
+    { val: "light", label: t("settings.theme.light"), icon: Sun },
+    { val: "dark", label: t("settings.theme.dark"), icon: Moon },
+    { val: "system", label: t("settings.theme.system"), icon: Monitor },
+  ];
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-            <Settings className="h-8 w-8 text-info" />
-            Ayarlar
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Güvenlik · tema · canlı yenileme · API token
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <CheckCircle2 className="h-4 w-4 text-success" />
-          Ayarlar otomatik olarak kaydedilir
-        </div>
+    <div className="space-y-3">
+      <div>
+        <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+          <Settings className="h-4 w-4 text-muted-foreground" />
+          {t("settings.title")}
+        </h1>
+        <p className="text-xs text-muted-foreground">{t("settings.subtitle")}</p>
       </div>
 
-      {/* (a) Güvenlik: Master Password Değiştir */}
-      <Card className="relative overflow-hidden border-destructive/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-destructive/5 via-transparent to-info/5 pointer-events-none" />
-        <CardHeader className="pb-5 relative">
-          <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-destructive to-destructive flex items-center justify-center shadow-sm">
-              <Shield className="h-6 w-6 text-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
-                Güvenlik
-                <Badge variant="outline" className="text-[10px] font-mono bg-destructive/10 text-destructive border-destructive/30">
-                  <AlertCircle className="h-3 w-3 mr-1" />
-                  DÜZENLE: DANGEROUS
-                </Badge>
-              </CardTitle>
-              <CardDescription className="mt-1">
-                Master parola ve API token yönetimi. Tüm değişiklikler POST /api/auth ile doğrulanır.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0 relative space-y-4">
-          <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <div className="font-semibold flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-info" />
-                Master Parolayı Değiştir
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Mevcut master parolanızla birlikte yeni parolayı 2 kez girin.
-              </div>
-            </div>
-            <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="destructive"
-                  className="h-12 bg-destructive hover:bg-destructive text-destructive-foreground"
-                >
-                  <SaveAll className="h-4 w-4 mr-2" />
-                  Parolayı Değiştir
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2 text-destructive">
-                    <Shield className="h-6 w-6" />
-                    Master Parolayı Değiştir — DANGEROUS
-                  </DialogTitle>
-                  <DialogDescription>
-                    Eski parolanız ve yeni parolanız (2 kez) ile işlem doğrulanacaktır.
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmitPassword} className="space-y-5 py-4">
-                  <div className="space-y-2">
-                    <Label>Mevcut Master Parola</Label>
-                    <Input
-                      type="password"
-                      value={currentPw}
-                      onChange={(e) => setCurrentPw(e.target.value)}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Yeni Master Parola</Label>
-                    <Input
-                      type="password"
-                      value={newPw}
-                      onChange={(e) => setNewPw(e.target.value)}
-                      placeholder="en az 6 karakter"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Yeni Master Parola (Tekrar)</Label>
-                    <Input
-                      type="password"
-                      value={newPw2}
-                      onChange={(e) => setNewPw2(e.target.value)}
-                      placeholder="aynı yeni parola"
-                    />
-                  </div>
-                  {newPw && newPw2 && newPw !== newPw2 && (
-                    <div className="rounded-md bg-destructive/10 border border-destructive/30 p-4">
-                      <p className="text-xs text-destructive flex items-center gap-1.5">
-                        <AlertCircle className="h-4 w-4 shrink-0" />
-                        Yeni parola ve tekrarı eşleşmiyor.
-                      </p>
-                    </div>
-                  )}
-                  <DialogFooter className="gap-2">
-                    <Button type="button" variant="outline" onClick={() => setPasswordDialogOpen(false)}>
-                      İptal
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="destructive"
-                      disabled={pwSubmitting || !newPw || !newPw2 || newPw !== newPw2}
-                      className="bg-destructive hover:bg-destructive text-destructive-foreground"
-                    >
-                      {pwSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      <Save className="h-4 w-4 mr-2" />
-                      Kaydet
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* (b) Tema */}
-      <Card className="relative overflow-hidden border-info/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-info/5 via-transparent to-info/5 pointer-events-none" />
-        <CardHeader className="pb-5 relative">
-          <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-info to-info flex items-center justify-center shadow-sm">
-              <Palette className="h-6 w-6 text-foreground" />
-            </div>
-            <div>
-              <CardTitle className="text-xl">Tema</CardTitle>
-              <CardDescription className="mt-1">
-                Arayüz renk temasını seçin. Tercihiniz tarayıcınızda saklanır.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0 relative">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {([
-              { val: "light", label: "Açık", icon: Sun, color: "from-warning to-warning" },
-              { val: "dark", label: "Koyu (Glass)", icon: Moon, color: "from-info to-info" },
-              { val: "system", label: "Sistem", icon: Monitor, color: "from-muted to-muted" },
-            ] as const).map((t) => {
-              const active = theme === t.val;
+      <div className="grid gap-2 xl:grid-cols-2">
+        <Section
+          icon={Palette}
+          title={t("settings.theme.title")}
+          description={t("settings.theme.description")}
+        >
+          <div
+            role="radiogroup"
+            aria-label={t("settings.theme.title")}
+            className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5"
+          >
+            {themeOptions.map((option) => {
+              const active = mounted && theme === option.val;
               return (
                 <button
+                  key={option.val}
                   type="button"
-                  key={t.val}
-                  onClick={() => setTheme(t.val)}
-                  className={`group relative rounded-lg border p-6 text-left transition-all ${
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setTheme(option.val)}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors",
                     active
-                      ? "border-border bg-muted shadow-sm shadow-info/10"
-                      : "border-border bg-card hover:bg-muted hover:border-border"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`h-10 w-10 rounded-md bg-gradient-to-br ${t.color} flex items-center justify-center shadow-md`}
-                    >
-                      <t.icon className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <div className="font-semibold">{t.label}</div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {t.val === "system"
-                          ? "OS tercihini izler"
-                          : t.val === "dark"
-                          ? "Glass/mor efekt aktif"
-                          : "Açık arka plan"}
-                      </div>
-                    </div>
-                  </div>
-                  {active && (
-                    <Badge variant="default" className="absolute top-4 right-4 text-[10px]">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Aktif
-                    </Badge>
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
-                  <div className="mt-4 rounded-md h-20 bg-gradient-to-br from-muted/5 to-muted/10 border border-border flex items-center justify-center">
-                    {t.val === "light" ? (
-                      <div className="w-12 h-12 rounded-md bg-card shadow-sm shadow-black/10" />
-                    ) : t.val === "dark" ? (
-                      <div className="w-12 h-12 rounded-md bg-gradient-to-br from-info/30 to-success/30 border border-border shadow-sm" />
-                    ) : (
-                      <div className="flex gap-2">
-                        <div className="w-8 h-12 rounded-lg bg-card shadow-md" />
-                        <div className="w-8 h-12 rounded-lg bg-gradient-to-br from-info/30 to-success/30 border border-border" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
-                    {resolvedTheme === t.val && active ? `Uygulanan: ${t.label}` : `Seç: ${t.label}`}
-                  </div>
+                >
+                  <option.icon className="h-3.5 w-3.5" />
+                  {option.label}
                 </button>
               );
             })}
           </div>
-        </CardContent>
-      </Card>
+        </Section>
 
-      {/* (c) Canlı Yenileme */}
-      <Card className="relative overflow-hidden border-success/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-success/5 via-transparent to-info/5 pointer-events-none" />
-        <CardHeader className="pb-5 relative">
-          <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-success to-success flex items-center justify-center shadow-sm">
-              <RefreshCw className="h-6 w-6 text-foreground" />
-            </div>
-            <div>
-              <CardTitle className="text-xl">Canlı Yenileme</CardTitle>
-              <CardDescription className="mt-1">
-                Veri yenileme sıklığı ve otomatik yenileme anahtarı. Ayarlar useUIPrefsStore (Zustand) üzerinden kalıcıdır.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0 relative space-y-6">
-          <div className="flex items-center justify-between rounded-lg border border-border bg-card p-6 flex-wrap gap-4">
-            <div>
-              <div className="font-semibold flex items-center gap-2">
-                Otomatik Yenileme
-                <RiskBadge riskLevel={autoRefresh ? "OK" : "WARNING"} size="sm" className="ml-2">
-                  {autoRefresh ? "AÇIK" : "KAPALI"}
-                </RiskBadge>
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Kapalıysa, her sayfa için &quot;Yenile&quot; butonu ile manuel güncelleme gerekir.
-              </div>
-            </div>
-            <Switch checked={autoRefresh} onCheckedChange={(v) => setAutoRefresh(Boolean(v))} />
-          </div>
+        <Section
+          icon={Languages}
+          title={t("settings.language.title")}
+          description={t("settings.language.description")}
+        >
+          <Select value={locale} onValueChange={(v) => setLocale(v as typeof locale)}>
+            <SelectTrigger className="h-8 w-40 text-xs" aria-label={t("settings.language.title")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LOCALES.map((option) => (
+                <SelectItem key={option.code} value={option.code}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Section>
 
-          <div className="rounded-lg border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
-              <div>
-                <Label className="text-base font-semibold">Poll Sıklığı</Label>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Mevcut: <span className="font-mono text-success">{pollInterval / 1000} sn</span>
-                  {!autoRefresh && <span className="ml-2 text-warning">(otomatik yenileme kapalı)</span>}
-                </div>
-              </div>
-            </div>
-            <Select
-              value={String(pollInterval)}
-              onValueChange={(v) => setPollInterval(Number(v))}
-              disabled={!autoRefresh}
+        <Section
+          icon={RefreshCw}
+          title={t("settings.refresh.title")}
+          description={t("settings.refresh.description")}
+        >
+          <div className="flex items-center gap-2">
+            <RiskBadge riskLevel={autoRefresh ? "OK" : "WARNING"} size="sm" showIcon={false}>
+              {autoRefresh ? t("settings.refresh.on") : t("settings.refresh.off")}
+            </RiskBadge>
+            <Switch
+              checked={autoRefresh}
+              onCheckedChange={(v) => setAutoRefresh(Boolean(v))}
+              aria-label={t("settings.refresh.title")}
+            />
+          </div>
+        </Section>
+
+        <Section
+          icon={RefreshCw}
+          title={t("settings.refresh.pollTitle")}
+          description={
+            autoRefresh ? t("settings.refresh.pollDescription") : t("settings.refresh.pollDisabled")
+          }
+        >
+          <Select
+            value={String(pollInterval)}
+            onValueChange={(v) => setPollInterval(Number(v))}
+            disabled={!autoRefresh}
+          >
+            <SelectTrigger
+              className="h-8 w-40 font-mono text-xs"
+              aria-label={t("settings.refresh.pollTitle")}
             >
-              <SelectTrigger className="h-14 rounded-md">
-                <SelectValue placeholder="Poll aralığı seçin" />
-              </SelectTrigger>
-              <SelectContent>
-                {POLL_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={String(o.value)}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+              <SelectValue placeholder={t("settings.refresh.pollPlaceholder")} />
+            </SelectTrigger>
+            <SelectContent>
+              {POLL_SECONDS.map((seconds) => (
+                <SelectItem key={seconds} value={String(seconds * 1000)}>
+                  {t("settings.refresh.seconds", { seconds: formatNumber(seconds) })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Section>
 
-      {/* (d) API Token */}
-      <Card className="relative overflow-hidden border-info/20">
-        <div className="absolute inset-0 bg-gradient-to-br from-info/5 via-transparent to-info/5 pointer-events-none" />
-        <CardHeader className="pb-5 relative">
-          <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-12 w-12 shrink-0 rounded-md bg-gradient-to-br from-info to-info flex items-center justify-center shadow-sm">
-              <KeyRound className="h-6 w-6 text-foreground" />
-            </div>
-            <div>
-              <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
-                API Token
-                <Badge variant="outline" className="text-[10px] font-mono bg-info/10 text-info border-info/30">
-                  Bearer auth
-                </Badge>
-              </CardTitle>
-              <CardDescription className="mt-1">
-                Backend /api/v1/** istekleri için kullanılan Bearer token. Token Zustand useAuthStore ve sessionStorage&apos;da saklanır.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0 relative space-y-4">
-          {apiToken ? (
-            <div className="rounded-lg border border-border bg-card p-6 space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <Label className="text-base font-semibold">Mevcut API Token</Label>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Güvenlik nedeniyle maskelenmiştir, tam görüntülemek için göz simgesine tıklayın.
-                  </div>
-                </div>
-                <RiskBadge riskLevel="OK" size="sm">
-                  DOĞRULANDI
-                </RiskBadge>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 relative">
+        <Section
+          icon={Shield}
+          title={t("settings.security.title")}
+          description={t("settings.security.description")}
+        >
+          <Dialog
+            open={passwordDialogOpen}
+            onOpenChange={(open) => {
+              setPasswordDialogOpen(open);
+              if (!open) clearPasswordForm();
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <KeyRound className="h-3.5 w-3.5" />
+                {t("settings.security.change")}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("settings.security.change")}</DialogTitle>
+                <DialogDescription>{t("settings.security.dialogDescription")}</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmitPassword} className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="current-password">{t("settings.security.current")}</Label>
                   <Input
-                    type="text"
-                    value={displayToken}
-                    readOnly
-                    disabled
-                    className="h-14 font-mono pr-14"
+                    id="current-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPw}
+                    onChange={(e) => setCurrentPw(e.target.value)}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-card hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                    title={showToken ? "Gizle" : "Göster"}
-                  >
-                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
                 </div>
-                <Dialog open={tokenDialogOpen} onOpenChange={setTokenDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" className="h-14">
-                      <KeyRound className="h-4 w-4 mr-2" />
-                      Tokeni Değiştir
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <KeyRound className="h-6 w-6 text-info" />
-                        API Token Ayarla
-                      </DialogTitle>
-                      <DialogDescription>
-                        Yeni token /api/auth POST ile doğrulanacak ve başarılı ise saklanacaktır.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleSubmitToken} className="space-y-5 py-4">
-                      <div className="space-y-2">
-                        <Label>Yeni API Token</Label>
-                        <Input
-                          type="text"
-                          value={newApiToken}
-                          onChange={(e) => setNewApiToken(e.target.value)}
-                          placeholder="pg_xxx veya jwt token"
-                          className="h-14 font-mono"
-                          autoFocus
-                        />
-                      </div>
-                      <DialogFooter className="gap-2">
-                        <Button type="button" variant="outline" onClick={() => setTokenDialogOpen(false)}>
-                          İptal
-                        </Button>
-                        <Button
-                          type="submit"
-                          disabled={tokenSubmitting || !newApiToken.trim()}
-                          className="bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
-                        >
-                          {tokenSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                          <Save className="h-4 w-4 mr-2" />
-                          Kaydet
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-warning/30 bg-warning/5 p-6 space-y-4">
-              <div className="flex items-start gap-3 flex-wrap">
-                <div className="h-10 w-10 shrink-0 rounded-md bg-warning/15 flex items-center justify-center">
-                  <AlertCircle className="h-5 w-5 text-warning" />
+                <div className="space-y-1">
+                  <Label htmlFor="new-password">{t("settings.security.new")}</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPw}
+                    onChange={(e) => setNewPw(e.target.value)}
+                  />
+                  {tooShort && (
+                    <p className="text-xs text-destructive">
+                      {t("settings.security.tooShort", { min: MIN_PASSWORD_LENGTH })}
+                    </p>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-warning">API Tokeni Ayarla</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Oturum açma veya token doğrulaması yapılmadı. Aşağıdan token ayarlayın.
-                  </div>
+                <div className="space-y-1">
+                  <Label htmlFor="new-password-2">{t("settings.security.repeat")}</Label>
+                  <Input
+                    id="new-password-2"
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPw2}
+                    onChange={(e) => setNewPw2(e.target.value)}
+                  />
+                  {mismatch && (
+                    <p className="flex items-center gap-1 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      {t("settings.security.mismatch")}
+                    </p>
+                  )}
                 </div>
-              </div>
-              <Dialog open={tokenDialogOpen} onOpenChange={setTokenDialogOpen}>
-                <DialogTrigger asChild>
+                <DialogFooter className="gap-2">
                   <Button
-                    className="h-12 w-full bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setPasswordDialogOpen(false);
+                      clearPasswordForm();
+                    }}
                   >
-                    <KeyRound className="h-5 w-5 mr-2" />
-                    API Tokeni Ayarla
+                    {t("common.cancel")}
                   </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                      <KeyRound className="h-6 w-6 text-info" />
-                      API Token Ayarla
-                    </DialogTitle>
-                    <DialogDescription>
-                      Token /api/auth POST endpointi ile doğrulanacaktır.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleSubmitToken} className="space-y-5 py-4">
-                    <div className="space-y-2">
-                      <Label>API Token</Label>
-                      <Input
-                        type="text"
-                        value={newApiToken}
-                        onChange={(e) => setNewApiToken(e.target.value)}
-                        placeholder="Bearer token veya master parola"
-                        className="h-14 font-mono"
-                        autoFocus
-                      />
-                    </div>
-                    <DialogFooter className="gap-2">
-                      <Button type="button" variant="outline" onClick={() => setTokenDialogOpen(false)}>
-                        İptal
-                      </Button>
-                      <Button
-                        type="submit"
-                        disabled={tokenSubmitting || !newApiToken.trim()}
-                        className="bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
-                      >
-                        {tokenSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        <Save className="h-4 w-4 mr-2" />
-                        Ayarla
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={pwSubmitting || !currentPw || !newPw || !newPw2 || mismatch || tooShort}
+                  >
+                    {pwSubmitting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5" />
+                    )}
+                    {t("common.save")}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </Section>
+      </div>
     </div>
   );
 }

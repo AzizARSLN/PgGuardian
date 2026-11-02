@@ -14,10 +14,10 @@ import {
   getFilteredRowModel,
 } from "@tanstack/react-table";
 import { endpoints, type Profile, type ProfileCreate } from "@/lib/api/types";
+import { api, ApiError } from "@/lib/api/client";
 import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RiskBadge } from "@/components/ui/risk-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,9 +46,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { IfWriter } from "@/components/role-guard";
 import { useConfirm } from "@/lib/hooks/useConfirm";
+import { useI18n } from "@/lib/i18n";
+import { useProfileStore } from "@/store/useProfileStore";
 import {
-  Database,
+  AlertTriangle,
   Plus,
   Trash2,
   Star,
@@ -56,7 +59,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Server,
-  KeyRound,
   Eye,
   EyeOff,
   RefreshCw,
@@ -67,17 +69,17 @@ import { useForm } from "react-hook-form";
 
 type PageSize = 10 | 25 | 50;
 
-function TableSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full" />
-      ))}
-    </div>
-  );
-}
+const NO_PROFILES: Profile[] = [];
+
+// Same rule the backend enforces; the 422 is still surfaced if the two ever differ.
+const PASSWORD_ENV_PATTERN = /^[A-Z_][A-Z0-9_]*(PASS|PASSWORD|PWD)[A-Z0-9_]*$/;
+const PASSWORD_ENV_DENIED = /^(PGGUARDIAN_|PGPASSWORD$)/;
+
+const FORM_FIELDS = ["name", "host", "port", "database", "username", "password", "password_env"] as const;
+type FormField = (typeof FORM_FIELDS)[number];
 
 export default function ConnectionsPage() {
+  const { t, formatNumber } = useI18n();
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -93,6 +95,7 @@ export default function ConnectionsPage() {
     reset,
     watch,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<ProfileCreate>({
     defaultValues: {
@@ -107,217 +110,211 @@ export default function ConnectionsPage() {
     },
   });
 
-  const { data: profiles, isLoading, refetch } = useQuery({
+  // This page is reachable before a profile is chosen, so it only ever talks to /profiles.
+  const { data: profiles, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: qk.profiles.all(),
     queryFn: () => endpoints.listProfiles(),
   });
 
+  const closeDialog = () => {
+    setDialogOpen(false);
+    reset();
+    setShowPassword(false);
+  };
+
   const createMutation = useMutation({
-    mutationFn: (body: ProfileCreate) => endpoints.upsertProfile(body),
+    // skipToast: validation failures are shown next to the field that caused them.
+    mutationFn: (body: ProfileCreate) => api.post<Profile>("/profiles", body, { skipToast: true }),
     onSuccess: () => {
-      toast.success("Bağlantı profili oluşturuldu");
+      toast.success(t("connections.toast.created"));
       queryClient.invalidateQueries({ queryKey: qk.profiles.all() });
-      setDialogOpen(false);
-      reset();
-      setShowPassword(false);
-    },
-    onError: () => {
-      toast.error("Profil oluşturulamadı");
+      closeDialog();
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (name: string) => endpoints.deleteProfile(name),
-    onSuccess: () => {
-      toast.success("Profil silindi");
+    onSuccess: (_, name) => {
+      toast.success(t("connections.toast.deleted"));
       queryClient.invalidateQueries({ queryKey: qk.profiles.all() });
-    },
-    onError: () => {
-      toast.error("Profil silinemedi");
+      // The session must not keep pointing at a profile that no longer exists.
+      const store = useProfileStore.getState();
+      if (store.selectedProfileName === name) {
+        queryClient.resetQueries({ predicate: (q) => q.queryKey[0] !== "profiles" });
+        store.setSelectedProfileName(null);
+      }
     },
   });
 
   const defaultMutation = useMutation({
     mutationFn: (name: string) => endpoints.setDefaultProfile(name),
     onSuccess: () => {
-      toast.success("Varsayılan profil güncellendi");
+      toast.success(t("connections.toast.defaultUpdated"));
       queryClient.invalidateQueries({ queryKey: qk.profiles.all() });
-    },
-    onError: () => {
-      toast.error("Varsayılan ayarlanamadı");
     },
   });
 
-  const hasDefault = (profiles ?? []).some((p) => p.is_default);
+  const allProfiles = profiles ?? NO_PROFILES;
+  const hasDefault = allProfiles.some((p) => p.is_default);
+
+  const showSubmitError = (error: unknown) => {
+    const validation = error instanceof ApiError ? error.validationErrors : null;
+    let placed = false;
+    for (const item of validation ?? []) {
+      const field = item.loc[item.loc.length - 1];
+      if (FORM_FIELDS.includes(field as FormField)) {
+        setError(field as FormField, { message: item.msg.replace(/^Value error,\s*/, "") });
+        placed = true;
+      }
+    }
+    if (!placed) {
+      setError("root", {
+        message: error instanceof Error ? error.message : t("connections.toast.createFailed"),
+      });
+    }
+  };
 
   const onSubmitCreate = handleSubmit(async (data) => {
+    const name = data.name.trim();
+    if (!name) {
+      setError("name", { message: t("connections.form.required") });
+      return;
+    }
+    // POST /profiles is an upsert: an existing name would be silently replaced.
+    if (allProfiles.some((p) => p.name === name)) {
+      setError("name", { message: t("connections.form.nameTaken", { name }) });
+      return;
+    }
+    const payload: ProfileCreate = {
+      name,
+      host: data.host?.trim() || undefined,
+      port: data.port ? Number(data.port) : undefined,
+      database: data.database?.trim() || undefined,
+      username: data.username?.trim() || undefined,
+      password: data.password ? data.password : null,
+      password_env: data.password_env?.trim() || null,
+      is_default: data.is_default ?? false,
+    };
     try {
-      const payload: ProfileCreate = {
-        name: data.name.trim(),
-        host: data.host?.trim() || undefined,
-        port: data.port ? Number(data.port) : undefined,
-        database: data.database?.trim() || undefined,
-        username: data.username?.trim() || undefined,
-        password: data.password ? data.password : null,
-        password_env: data.password_env?.trim() || null,
-        is_default: data.is_default ?? false,
-      };
-      if (!payload.name) {
-        toast.error("Profil adı zorunludur");
-        return;
-      }
       await createMutation.mutateAsync(payload);
-    } catch (e) {
+    } catch (error) {
+      showSubmitError(error);
     }
   });
 
   const handleDelete = async (profile: Profile) => {
     if (profile.is_default) {
-      toast.error("Varsayılan profil silinemez. Önce başka bir profili varsayılan yapın.");
+      toast.error(t("connections.toast.defaultProtected"));
       return;
     }
     const ok = await confirm({
-      title: `"${profile.name}" profilini sil?`,
-      description:
-        "Bu işlem geri alınamaz. Profil ve ilişkili tüm ayarlar kalıcı olarak silinecektir. Devam etmek istediğinizden emin misiniz?",
+      title: t("connections.confirmDelete.title", { name: profile.name }),
+      description: t("connections.confirmDelete.description"),
       risk_level: "DANGEROUS",
-      confirm_label: "SİL",
-      cancel_label: "İptal",
+      confirm_label: t("common.delete"),
+      cancel_label: t("common.cancel"),
       confirm_name_required: true,
       confirm_name_value: profile.name,
-      confirm_name_placeholder: `Onaylamak için "${profile.name}" yazın`,
-      sql_preview: [
-        `DELETE FROM profiles WHERE name = '${profile.name}'`,
-      ],
+      confirm_name_placeholder: t("connections.confirmDelete.placeholder", { name: profile.name }),
     });
-    if (ok) {
-      await deleteMutation.mutateAsync(profile.name);
-    }
+    if (ok) deleteMutation.mutate(profile.name);
   };
 
   const handleSetDefault = async (profile: Profile) => {
     if (profile.is_default) return;
     const ok = await confirm({
-      title: `"${profile.name}" varsayılan yapılsın mı?`,
-      description:
-        "Tüm yeni işlemler artık bu bağlantı profili üzerinden yürütülecek. Mevcut varsayılan profil değiştirilecek.",
+      title: t("connections.confirmDefault.title", { name: profile.name }),
+      description: t("connections.confirmDefault.description"),
       risk_level: "MAINTENANCE",
-      confirm_label: "Varsayılan Yap",
-      cancel_label: "İptal",
-      sql_preview: [
-        `UPDATE profiles SET is_default = true WHERE name = '${profile.name}'`,
-      ],
+      confirm_label: t("connections.confirmDefault.confirm"),
+      cancel_label: t("common.cancel"),
     });
-    if (ok) {
-      await defaultMutation.mutateAsync(profile.name);
-    }
+    if (ok) defaultMutation.mutate(profile.name);
   };
 
   const columns: ColumnDef<Profile>[] = [
     {
       accessorKey: "name",
-      header: "Profil Adı",
+      header: t("connections.columns.name"),
       cell: ({ row }) => {
         const p = row.original;
         return (
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-md bg-gradient-to-br from-info/20 to-success/20 border border-border flex items-center justify-center shrink-0">
-              <Database className="h-5 w-5 text-success" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="font-semibold text-sm truncate">{p.name}</p>
-                {p.is_default && (
-                  <RiskBadge riskLevel="OK" size="sm">
-                    <Star className="h-3 w-3 fill-warning text-warning" />
-                    Varsayılan
-                  </RiskBadge>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground truncate max-w-[260px]">
-                {p.username ?? "-"}@{p.host ?? "-"}:{p.port ?? 5432}/{p.database ?? "-"}
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="truncate font-mono font-medium">{p.name}</span>
+            {p.is_default && (
+              <Badge variant="outline" className="gap-1 border-warning/30 text-[10px] text-warning">
+                <Star className="h-3 w-3 fill-warning" />
+                {t("connections.default")}
+              </Badge>
+            )}
           </div>
         );
       },
     },
     {
       accessorKey: "host",
-      header: "Host",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono text-muted-foreground bg-card px-3 py-1.5 rounded-md">
-          {row.original.host ?? "-"}
-        </code>
-      ),
+      header: t("connections.columns.host"),
+      cell: ({ row }) => <span className="font-mono">{row.original.host ?? "-"}</span>,
     },
     {
       accessorKey: "port",
-      header: "Port",
-      cell: ({ row }) => (
-        <span className="text-sm font-mono">{row.original.port ?? "-"}</span>
-      ),
+      header: t("connections.columns.port"),
+      cell: ({ row }) => <span className="font-mono">{row.original.port ?? "-"}</span>,
     },
     {
       accessorKey: "database",
-      header: "Veritabanı",
-      cell: ({ row }) => (
-        <span className="text-sm">{row.original.database ?? "-"}</span>
-      ),
+      header: t("connections.columns.database"),
+      cell: ({ row }) => <span className="font-mono">{row.original.database ?? "-"}</span>,
     },
     {
       accessorKey: "username",
-      header: "Kullanıcı",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm font-mono">{row.original.username ?? "-"}</span>
-        </div>
-      ),
+      header: t("connections.columns.username"),
+      cell: ({ row }) => <span className="font-mono">{row.original.username ?? "-"}</span>,
     },
     {
       id: "actions",
-      header: () => <div className="text-right">İşlemler</div>,
+      header: () => <div className="text-right">{t("connections.columns.actions")}</div>,
       enableSorting: false,
       cell: ({ row }) => {
         const p = row.original;
-        const busy =
-          deleteMutation.isPending || defaultMutation.isPending;
+        const busy = deleteMutation.isPending || defaultMutation.isPending;
         return (
-          <div className="flex items-center justify-end gap-2">
-          {!p.is_default && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy || defaultMutation.isPending}
-              onClick={() => handleSetDefault(p)}
-              className="h-9 rounded-md"
-            >
-              <Star className="h-3.5 w-3.5" />
-              Varsayılan
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy || p.is_default}
-            onClick={() => handleDelete(p)}
-            className={cn(
-              "h-9 rounded-md",
-              !p.is_default && "text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
-            )}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Sil
-          </Button>
-        </div>
+          <IfWriter>
+            <div className="flex items-center justify-end gap-1">
+              {!p.is_default && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => handleSetDefault(p)}
+                  className="h-7 px-2"
+                >
+                  <Star className="h-3.5 w-3.5" />
+                  {t("connections.setDefault")}
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy || p.is_default}
+                onClick={() => handleDelete(p)}
+                className={cn(
+                  "h-7 px-2",
+                  !p.is_default && "text-destructive hover:bg-destructive/10 hover:text-destructive"
+                )}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("common.delete")}
+              </Button>
+            </div>
+          </IfWriter>
         );
       },
     },
   ];
 
   const table = useReactTable({
-    data: profiles ?? [],
+    data: allProfiles,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -325,273 +322,318 @@ export default function ConnectionsPage() {
     getSortedRowModel: getSortedRowModel(),
     onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
-    state: {
-      sorting,
-      columnFilters,
-      globalFilter,
-    },
-    initialState: {
-      pagination: {
-        pageSize,
-      },
-    },
+    onGlobalFilterChange: setGlobalFilter,
+    state: { sorting, columnFilters, globalFilter },
+    initialState: { pagination: { pageSize } },
   });
 
   const currentPage = table.getState().pagination.pageIndex;
   const pageCount = table.getPageCount();
-  const canPrev = currentPage > 0;
-  const canNext = currentPage < pageCount - 1;
+  const filteredCount = table.getFilteredRowModel().rows.length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-            <Server className="h-8 w-8 text-info" />
-            Bağlantı Profilleri
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Server className="h-4 w-4 text-muted-foreground" />
+            {t("connections.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            PostgreSQL bağlantı profillerini yönetin. Bir tanesini varsayılan olarak ayarlayın.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("connections.subtitle")}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => refetch()}
-            className="h-12 px-6 rounded-md"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Yenile
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+            {t("common.refresh")}
           </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-12 px-6 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success">
-                <Plus className="h-4 w-4 mr-2" />
-                Yeni Profil
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5 text-success" />
-                  Yeni Bağlantı Profili
-                </DialogTitle>
-                <DialogDescription>
-                  PostgreSQL sunucusuna bağlanmak için bilgileri girin.
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={onSubmitCreate} className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Profil Adı *</Label>
-                    <Input
-                      {...register("name", { required: "Zorunlu alan" })}
-                      placeholder="prod-primary"
-                      className={cn(errors.name && "border-destructive/50")}
-                    />
-                    {errors.name && (
-                      <p className="text-xs text-destructive">{errors.name.message}</p>
-                    )}
+          <IfWriter>
+            <Dialog
+              open={dialogOpen}
+              onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}
+            >
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-3.5 w-3.5" />
+                  {t("connections.newProfile")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("connections.form.title")}</DialogTitle>
+                  <DialogDescription>{t("connections.form.description")}</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={onSubmitCreate} className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1 md:col-span-2">
+                      <Label htmlFor="profile-name">{t("connections.form.name")}</Label>
+                      <Input
+                        id="profile-name"
+                        {...register("name", { required: t("connections.form.required") })}
+                        placeholder="prod-primary"
+                        className={cn("font-mono", errors.name && "border-destructive/50")}
+                      />
+                      {errors.name && (
+                        <p className="text-xs text-destructive">{errors.name.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="profile-host">{t("connections.columns.host")}</Label>
+                      <Input
+                        id="profile-host"
+                        {...register("host")}
+                        placeholder="localhost"
+                        className={cn("font-mono", errors.host && "border-destructive/50")}
+                      />
+                      {errors.host && (
+                        <p className="text-xs text-destructive">{errors.host.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="profile-port">{t("connections.columns.port")}</Label>
+                      <Input
+                        id="profile-port"
+                        type="number"
+                        {...register("port", {
+                          valueAsNumber: true,
+                          validate: (v) =>
+                            v === undefined ||
+                            Number.isNaN(v) ||
+                            (v >= 1 && v <= 65535) ||
+                            t("connections.form.portRange"),
+                        })}
+                        placeholder="5432"
+                        className={cn("font-mono", errors.port && "border-destructive/50")}
+                      />
+                      {errors.port && (
+                        <p className="text-xs text-destructive">{errors.port.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="profile-database">{t("connections.columns.database")}</Label>
+                      <Input
+                        id="profile-database"
+                        {...register("database")}
+                        placeholder="postgres"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="profile-username">{t("connections.columns.username")}</Label>
+                      <Input
+                        id="profile-username"
+                        {...register("username")}
+                        placeholder="postgres"
+                        className="font-mono"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Host</Label>
-                    <Input {...register("host")} placeholder="localhost" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Port</Label>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="profile-password">{t("connections.form.password")}</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowPassword((s) => !s)}
+                        className="h-6 px-2"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-3 w-3" />
+                        ) : (
+                          <Eye className="h-3 w-3" />
+                        )}
+                        {showPassword ? t("connections.form.hide") : t("connections.form.show")}
+                      </Button>
+                    </div>
                     <Input
-                      type="number"
-                      {...register("port", { valueAsNumber: true })}
-                      placeholder="5432"
+                      id="profile-password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      {...register("password")}
+                      placeholder="••••••••"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Veritabanı</Label>
-                    <Input {...register("database")} placeholder="postgres" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Kullanıcı Adı</Label>
-                    <Input {...register("username")} placeholder="postgres" />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                  <Label>Şifre</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowPassword((s) => !s)}
-                    className="h-8 px-3 rounded-md text-xs"
-                  >
-                    {showPassword ? (
-                      <><EyeOff className="h-3 w-3 mr-1" />Gizle</>
+                  <div className="space-y-1">
+                    <Label htmlFor="profile-password-env">{t("connections.form.passwordEnv")}</Label>
+                    <Input
+                      id="profile-password-env"
+                      {...register("password_env", {
+                        validate: (value) => {
+                          const v = value?.trim();
+                          if (!v) return true;
+                          return (
+                            (PASSWORD_ENV_PATTERN.test(v) && !PASSWORD_ENV_DENIED.test(v)) ||
+                            t("connections.form.passwordEnvInvalid")
+                          );
+                        },
+                      })}
+                      placeholder="PROD_DB_PASSWORD"
+                      className={cn("font-mono", errors.password_env && "border-destructive/50")}
+                    />
+                    {errors.password_env ? (
+                      <p className="text-xs text-destructive">{errors.password_env.message}</p>
                     ) : (
-                      <><Eye className="h-3 w-3 mr-1" />Göster</>
+                      <p className="text-xs text-muted-foreground">
+                        {t("connections.form.passwordEnvHelp")}
+                      </p>
                     )}
-                  </Button>
                   </div>
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    {...register("password")}
-                    placeholder="••••••••"
-                  />
-                </div>
 
-                <div className="space-y-2">
-                  <Label>Şifre Ortam Değişkeni</Label>
-                  <Input
-                    {...register("password_env")}
-                    placeholder="PGPASSWORD (isteğe bağlı, şifre yerine kullanılır)"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Şifre yerine ortam değişkeni adı yazarsanız güvenlik daha iyi olur.
-                  </p>
-                </div>
+                  <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                    <div>
+                      <Label htmlFor="profile-default">{t("connections.form.isDefault")}</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {hasDefault
+                          ? t("connections.form.isDefaultReplaces")
+                          : t("connections.form.isDefaultHelp")}
+                      </p>
+                    </div>
+                    <Switch
+                      id="profile-default"
+                      checked={watch("is_default")}
+                      onCheckedChange={(v) => setValue("is_default", v)}
+                    />
+                  </div>
 
-                <div className="flex items-center justify-between rounded-md border border-border bg-card p-5">
-                  <div>
-                    <Label>Varsayılan olarak ayarla</Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {hasDefault
-                        ? "Mevcut varsayılan profil değiştirilecek"
-                        : "Tüm işlemler bu profil ile başlar"}
+                  {errors.root && (
+                    <p className="flex items-center gap-1 text-xs text-destructive">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      {errors.root.message}
                     </p>
-                  </div>
-                  <Switch
-                    checked={watch("is_default")}
-                    onCheckedChange={(v) => setValue("is_default", v)}
-                  />
-                </div>
+                  )}
 
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDialogOpen(false);
-                      reset();
-                      setShowPassword(false);
-                    }}
-                    className="h-11 rounded-md"
-                  >
-                    İptal
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting || createMutation.isPending}
-                    className="h-11 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success"
-                  >
-                    {isSubmitting || createMutation.isPending ? (
-                      <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Oluşturuluyor…</>
-                    ) : (
-                      <><Plus className="h-4 w-4 mr-2" />Profili Oluştur</>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" size="sm" onClick={closeDialog}>
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={isSubmitting || createMutation.isPending}
+                    >
+                      {isSubmitting || createMutation.isPending ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                      {isSubmitting || createMutation.isPending
+                        ? t("connections.form.creating")
+                        : t("connections.form.create")}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </IfWriter>
         </div>
       </div>
 
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Database className="h-5 w-5 text-info" />
-              Profiller
-            </CardTitle>
-            <CardDescription>
-              {(profiles?.length ?? 0)} adet profil · {(profiles ?? []).filter((p) => p.is_default).length} varsayılan
-            </CardDescription>
-          </div>
-          <div className="relative max-w-md w-full">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="overflow-hidden rounded-md border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <p className="font-mono text-xs text-muted-foreground">
+            {t("connections.count", {
+              total: formatNumber(allProfiles.length),
+              defaults: formatNumber(allProfiles.filter((p) => p.is_default).length),
+            })}
+          </p>
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={globalFilter ?? ""}
               onChange={(e) => setGlobalFilter(String(e.target.value))}
-              placeholder="Profil, host, kullanıcı ara..."
-              className="pl-12 h-11"
+              placeholder={t("connections.searchPlaceholder")}
+              aria-label={t("connections.searchPlaceholder")}
+              className="h-8 pl-8 text-xs"
             />
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="!p-0">
-        <div className="rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((h) => (
-                    <TableHead key={h.id}>
-                      {h.isPlaceholder
-                        ? null
-                        : flexRender(h.column.columnDef.header, h.getContext())}
-                    </TableHead>
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="space-y-1.5" aria-label={t("common.loading")}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-full" />
+                    ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="flex items-center justify-center gap-3 py-4 text-destructive">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    {t("common.loadFailed")}
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => refetch()}>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t("common.retry")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : allProfiles.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="py-6 text-center">
+                    <p className="font-medium text-foreground">{t("connections.empty.title")}</p>
+                    <p className="mb-2 mt-0.5 text-muted-foreground">
+                      {t("connections.empty.hint")}
+                    </p>
+                    <IfWriter>
+                      <Button size="sm" onClick={() => setDialogOpen(true)}>
+                        <Plus className="h-3.5 w-3.5" />
+                        {t("connections.empty.create")}
+                      </Button>
+                    </IfWriter>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filteredCount === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="py-6 text-center text-muted-foreground">
+                  {t("connections.noMatch")}
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
                   ))}
                 </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="p-6">
-                    <TableSkeleton />
-                  </TableCell>
-                </TableRow>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="p-16 text-center">
-                    <Database className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                    <p className="font-semibold text-lg">Henüz profil yok</p>
-                    <p className="text-sm text-muted-foreground mt-2 mb-5">
-                      Bir PostgreSQL bağlantısı oluşturmak için {'"'}Yeni Profil{'"'}e tıklayın.
-                    </p>
-                    <Button
-                      onClick={() => setDialogOpen(true)}
-                      className="h-11 px-6 rounded-md"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      İlk Profili Oluştur
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        {!isLoading && (profiles?.length ?? 0) > 0 && (
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-border">
-            <div className="flex items-center gap-3 text-sm">
-              <p className="text-muted-foreground">
-                Sayfa{" "}
-                <span className="font-semibold text-foreground">
-                  {currentPage + 1}
-                </span>{" "}
-                / {Math.max(1, pageCount)} · Toplam{" "}
-                <span className="font-semibold text-foreground">
-                  {profiles?.length ?? 0}
-                </span>{" "}
-                kayıt
-              </p>
-              <div className="h-6 w-px bg-muted" />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Sayfa başına:</span>
+              ))
+            )}
+          </TableBody>
+        </Table>
+        {!isLoading && !isError && allProfiles.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5 text-xs">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <span className="font-mono">
+                {t("connections.pagination.summary", {
+                  page: currentPage + 1,
+                  pages: Math.max(1, pageCount),
+                  total: formatNumber(filteredCount),
+                })}
+              </span>
+              <span className="flex items-center gap-1.5">
+                {t("connections.pagination.perPage")}
                 <Select
                   value={String(pageSize)}
                   onValueChange={(v) => {
@@ -600,7 +642,10 @@ export default function ConnectionsPage() {
                     table.setPageSize(n);
                   }}
                 >
-                  <SelectTrigger className="h-9 w-[88px] rounded-md">
+                  <SelectTrigger
+                    className="h-7 w-16 font-mono text-xs"
+                    aria-label={t("connections.pagination.perPage")}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -611,34 +656,33 @@ export default function ConnectionsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
                 size="sm"
+                className="h-7 px-2"
                 onClick={() => table.previousPage()}
-                disabled={!canPrev}
-                className="h-9 rounded-md"
+                disabled={!table.getCanPreviousPage()}
               >
-                <ChevronLeft className="h-4 w-4" />
-                Önceki
+                <ChevronLeft className="h-3.5 w-3.5" />
+                {t("connections.pagination.previous")}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
+                className="h-7 px-2"
                 onClick={() => table.nextPage()}
-                disabled={!canNext}
-                className="h-9 rounded-md"
+                disabled={!table.getCanNextPage()}
               >
-                Sonraki
-                <ChevronRight className="h-4 w-4" />
+                {t("connections.pagination.next")}
+                <ChevronRight className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
     </div>
   );
 }

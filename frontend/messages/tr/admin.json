@@ -1,1 +1,387 @@
-{}
+{
+  "connections": {
+    "title": "Bağlantı Profilleri",
+    "subtitle": "PostgreSQL bağlantı profillerini yönetin. Çalışılacak profil üst menüden açıkça seçilir.",
+    "newProfile": "Yeni Profil",
+    "default": "Varsayılan",
+    "setDefault": "Varsayılan yap",
+    "count": "{total} profil · {defaults} varsayılan",
+    "searchPlaceholder": "Profil, host, kullanıcı ara...",
+    "noMatch": "Aramayla eşleşen profil yok",
+    "columns": {
+      "name": "Profil Adı",
+      "host": "Host",
+      "port": "Port",
+      "database": "Veritabanı",
+      "username": "Kullanıcı",
+      "actions": "İşlemler"
+    },
+    "toast": {
+      "created": "Bağlantı profili oluşturuldu",
+      "createFailed": "Profil oluşturulamadı",
+      "deleted": "Profil silindi",
+      "defaultUpdated": "Varsayılan profil güncellendi",
+      "defaultProtected": "Varsayılan profil silinemez. Önce başka bir profili varsayılan yapın."
+    },
+    "confirmDelete": {
+      "title": "\"{name}\" profili silinsin mi?",
+      "description": "Bu işlem geri alınamaz. Profil ve kayıtlı bağlantı bilgileri kalıcı olarak silinir.",
+      "placeholder": "Onaylamak için \"{name}\" yazın"
+    },
+    "confirmDefault": {
+      "title": "\"{name}\" varsayılan yapılsın mı?",
+      "description": "Profil listede varsayılan olarak işaretlenir. Bu oturumda seçili bağlantı değişmez.",
+      "confirm": "Varsayılan yap"
+    },
+    "form": {
+      "title": "Yeni Bağlantı Profili",
+      "description": "PostgreSQL sunucusuna bağlanmak için bilgileri girin. Profil oluşturmak onu seçmez.",
+      "name": "Profil Adı *",
+      "required": "Zorunlu alan",
+      "nameTaken": "\"{name}\" adında bir profil zaten var",
+      "portRange": "Port 1 ile 65535 arasında olmalı",
+      "password": "Şifre",
+      "show": "Göster",
+      "hide": "Gizle",
+      "passwordEnv": "Şifre Ortam Değişkeni",
+      "passwordEnvHelp": "İsteğe bağlı, şifre yerine kullanılır. PROD_DB_PASSWORD gibi ayrı bir değişken olmalı; PGGUARDIAN_* ve PGPASSWORD kabul edilmez.",
+      "passwordEnvInvalid": "PROD_DB_PASSWORD gibi bir değişken adı girin; PGGUARDIAN_* ve PGPASSWORD kabul edilmez.",
+      "isDefault": "Varsayılan olarak işaretle",
+      "isDefaultReplaces": "Mevcut varsayılan profilin yerini alır",
+      "isDefaultHelp": "Listede varsayılan olarak gösterilir",
+      "create": "Profili Oluştur",
+      "creating": "Oluşturuluyor…"
+    },
+    "empty": {
+      "title": "Henüz profil yok",
+      "hint": "Başlamak için bir PostgreSQL bağlantı profili oluşturun.",
+      "create": "İlk Profili Oluştur"
+    },
+    "pagination": {
+      "summary": "Sayfa {page} / {pages} · {total} kayıt",
+      "perPage": "Sayfa başına:",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    }
+  },
+  "roles": {
+    "title": "Roller ve İzinler",
+    "subtitle": "PostgreSQL rollerini, özniteliklerini ve izinlerini yönetin",
+    "newRole": "Yeni Rol",
+    "details": "Detay",
+    "protected": "Sistem rolleri silinemez",
+    "count": "{count} rol",
+    "searchPlaceholder": "Rol adı ara...",
+    "noMatch": "Aramayla eşleşen rol yok",
+    "columns": {
+      "name": "Rol Adı",
+      "connectionLimit": "Bağlantı Limiti",
+      "validUntil": "Şifre Geçerlilik",
+      "actions": "İşlemler"
+    },
+    "stats": {
+      "total": "Toplam Rol",
+      "superuser": "SUPERUSER",
+      "canLogin": "Giriş Yapabilen",
+      "elevated": "CREATEDB veya CREATEROLE"
+    },
+    "toast": {
+      "created": "Rol oluşturuldu",
+      "deleted": "Rol silindi"
+    },
+    "confirmCreate": {
+      "title": "\"{name}\" rolü oluşturulsun mu?",
+      "description": "Aşağıdaki SQL komutu çalıştırılacak. Onaylıyor musunuz?"
+    },
+    "confirmDelete": {
+      "title": "\"{name}\" rolü silinsin mi?",
+      "description": "Bu işlem geri alınamaz. Rol ve üyelikleri kalıcı olarak silinir.",
+      "placeholder": "Onaylamak için \"{name}\" yazın"
+    },
+    "form": {
+      "title": "Yeni Rol Oluştur",
+      "description": "PostgreSQL sunucusunda yeni bir rol oluşturun",
+      "name": "Rol Adı *",
+      "required": "Zorunlu alan",
+      "password": "Şifre",
+      "passwordPlaceholder": "Boş bırakılırsa şifresiz",
+      "attributes": "Rol Öznitelikleri",
+      "login": "Giriş yapabilir (LOGIN)",
+      "loginHelp": "Bu rol ile sunucuya bağlanılabilir",
+      "superuser": "Süper kullanıcı (SUPERUSER)",
+      "superuserHelp": "Tüm kısıtlamalardan muaf, DANGEROUS",
+      "createdb": "Veritabanı oluşturur (CREATEDB)",
+      "createdbHelp": "Yeni veritabanı oluşturabilir",
+      "createrole": "Rol oluşturur (CREATEROLE)",
+      "createroleHelp": "Diğer rolleri yönetebilir",
+      "unlimited": "Sınırsız (∞)",
+      "connections": "{count} bağlantı",
+      "create": "Rolü Oluştur",
+      "creating": "Oluşturuluyor…"
+    },
+    "empty": {
+      "title": "Henüz rol yok",
+      "hint": "Başlamak için bir PostgreSQL rolü oluşturun.",
+      "create": "İlk Rolü Oluştur"
+    },
+    "pagination": {
+      "summary": "Sayfa {page} / {pages} · {total} kayıt",
+      "perPage": "Sayfa başına:",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    }
+  },
+  "roleDetail": {
+    "back": "Rollere Dön",
+    "subtitle": "Öznitelikler, yetkiler ve üyelikler",
+    "refreshAll": "Tümünü Yenile",
+    "on": "AÇIK",
+    "off": "KAPALI",
+    "yes": "EVET",
+    "no": "HAYIR",
+    "notFound": {
+      "title": "\"{name}\" rolü bulunamadı",
+      "hint": "Rol silinmiş olabilir ya da seçili sunucuda bulunmuyor olabilir."
+    },
+    "tabs": {
+      "attributes": "Öznitelikler",
+      "grants": "Yetkiler ({count})",
+      "memberships": "Üyelikler ({count})"
+    },
+    "attributes": {
+      "current": "Mevcut Durum",
+      "editable": "Değiştirilebilir Öznitelikler",
+      "name": "Rol Adı",
+      "connectionLimit": "Bağlantı Limiti",
+      "validUntil": "Şifre Geçerlilik Tarihi",
+      "unlimited": "Sınırsız (∞)",
+      "noExpiry": "Süresiz",
+      "keep": "Değiştirme",
+      "connections": "{count} bağlantı",
+      "newPassword": "Yeni Şifre",
+      "newPasswordPlaceholder": "Değiştirmeyecekseniz boş bırakın",
+      "validUntilHelp": "Boş bırakılırsa mevcut tarih korunur.",
+      "save": "Değişiklikleri Kaydet",
+      "saving": "Kaydediliyor…"
+    },
+    "grants": {
+      "privilege": "Yetki",
+      "type": "Tür",
+      "object": "Nesne",
+      "actions": "İşlemler",
+      "regrant": "Tekrar Ver",
+      "revoke": "Geri Al",
+      "emptyTitle": "Doğrudan yetki yok",
+      "emptyHint": "Bu role doğrudan atanmış yetki bulunmuyor. Rol üyelikleri üzerinden yetki alabilir."
+    },
+    "confirmGrant": {
+      "title": "{privilege} yetkisi verilsin mi?",
+      "description": "\"{role}\" rolüne {type} {target} üzerinde {privilege} yetkisi verilecek."
+    },
+    "confirmRevoke": {
+      "title": "{privilege} yetkisi geri alınsın mı?",
+      "description": "\"{role}\" rolünden {type} {target} üzerindeki {privilege} yetkisi geri alınacak."
+    },
+    "confirmAlter": {
+      "title": "\"{name}\" öznitelikleri güncellensin mi?",
+      "description": "Aşağıdaki SQL komutu çalıştırılacak. Onaylıyor musunuz?",
+      "confirm": "Değişiklikleri Uygula"
+    },
+    "confirmAddMember": {
+      "title": "\"{member}\" rolüne \"{role}\" üyeliği verilsin mi?",
+      "description": "\"{member}\" artık \"{role}\" üyesi olacak ve izinlerini devralacak."
+    },
+    "confirmRemoveMember": {
+      "title": "\"{member}\" üyeliği kaldırılsın mı?",
+      "description": "\"{member}\" artık \"{role}\" rolünün izinlerini devralmayacak.",
+      "placeholder": "Onaylamak için \"{member}\" yazın"
+    },
+    "members": {
+      "title": "Bu Rolün Üyeleri ({count})",
+      "addNew": "Üye Ekle",
+      "dialogTitle": "\"{role}\" Rolüne Üye Ekle",
+      "dialogDescription": "Seçtiğiniz rol \"{role}\" üyesi olacak.",
+      "memberLabel": "Üye Olacak Rol *",
+      "memberPlaceholder": "Rol seçin...",
+      "memberRequired": "Üye rolü seçmek zorunludur",
+      "noCandidates": "Eklenecek uygun rol yok",
+      "add": "Üyeyi Ekle",
+      "adding": "Ekleniyor…",
+      "remove": "Çıkar",
+      "emptyTitle": "Henüz üye yok",
+      "emptyHint": "Başka rolleri bu rolün üyesi yapabilirsiniz."
+    },
+    "memberOf": {
+      "title": "Üye Olduğu Roller ({count})",
+      "emptyTitle": "Üye olunan rol yok",
+      "emptyHint": "\"{role}\" başka bir rolün üyesi değil."
+    },
+    "toast": {
+      "altered": "Rol öznitelikleri güncellendi",
+      "nothingToChange": "Değiştirilecek bir alan girmediniz",
+      "granted": "Yetki verildi",
+      "revoked": "Yetki geri alındı",
+      "memberAdded": "Üyelik verildi",
+      "memberRemoved": "Üyelik kaldırıldı"
+    }
+  },
+  "users": {
+    "title": "Kullanıcı Yönetimi",
+    "subtitle": "Sisteme erişen kullanıcıları buradan yönetin",
+    "forbidden": "Bu sayfayı yalnızca Admin rolündeki kullanıcılar görüntüleyebilir.",
+    "newUser": "Yeni Kullanıcı",
+    "createDescription": "Sisteme yeni bir kullanıcı ekleyin.",
+    "count": "{count} kullanıcı",
+    "empty": "Henüz kullanıcı bulunmuyor",
+    "creating": "Oluşturuluyor",
+    "edit": "Düzenle",
+    "password": "Şifre",
+    "deactivate": "Pasifleştir",
+    "cannotDeactivateSelf": "Kendinizi pasifleştiremezsiniz",
+    "resetTitle": "Şifre Sıfırla",
+    "resetDescription": "{email} için yeni bir şifre belirleyin. Kullanıcının açık oturumları kapatılır.",
+    "resetting": "Sıfırlanıyor",
+    "resetSubmit": "Şifreyi Sıfırla",
+    "deactivateTitle": "Kullanıcı pasifleştirilsin mi?",
+    "deactivateDescription": "Kullanıcı giriş yapamaz ve açık oturumları kapatılır. Kaydı silinmez, daha sonra yeniden aktifleştirilebilir.",
+    "editTitle": "Kullanıcıyı Düzenle",
+    "editDescription": "{email} bilgilerini güncelleyin.",
+    "activeHelp": "Kullanıcının giriş yapabilmesi için aktif olmalıdır.",
+    "saving": "Kaydediliyor",
+    "fields": {
+      "email": "E-posta",
+      "fullName": "Ad Soyad",
+      "initialPassword": "İlk Şifre",
+      "newPassword": "Yeni Şifre",
+      "role": "Rol",
+      "rolePlaceholder": "Rol seçin",
+      "lastLogin": "Son Giriş",
+      "active": "Aktif",
+      "activeFor": "{email} aktif",
+      "actions": "İşlemler"
+    },
+    "validation": {
+      "email": "Geçerli bir e-posta girin",
+      "fullName": "Ad soyad en az 2 karakter olmalı",
+      "password": "Şifre en az {min} karakter olmalı",
+      "role": "Rol seçin"
+    },
+    "toast": {
+      "created": "Kullanıcı oluşturuldu",
+      "createFailed": "Kullanıcı oluşturulamadı",
+      "updated": "Kullanıcı güncellendi",
+      "updateFailed": "Kullanıcı güncellenemedi",
+      "activated": "Kullanıcı aktifleştirildi",
+      "deactivated": "Kullanıcı pasifleştirildi",
+      "statusFailed": "Durum değiştirilemedi",
+      "deactivateFailed": "Kullanıcı pasifleştirilemedi",
+      "passwordReset": "Şifre sıfırlandı",
+      "passwordResetFailed": "Şifre sıfırlanamadı"
+    }
+  },
+  "report": {
+    "title": "Rapor",
+    "subtitle": "Sağlık, teşhis, depolama, replikasyon, bağlantı ve rol özeti · Üretilme: {when}",
+    "downloadJson": "JSON İndir",
+    "downloadHtml": "HTML İndir",
+    "toast": {
+      "jsonDone": "JSON indirildi",
+      "jsonFailed": "JSON indirilemedi",
+      "htmlDone": "HTML indirildi",
+      "htmlFailed": "HTML indirilemedi"
+    },
+    "kpi": {
+      "score": "Sağlık Skoru",
+      "database": "Veritabanı",
+      "connections": "Bağlantılar",
+      "locks": "Kilitler",
+      "locksSub": "{blocking} bloke · {replicas} replica",
+      "blocked": "BLOKE",
+      "clear": "TEMİZ"
+    },
+    "sections": {
+      "summary": { "title": "Özet", "description": "Raporun genel özeti" },
+      "health": { "title": "Sağlık Kontrolleri", "description": "Her kontrolün durumu ve değeri" },
+      "diagnostics": { "title": "Teşhis Bulguları", "description": "CRITICAL, WARNING ve INFO bulguları" },
+      "storage": { "title": "Depolama: İlk 10", "description": "En büyük tablo, indeks ve veritabanları" },
+      "replication": { "title": "Replikasyon", "description": "Replica gecikmesi ve slotlar" },
+      "connections": { "title": "Bağlantılar", "description": "Aktif, boşta ve bekleyen bağlantılar" },
+      "roles": { "title": "Roller", "description": "SUPERUSER, LOGIN ve yetki özeti" }
+    },
+    "summary": {
+      "keys": "Rapor Bölümü",
+      "status": "Durum",
+      "generatedAt": "Üretim Zamanı",
+      "raw": "Ham rapor (üst seviye)",
+      "items": "{count} kayıt"
+    },
+    "health": { "empty": "Sağlık kontrolü verisi yok" },
+    "diagnostics": { "empty": "Teşhis bulgusu yok" },
+    "storage": { "empty": "Depolama verisi yok" },
+    "replication": {
+      "empty": "Replica veya slot yok",
+      "replicas": "Replica'lar ({count})",
+      "slots": "Replikasyon Slotları ({count})",
+      "lag": "Gecikme: {value}",
+      "active": "Aktif",
+      "inactive": "Pasif"
+    },
+    "connections": {
+      "active": "Aktif",
+      "idle": "Boşta",
+      "idleInTransaction": "İşlemde Boşta",
+      "waiting": "Bekleyen",
+      "usage": "Kullanım",
+      "queryDuration": "Sorgu: {seconds} sn"
+    },
+    "roles": {
+      "empty": "Rol verisi yok",
+      "total": "Toplam Rol",
+      "standard": "Standart"
+    },
+    "export": {
+      "title": "PgGuardian — Tam Rapor",
+      "meta": "Veritabanı: {database}",
+      "generated": "Üretilme: {when}",
+      "fullJson": "Tam JSON"
+    }
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "subtitle": "Tercihleriniz otomatik olarak kaydedilir",
+    "theme": {
+      "title": "Tema",
+      "description": "Tercihiniz bu tarayıcıda saklanır.",
+      "light": "Açık",
+      "dark": "Koyu",
+      "system": "Sistem"
+    },
+    "language": {
+      "title": "Dil",
+      "description": "Arayüz, tarih ve sayı biçimi dili."
+    },
+    "refresh": {
+      "title": "Otomatik Yenileme",
+      "description": "Kapalıyken sayfalar yalnızca Yenile ile güncellenir.",
+      "on": "AÇIK",
+      "off": "KAPALI",
+      "pollTitle": "Yenileme Sıklığı",
+      "pollDescription": "Canlı sayfaların veri çekme aralığı.",
+      "pollDisabled": "Otomatik yenileme kapalı.",
+      "pollPlaceholder": "Aralık seçin",
+      "seconds": "{seconds} sn"
+    },
+    "security": {
+      "title": "Şifre",
+      "description": "Bu hesabın giriş şifresini değiştirin.",
+      "change": "Şifreyi Değiştir",
+      "dialogDescription": "Değişiklikten sonra diğer oturumlarınız kapatılır.",
+      "current": "Mevcut Şifre",
+      "new": "Yeni Şifre",
+      "repeat": "Yeni Şifre (Tekrar)",
+      "tooShort": "Şifre en az {min} karakter olmalı",
+      "mismatch": "Yeni şifre ve tekrarı eşleşmiyor",
+      "changed": "Şifreniz değiştirildi"
+    }
+  }
+}

@@ -14,9 +14,8 @@ import {
   getFilteredRowModel,
 } from "@tanstack/react-table";
 import Link from "next/link";
-import { endpoints, type RoleInfo, type RoleCreate, type DryRunResult } from "@/lib/api/types";
+import { endpoints, type RoleInfo, type RoleCreate } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { Button } from "@/components/ui/button";
@@ -47,20 +46,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { IfWriter } from "@/components/role-guard";
 import { useConfirm } from "@/lib/hooks/useConfirm";
+import { useI18n } from "@/lib/i18n";
 import {
+  AlertTriangle,
   Shield,
   Plus,
   Trash2,
   Search,
   ChevronLeft,
   ChevronRight,
-  Users,
   RefreshCw,
-  Edit3,
-  CheckCircle2,
-  XCircle,
   ArrowUpRight,
+  Check,
+  Minus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -68,31 +68,24 @@ import { useForm } from "react-hook-form";
 
 type PageSize = 10 | 25 | 50;
 
-function TableSkeleton() {
-  return (
-    <div className="space-y-3 p-6">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full" />
-      ))}
-    </div>
-  );
+const NO_ROLES: RoleInfo[] = [];
+const CONNECTION_LIMITS = [1, 5, 10, 20, 50, 100];
+
+/** The backend refuses to drop these, so the button should not offer it. */
+function isProtectedRole(name: string): boolean {
+  return name === "postgres" || name.toLowerCase().startsWith("pg_");
 }
 
-function AttrBadge({ label, value }: { label: string; value: boolean }) {
+function AttrCell({ value }: { value: boolean }) {
   return value ? (
-    <RiskBadge riskLevel="OK" size="sm" showIcon={false} className="h-7">
-      <CheckCircle2 className="h-3 w-3 mr-1" />
-      {label}
-    </RiskBadge>
+    <Check className="h-3.5 w-3.5 text-success" />
   ) : (
-    <RiskBadge riskLevel="INFO" size="sm" showIcon={false} className="h-7 opacity-60">
-      <XCircle className="h-3 w-3 mr-1" />
-      {label}
-    </RiskBadge>
+    <Minus className="h-3.5 w-3.5 text-muted-foreground/50" />
   );
 }
 
 export default function RolesPage() {
+  const { t, formatNumber } = useI18n();
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -120,223 +113,179 @@ export default function RolesPage() {
     },
   });
 
-  const { data: roles, isLoading, refetch } = useQuery({
+  const { data: roles, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: qk.roles.all(),
     queryFn: () => endpoints.listRoles(),
   });
 
+  const closeDialog = () => {
+    setDialogOpen(false);
+    reset();
+  };
+
   const createMutation = useMutation({
     mutationFn: (body: RoleCreate) => endpoints.createRole(body),
     onSuccess: () => {
-      toast.success("Rol başarıyla oluşturuldu");
+      toast.success(t("roles.toast.created"));
       queryClient.invalidateQueries({ queryKey: qk.roles.all() });
-      setDialogOpen(false);
-      reset();
-    },
-    onError: () => {
-      toast.error("Rol oluşturulamadı");
+      closeDialog();
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (name: string) =>
-      endpoints.dropRole(name, { confirm: true, confirm_name: name }),
+    mutationFn: (name: string) => endpoints.dropRole(name, { confirm: true, confirm_name: name }),
     onSuccess: () => {
-      toast.success("Rol silindi");
+      toast.success(t("roles.toast.deleted"));
       queryClient.invalidateQueries({ queryKey: qk.roles.all() });
-    },
-    onError: () => {
-      toast.error("Rol silinemedi");
     },
   });
 
   const onSubmitCreate = handleSubmit(async (data) => {
+    const name = data.name.trim();
+    const payload: RoleCreate = {
+      name,
+      login: data.login,
+      password: data.password || null,
+      superuser: data.superuser,
+      createdb: data.createdb,
+      createrole: data.createrole,
+      connection_limit: data.connection_limit,
+    };
+    // Failures reach the user through the API client's toast with the backend message.
     try {
-      const trimmedName = data.name.trim();
-      if (!trimmedName) {
-        toast.error("Rol adı zorunludur");
-        return;
-      }
-
-      const dryRunPayload: RoleCreate = {
-        name: trimmedName,
-        login: data.login,
-        password: data.password || null,
-        superuser: data.superuser,
-        createdb: data.createdb,
-        createrole: data.createrole,
-        connection_limit: data.connection_limit,
-        dry_run: true,
-      };
-
-      const dryRunRes = await endpoints.createRole(dryRunPayload);
-      const dryRun = dryRunRes as DryRunResult;
-
-      if (dryRun && "sql" in dryRunRes && dryRunRes.sql) {
-        const riskLevel = (dryRunRes.risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS";
+      const dryRun = await endpoints.createRole({ ...payload, dry_run: true });
+      if ("sql" in dryRun && dryRun.sql) {
         const ok = await confirm({
-          title: `"${trimmedName}" rolü oluşturulsun mu?`,
-          description:
-            "Yeni PostgreSQL rolü oluşturulacak. Aşağıdaki SQL komutu çalıştırılacak. Onaylıyor musunuz?",
-          risk_level: riskLevel,
-          confirm_label: "Rolü Oluştur",
-          cancel_label: "İptal",
-          sql_preview: dryRunRes.sql,
+          title: t("roles.confirmCreate.title", { name }),
+          description: t("roles.confirmCreate.description"),
+          risk_level: (dryRun.risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS",
+          confirm_label: t("roles.form.create"),
+          cancel_label: t("common.cancel"),
+          sql_preview: dryRun.sql,
         });
         if (!ok) return;
       }
-
-      const payload: RoleCreate = {
-        name: trimmedName,
-        login: data.login,
-        password: data.password || null,
-        superuser: data.superuser,
-        createdb: data.createdb,
-        createrole: data.createrole,
-        connection_limit: data.connection_limit,
-        confirm: true,
-      };
-      await createMutation.mutateAsync(payload);
-    } catch (e) {}
+      await createMutation.mutateAsync({ ...payload, confirm: true });
+    } catch {
+      // Already reported; the dialog stays open so the input can be corrected.
+    }
   });
 
   const handleDelete = async (role: RoleInfo) => {
-    if (role.name === "postgres") {
-      toast.error("postgres süper kullanıcısı silinemez");
-      return;
-    }
+    if (isProtectedRole(role.name)) return;
     const ok = await confirm({
-      title: `"${role.name}" rolünü sil?`,
-      description:
-        "Bu işlem geri alınamaz. Rol ve varsa tüm üyelikleri kalıcı olarak silinecektir. Devam etmek istediğinizden emin misiniz?",
+      title: t("roles.confirmDelete.title", { name: role.name }),
+      description: t("roles.confirmDelete.description"),
       risk_level: "DANGEROUS",
-      confirm_label: "SİL",
-      cancel_label: "İptal",
+      confirm_label: t("common.delete"),
+      cancel_label: t("common.cancel"),
       confirm_name_required: true,
       confirm_name_value: role.name,
-      confirm_name_placeholder: `Onaylamak için "${role.name}" yazın`,
-      sql_preview: [`DROP ROLE ${role.name};`],
+      confirm_name_placeholder: t("roles.confirmDelete.placeholder", { name: role.name }),
+      sql_preview: [`DROP ROLE "${role.name}";`],
     });
-    if (ok) {
-      await deleteMutation.mutateAsync(role.name);
-    }
-  };
-
-  const handleEdit = async (role: RoleInfo) => {
-    toast.info("Rol detayına yönlendiriliyorsunuz", {
-      description: "Attributes, Grants ve Memberships sekmelerinden düzenleme yapabilirsiniz",
-    });
+    if (ok) deleteMutation.mutate(role.name);
   };
 
   const columns: ColumnDef<RoleInfo>[] = [
     {
       accessorKey: "name",
-      header: "Rol Adı",
+      header: t("roles.columns.name"),
       cell: ({ row }) => {
         const r = row.original;
         return (
-          <Link href={`/roles/${encodeURIComponent(r.name)}`} className="block group">
-            <div className="flex items-center gap-3">
-              <div className="h-11 w-11 rounded-md bg-gradient-to-br from-info/20 to-success/20 border border-border flex items-center justify-center shrink-0 group-hover:from-info/30 group-hover:to-success/30 transition-all">
-                <Users className="h-5 w-5 text-success" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm truncate group-hover:text-success transition-colors">
-                    {r.name}
-                  </p>
-                  <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                  {r.superuser && (
-                    <RiskBadge riskLevel="DANGEROUS" size="sm">
-                      SUPERUSER
-                    </RiskBadge>
-                  )}
-                </div>
-                {r.valid_until && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    Şifre geçerlilik: {r.valid_until.split("T")[0]}
-                  </p>
-                )}
-              </div>
-            </div>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/roles/${encodeURIComponent(r.name)}`}
+              className="group inline-flex items-center gap-1 font-mono font-medium hover:text-info"
+            >
+              {r.name}
+              <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+            </Link>
+            {r.superuser && (
+              <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false}>
+                SUPERUSER
+              </RiskBadge>
+            )}
+          </div>
         );
       },
     },
     {
       accessorKey: "superuser",
-      header: "Süper",
-      cell: ({ row }) => <AttrBadge label="SUPER" value={row.original.superuser} />,
+      header: "SUPERUSER",
+      cell: ({ row }) => <AttrCell value={row.original.superuser} />,
     },
     {
       accessorKey: "createdb",
-      header: "DB",
-      cell: ({ row }) => <AttrBadge label="CREATEDB" value={row.original.createdb} />,
+      header: "CREATEDB",
+      cell: ({ row }) => <AttrCell value={row.original.createdb} />,
     },
     {
       accessorKey: "createrole",
-      header: "Rol",
-      cell: ({ row }) => <AttrBadge label="CREATEROLE" value={row.original.createrole} />,
+      header: "CREATEROLE",
+      cell: ({ row }) => <AttrCell value={row.original.createrole} />,
     },
     {
       accessorKey: "can_login",
-      header: "Giriş",
-      cell: ({ row }) => <AttrBadge label="LOGIN" value={row.original.can_login} />,
+      header: "LOGIN",
+      cell: ({ row }) => <AttrCell value={row.original.can_login} />,
     },
     {
       accessorKey: "connection_limit",
-      header: "Bağlantı Limiti",
+      header: t("roles.columns.connectionLimit"),
       cell: ({ row }) => {
         const lim = row.original.connection_limit;
-        return (
-          <code className="text-xs font-mono bg-card px-3 py-1.5 rounded-md">
-            {lim === -1 || lim === null ? "∞" : lim}
-          </code>
-        );
+        return <span className="font-mono">{lim === -1 || lim === null ? "∞" : lim}</span>;
       },
     },
     {
+      accessorKey: "valid_until",
+      header: t("roles.columns.validUntil"),
+      cell: ({ row }) => (
+        <span className="font-mono text-muted-foreground">
+          {row.original.valid_until ? row.original.valid_until.split(/[T ]/)[0] : "-"}
+        </span>
+      ),
+    },
+    {
       id: "actions",
-      header: () => <div className="text-right">İşlemler</div>,
+      header: () => <div className="text-right">{t("roles.columns.actions")}</div>,
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original;
-        const busy = deleteMutation.isPending;
+        const locked = isProtectedRole(r.name);
         return (
-          <div className="flex items-center justify-end gap-2">
-            <Link href={`/roles/${encodeURIComponent(r.name)}`}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleEdit(r)}
-                className="h-9 rounded-md"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                Düzenle
-              </Button>
-            </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy || r.name === "postgres"}
-              onClick={() => handleDelete(r)}
-              className={cn(
-                "h-9 rounded-md",
-                r.name !== "postgres" &&
-                  "text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
-              )}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Sil
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
+              <Link href={`/roles/${encodeURIComponent(r.name)}`}>{t("roles.details")}</Link>
             </Button>
+            <IfWriter>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={deleteMutation.isPending || locked}
+                onClick={() => handleDelete(r)}
+                title={locked ? t("roles.protected") : undefined}
+                className={cn(
+                  "h-7 px-2",
+                  !locked && "text-destructive hover:bg-destructive/10 hover:text-destructive"
+                )}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("common.delete")}
+              </Button>
+            </IfWriter>
           </div>
         );
       },
     },
   ];
 
+  const allRoles = roles ?? NO_ROLES;
+
   const table = useReactTable({
-    data: roles ?? [],
+    data: allRoles,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -344,456 +293,351 @@ export default function RolesPage() {
     getSortedRowModel: getSortedRowModel(),
     onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
-    state: {
-      sorting,
-      columnFilters,
-      globalFilter,
-    },
-    initialState: {
-      pagination: {
-        pageSize,
-      },
-    },
+    onGlobalFilterChange: setGlobalFilter,
+    state: { sorting, columnFilters, globalFilter },
+    initialState: { pagination: { pageSize } },
   });
 
   const currentPage = table.getState().pagination.pageIndex;
   const pageCount = table.getPageCount();
-  const canPrev = currentPage > 0;
-  const canNext = currentPage < pageCount - 1;
+  const filteredCount = table.getFilteredRowModel().rows.length;
 
-  const superuserCount = (roles ?? []).filter((r) => r.superuser).length;
-  const canLoginCount = (roles ?? []).filter((r) => r.can_login).length;
-  const createdbCount = (roles ?? []).filter((r) => r.createdb).length;
-  const createroleCount = (roles ?? []).filter((r) => r.createrole).length;
+  const superuserCount = allRoles.filter((r) => r.superuser).length;
+  const tiles = [
+    { label: t("roles.stats.total"), val: allRoles.length },
+    { label: t("roles.stats.superuser"), val: superuserCount, warn: superuserCount > 3 },
+    { label: t("roles.stats.canLogin"), val: allRoles.filter((r) => r.can_login).length },
+    {
+      label: t("roles.stats.elevated"),
+      val: allRoles.filter((r) => r.createdb || r.createrole).length,
+    },
+  ];
+
+  const attributes = [
+    { key: "login", id: "attr-login", label: t("roles.form.login"), help: t("roles.form.loginHelp") },
+    {
+      key: "superuser",
+      id: "attr-superuser",
+      label: t("roles.form.superuser"),
+      help: t("roles.form.superuserHelp"),
+      warn: true,
+    },
+    {
+      key: "createdb",
+      id: "attr-createdb",
+      label: t("roles.form.createdb"),
+      help: t("roles.form.createdbHelp"),
+    },
+    {
+      key: "createrole",
+      id: "attr-createrole",
+      label: t("roles.form.createrole"),
+      help: t("roles.form.createroleHelp"),
+    },
+  ] as const;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-            <Shield className="h-8 w-8 text-info" />
-            Roller ve İzinler
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            {t("roles.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            PostgreSQL rollerini, özniteliklerini ve izinlerini yönetin
-          </p>
+          <p className="text-xs text-muted-foreground">{t("roles.subtitle")}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => refetch()}
-            className="h-12 px-6 rounded-md"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Yenile
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+            {t("common.refresh")}
           </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-12 px-6 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success">
-                <Plus className="h-4 w-4 mr-2" />
-                Yeni Rol
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-success" />
-                  Yeni Rol Oluştur
-                </DialogTitle>
-                <DialogDescription>
-                  PostgreSQL sunucusunda yeni bir rol (kullanıcı) oluşturun
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={onSubmitCreate} className="space-y-5">
-                <div className="space-y-2">
-                  <Label>Rol Adı *</Label>
-                  <Input
-                    {...register("name", { required: "Zorunlu alan" })}
-                    placeholder="app_user"
-                    className={cn(errors.name && "border-destructive/50")}
-                  />
-                  {errors.name && (
-                    <p className="text-xs text-destructive">{errors.name.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Şifre</Label>
-                  <Input
-                    type="password"
-                    {...register("password")}
-                    placeholder="•••••••• (boş bırakılırsa şifresiz)"
-                  />
-                </div>
-
-                <div className="rounded-md border border-border bg-card p-5 space-y-4">
-                  <Label className="font-semibold">Rol Öznitelikleri</Label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3">
-                      <Checkbox
-                        id="attr-login"
-                        checked={watch("login")}
-                        onCheckedChange={(v) =>
-                          setValue("login", typeof v === "boolean" ? v : false)
-                        }
-                      />
-                      <div>
-                        <label
-                          htmlFor="attr-login"
-                          className="text-sm font-medium cursor-pointer"
-                        >
-                          Giriş Yapabilir (LOGIN)
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Bu rol ile sunucuya bağlanılabilsin
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Checkbox
-                        id="attr-superuser"
-                        checked={watch("superuser")}
-                        onCheckedChange={(v) =>
-                          setValue("superuser", typeof v === "boolean" ? v : false)
-                        }
-                      />
-                      <div>
-                        <label
-                          htmlFor="attr-superuser"
-                          className="text-sm font-medium cursor-pointer text-warning"
-                        >
-                          Süper Kullanıcı (SUPERUSER)
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Tüm kısıtlamalardan muaf, DANGEROUS
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Checkbox
-                        id="attr-createdb"
-                        checked={watch("createdb")}
-                        onCheckedChange={(v) =>
-                          setValue("createdb", typeof v === "boolean" ? v : false)
-                        }
-                      />
-                      <div>
-                        <label
-                          htmlFor="attr-createdb"
-                          className="text-sm font-medium cursor-pointer"
-                        >
-                          Veritabanı Oluştur (CREATEDB)
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Yeni DB yaratabilsin
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Checkbox
-                        id="attr-createrole"
-                        checked={watch("createrole")}
-                        onCheckedChange={(v) =>
-                          setValue("createrole", typeof v === "boolean" ? v : false)
-                        }
-                      />
-                      <div>
-                        <label
-                          htmlFor="attr-createrole"
-                          className="text-sm font-medium cursor-pointer"
-                        >
-                          Rol Oluştur (CREATEROLE)
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Diğer rolleri yönetebilsin
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Bağlantı Limiti</Label>
-                  <Select
-                    value={String(watch("connection_limit") ?? "-1")}
-                    onValueChange={(v) => setValue("connection_limit", Number(v))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="-1">Sınırsız (∞)</SelectItem>
-                      <SelectItem value="1">1 bağlantı</SelectItem>
-                      <SelectItem value="5">5 bağlantı</SelectItem>
-                      <SelectItem value="10">10 bağlantı</SelectItem>
-                      <SelectItem value="20">20 bağlantı</SelectItem>
-                      <SelectItem value="50">50 bağlantı</SelectItem>
-                      <SelectItem value="100">100 bağlantı</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDialogOpen(false);
-                      reset();
-                    }}
-                    className="h-11 rounded-md"
-                  >
-                    İptal
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting || createMutation.isPending}
-                    className="h-11 rounded-md bg-gradient-to-r from-info to-success hover:from-info hover:to-success"
-                  >
-                    {isSubmitting || createMutation.isPending ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Oluşturuluyor…
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Rolü Oluştur
-                      </>
+          <IfWriter>
+            <Dialog
+              open={dialogOpen}
+              onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}
+            >
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-3.5 w-3.5" />
+                  {t("roles.newRole")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{t("roles.form.title")}</DialogTitle>
+                  <DialogDescription>{t("roles.form.description")}</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={onSubmitCreate} className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="role-name">{t("roles.form.name")}</Label>
+                    <Input
+                      id="role-name"
+                      {...register("name", {
+                        validate: (v) => Boolean(v.trim()) || t("roles.form.required"),
+                      })}
+                      placeholder="app_user"
+                      className={cn("font-mono", errors.name && "border-destructive/50")}
+                    />
+                    {errors.name && (
+                      <p className="text-xs text-destructive">{errors.name.message}</p>
                     )}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="role-password">{t("roles.form.password")}</Label>
+                    <Input
+                      id="role-password"
+                      type="password"
+                      autoComplete="new-password"
+                      {...register("password")}
+                      placeholder={t("roles.form.passwordPlaceholder")}
+                    />
+                  </div>
+
+                  <fieldset className="space-y-2 rounded-md border border-border px-3 py-2">
+                    <legend className="px-1 text-xs font-medium">{t("roles.form.attributes")}</legend>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {attributes.map((attr) => (
+                        <div key={attr.key} className="flex items-start gap-2">
+                          <Checkbox
+                            id={attr.id}
+                            className="mt-0.5"
+                            checked={watch(attr.key)}
+                            onCheckedChange={(v) => setValue(attr.key, v === true)}
+                          />
+                          <div>
+                            <label
+                              htmlFor={attr.id}
+                              className={cn(
+                                "cursor-pointer text-xs font-medium",
+                                "warn" in attr && "text-warning"
+                              )}
+                            >
+                              {attr.label}
+                            </label>
+                            <p className="text-xs text-muted-foreground">{attr.help}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <div className="space-y-1">
+                    <Label>{t("roles.columns.connectionLimit")}</Label>
+                    <Select
+                      value={String(watch("connection_limit") ?? "-1")}
+                      onValueChange={(v) => setValue("connection_limit", Number(v))}
+                    >
+                      <SelectTrigger aria-label={t("roles.columns.connectionLimit")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="-1">{t("roles.form.unlimited")}</SelectItem>
+                        {CONNECTION_LIMITS.map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {t("roles.form.connections", { count: n })}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <DialogFooter>
+                    <Button type="button" variant="outline" size="sm" onClick={closeDialog}>
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={isSubmitting || createMutation.isPending}
+                    >
+                      {isSubmitting || createMutation.isPending ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                      {isSubmitting || createMutation.isPending
+                        ? t("roles.form.creating")
+                        : t("roles.form.create")}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </IfWriter>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-        {[
-          {
-            label: "Toplam Rol",
-            val: roles?.length ?? 0,
-            icon: Users,
-            from: "from-info",
-            to: "to-info",
-          },
-          {
-            label: "Süper Kullanıcı",
-            val: superuserCount,
-            icon: Shield,
-            from: "from-warning",
-            to: "to-warning",
-            warn: superuserCount > 3,
-          },
-          {
-            label: "Giriş Yapabilen",
-            val: canLoginCount,
-            icon: CheckCircle2,
-            from: "from-success",
-            to: "to-success",
-          },
-          {
-            label: "DB + Rol Yetkisi",
-            val: createdbCount + createroleCount,
-            icon: Edit3,
-            from: "from-info",
-            to: "to-info",
-          },
-        ].map((m) => (
-          <Card
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {tiles.map((m) => (
+          <div
             key={m.label}
             className={cn(
-              "relative overflow-hidden",
-              m.warn && "border-warning/30"
+              "rounded-md border border-border bg-card px-3 py-2",
+              m.warn && "border-warning/40"
             )}
           >
-            <div
-              className={cn(
-                "absolute inset-0 bg-gradient-to-br opacity-10 pointer-events-none",
-                m.from,
-                m.to
-              )}
-            />
-            <CardContent className="p-6 relative">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                    {m.label}
-                  </p>
-                  <p
-                    className={cn(
-                      "text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-br",
-                      m.from,
-                      m.to
-                    )}
-                  >
-                    {m.val}
-                  </p>
-                </div>
-                <div
-                  className={cn(
-                    "h-12 w-12 rounded-md bg-gradient-to-br flex items-center justify-center",
-                    m.from,
-                    m.to,
-                    "bg-opacity-20"
-                  )}
-                  style={{ opacity: 0.85 }}
-                >
-                  <m.icon className="h-6 w-6 text-foreground" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <p className="text-xs text-muted-foreground">{m.label}</p>
+            {isLoading ? (
+              <Skeleton className="mt-1 h-5 w-10" />
+            ) : (
+              <p className={cn("font-mono text-base font-semibold", m.warn && "text-warning")}>
+                {isError ? "-" : formatNumber(m.val)}
+              </p>
+            )}
+          </div>
         ))}
       </div>
 
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Users className="h-5 w-5 text-info" />
-                Roller
-              </CardTitle>
-              <CardDescription>
-                {(roles?.length ?? 0)} adet rol listeleniyor
-              </CardDescription>
-            </div>
-            <div className="relative max-w-md w-full">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={globalFilter ?? ""}
-                onChange={(e) => setGlobalFilter(String(e.target.value))}
-                placeholder="Rol adı ara..."
-                className="pl-12 h-11"
-              />
-            </div>
+      <div className="overflow-hidden rounded-md border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <p className="font-mono text-xs text-muted-foreground">
+            {t("roles.count", { count: formatNumber(filteredCount) })}
+          </p>
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={globalFilter ?? ""}
+              onChange={(e) => setGlobalFilter(String(e.target.value))}
+              placeholder={t("roles.searchPlaceholder")}
+              aria-label={t("roles.searchPlaceholder")}
+              className="h-8 pl-8 text-xs"
+            />
           </div>
-        </CardHeader>
-        <CardContent className="!p-0">
-          <div className="rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((hg) => (
-                  <TableRow key={hg.id}>
-                    {hg.headers.map((h) => (
-                      <TableHead key={h.id}>
-                        {h.isPlaceholder
-                          ? null
-                          : flexRender(h.column.columnDef.header, h.getContext())}
-                      </TableHead>
-                    ))}
-                  </TableRow>
+        </div>
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
                 ))}
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="!p-0">
-                      <TableSkeleton />
-                    </TableCell>
-                  </TableRow>
-                ) : table.getRowModel().rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="p-16 text-center">
-                      <Shield className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                      <p className="font-semibold text-lg">Henüz rol yok</p>
-                      <p className="text-sm text-muted-foreground mt-2 mb-5">
-                        Bir PostgreSQL rolü oluşturmak için {"\""}Yeni Rol{"\""}e tıklayın.
-                      </p>
-                      <Button
-                        onClick={() => setDialogOpen(true)}
-                        className="h-11 px-6 rounded-md"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        İlk Rolü Oluştur
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="space-y-1.5" aria-label={t("common.loading")}>
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-full" />
+                    ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="flex items-center justify-center gap-3 py-4 text-destructive">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    {t("common.loadFailed")}
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => refetch()}>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t("common.retry")}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : allRoles.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="py-6 text-center">
+                    <p className="font-medium text-foreground">{t("roles.empty.title")}</p>
+                    <p className="mb-2 mt-0.5 text-muted-foreground">{t("roles.empty.hint")}</p>
+                    <IfWriter>
+                      <Button size="sm" onClick={() => setDialogOpen(true)}>
+                        <Plus className="h-3.5 w-3.5" />
+                        {t("roles.empty.create")}
                       </Button>
+                    </IfWriter>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filteredCount === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="py-6 text-center text-muted-foreground">
+                  {t("roles.noMatch")}
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
-                  </TableRow>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          {!isLoading && (roles?.length ?? 0) > 0 && (
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-border">
-              <div className="flex items-center gap-3 text-sm">
-                <p className="text-muted-foreground">
-                  Sayfa{" "}
-                  <span className="font-semibold text-foreground">
-                    {currentPage + 1}
-                  </span>{" "}
-                  / {Math.max(1, pageCount)} · Toplam{" "}
-                  <span className="font-semibold text-foreground">
-                    {roles?.length ?? 0}
-                  </span>{" "}
-                  kayıt
-                </p>
-                <div className="h-6 w-px bg-muted" />
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Sayfa başına:</span>
-                  <Select
-                    value={String(pageSize)}
-                    onValueChange={(v) => {
-                      const n = Number(v) as PageSize;
-                      setPageSize(n);
-                      table.setPageSize(n);
-                    }}
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+        {!isLoading && !isError && allRoles.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5 text-xs">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <span className="font-mono">
+                {t("roles.pagination.summary", {
+                  page: currentPage + 1,
+                  pages: Math.max(1, pageCount),
+                  total: formatNumber(filteredCount),
+                })}
+              </span>
+              <span className="flex items-center gap-1.5">
+                {t("roles.pagination.perPage")}
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => {
+                    const n = Number(v) as PageSize;
+                    setPageSize(n);
+                    table.setPageSize(n);
+                  }}
+                >
+                  <SelectTrigger
+                    className="h-7 w-16 font-mono text-xs"
+                    aria-label={t("roles.pagination.perPage")}
                   >
-                    <SelectTrigger className="h-9 w-[88px] rounded-md">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[10, 25, 50].map((n) => (
-                        <SelectItem key={n} value={String(n)}>
-                          {n}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.previousPage()}
-                  disabled={!canPrev}
-                  className="h-9 rounded-md"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Önceki
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.nextPage()}
-                  disabled={!canNext}
-                  className="h-9 rounded-md"
-                >
-                  Sonraki
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </span>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                {t("roles.pagination.previous")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                {t("roles.pagination.next")}
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
