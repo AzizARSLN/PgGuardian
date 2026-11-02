@@ -1,8 +1,12 @@
-"""Maintenance action endpoints: vacuum/analyze/reindex (guarded, expert use).
+"""Maintenance action endpoints: vacuum/analyze/reindex/drop-index (guarded, expert use).
 
 Long operations run without a statement timeout (they routinely exceed it
-on large databases) but keep the connection timeout. VACUUM FULL and
-REINDEX are DANGEROUS and need explicit opt-in + confirmation.
+on large databases) but keep the connection timeout. VACUUM FULL, REINDEX
+and DROP INDEX are DANGEROUS and need explicit opt-in + confirmation.
+
+``DROP INDEX CONCURRENTLY`` may not run inside an explicit transaction block;
+the shared connections are opened with ``autocommit=True``, which is exactly
+what this statement requires.
 """
 
 from __future__ import annotations
@@ -58,6 +62,15 @@ class ReindexRequest(MutationRequest):
     table_name: str | None = None
     index_name: str | None = None
     concurrently: bool = True
+
+
+class DropIndexRequest(MutationRequest):
+    """DROP INDEX CONCURRENTLY (DANGEROUS)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_name: str | None = None
+    index_name: str
 
 
 class MaintenanceActionResult(BaseModel):
@@ -193,3 +206,38 @@ def run_reindex(
         status = _untimed(client).execute_raw(query)
     audit("maintenance.reindex", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="reindex", target=target, command_status=status)
+
+
+@router.post("/drop-index", response_model=DryRunResult | MaintenanceActionResult)
+def run_drop_index(
+    body: DropIndexRequest,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> DryRunResult | MaintenanceActionResult:
+    """DROP INDEX CONCURRENTLY — removes a redundant/unused index (DANGEROUS)."""
+    ensure_dangerous_allowed(settings, "maintenance.drop_index")
+    index_name = validate_identifier(body.index_name, what="index name")
+    if body.schema_name:
+        target_sql: object = SQL("{}.{}").format(
+            Identifier(validate_identifier(body.schema_name, what="schema name")),
+            Identifier(index_name),
+        )
+        target = f"{body.schema_name}.{body.index_name}"
+    else:
+        target_sql = Identifier(index_name)
+        target = body.index_name
+    query = SQL("DROP INDEX CONCURRENTLY IF EXISTS {}").format(target_sql)
+    if body.dry_run:
+        return DryRunResult(
+            action="maintenance.drop_index",
+            risk=RiskLevel.DANGEROUS,
+            sql=[query.as_string()],
+            target=target,
+        )
+    # The typed confirmation is the bare index name; the audit target stays qualified.
+    require_confirm(body, "maintenance.drop_index", body.index_name)
+    with mapped_errors(settings):
+        client.ping()
+        status = _untimed(client).execute_raw(query)
+    audit("maintenance.drop_index", target, RiskLevel.DANGEROUS, settings)
+    return MaintenanceActionResult(action="drop_index", target=target, command_status=status)

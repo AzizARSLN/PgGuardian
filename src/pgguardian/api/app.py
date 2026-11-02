@@ -27,6 +27,7 @@ from pgguardian.api.routers import snapshots as snapshots_router
 from pgguardian.api.routers import sql as sql_router
 from pgguardian.api.routers import statements as statements_router
 from pgguardian.api.routers import table_io as table_io_router
+from pgguardian.api.routers import toolkit as toolkit_router
 from pgguardian.api.routers import users as users_router
 from pgguardian.api.routers.auth import bootstrap_admin_if_needed
 
@@ -130,6 +131,7 @@ def create_app() -> FastAPI:
     app.include_router(roles_router.router, dependencies=writer_allowed)
     app.include_router(querymgmt_router.router, dependencies=writer_allowed)
     app.include_router(maintenance_ops_router.router, dependencies=writer_allowed)
+    app.include_router(toolkit_router.router, dependencies=writer_allowed)
     app.include_router(configops_router.router, dependencies=writer_allowed)
     app.include_router(table_io_router.router, dependencies=writer_allowed)
     app.websocket("/ws/events")(events_router.websocket_stream)

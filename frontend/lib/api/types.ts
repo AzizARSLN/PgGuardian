@@ -438,6 +438,11 @@ export interface ReindexRequest extends MutationRequest {
   concurrently?: boolean;
 }
 
+export interface DropIndexRequest extends MutationRequest {
+  schema_name?: string | null;
+  index_name: string;
+}
+
 export interface MaintenanceActionResult {
   action: string;
   target: string;
@@ -649,6 +654,88 @@ export interface ConnectionTestResult {
   latency_ms?: number;
 }
 
+export type ToolkitActionKind =
+  | "vacuum"
+  | "analyze"
+  | "reindex"
+  | "cancel"
+  | "terminate"
+  | "drop_index"
+  | "copy";
+
+export type ToolkitRisk = "READ" | "MAINTENANCE" | "DANGEROUS";
+
+export interface ToolkitAdvice {
+  id: string;
+  title: string;
+  description: string;
+  action: ToolkitActionKind;
+  risk: ToolkitRisk;
+  sql_preview: string;
+  /** Endpoint body field -> result column name (e.g. table_name -> relname). */
+  target_fields: Record<string, string>;
+  /** Extra fixed fields sent to the endpoint (e.g. analyze: true). */
+  static_body: Record<string, unknown>;
+  requires: string;
+}
+
+export type ToolkitParamKind = "int" | "duration";
+
+/** Operator-tunable value declared by a catalogue query (`{name}` in its SQL). */
+export interface ToolkitParam {
+  name: string;
+  label: string;
+  kind: ToolkitParamKind;
+  default: number | string;
+  description: string;
+  minimum: number | null;
+  maximum: number | null;
+  options: string[];
+  unit: string;
+}
+
+export interface ToolkitQuery {
+  id: string;
+  category: string;
+  title: string;
+  description: string;
+  sql: string;
+  notes: string;
+  requires_extension: string | null;
+  max_rows: number;
+  params: ToolkitParam[];
+  advice: ToolkitAdvice[];
+}
+
+export interface ToolkitCategory {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  count: number;
+}
+
+export interface ToolkitCatalog {
+  categories: ToolkitCategory[];
+  queries: ToolkitQuery[];
+  total: number;
+}
+
+export type ToolkitCell = string | number | boolean | null;
+
+export interface ToolkitRunResult {
+  id: string;
+  title: string;
+  sql: string;
+  /** Parameter values actually applied to the statement. */
+  params: Record<string, string>;
+  columns: string[];
+  rows: ToolkitCell[][];
+  row_count: number;
+  truncated: boolean;
+  duration_ms: number;
+}
+
 export const endpoints = {
   getHealth: (): Promise<HealthReport> =>
     api.get<HealthReport>("/health"),
@@ -705,6 +792,16 @@ export const endpoints = {
 
   getSequences: (limit = 100): Promise<SequenceRow[]> =>
     api.get<SequenceRow[]>("/sequences", { params: { limit } }),
+
+  getToolkitCatalog: (): Promise<ToolkitCatalog> =>
+    api.get<ToolkitCatalog>("/toolkit/catalog"),
+
+  runToolkitQuery: (
+    id: string,
+    maxRows = 200,
+    params: Record<string, string> = {}
+  ): Promise<ToolkitRunResult> =>
+    api.post<ToolkitRunResult>("/toolkit/run", { id, max_rows: maxRows, params }),
 
   formatSql: (body: SqlFormatRequest): Promise<SqlFormatResponse> =>
     api.post<SqlFormatResponse>("/sql/format", body),
@@ -925,6 +1022,14 @@ export const endpoints = {
   ): Promise<DryRunResult | MaintenanceActionResult> =>
     api.post<DryRunResult | MaintenanceActionResult>(
       "/maintenance/reindex",
+      body
+    ),
+
+  dropIndex: (
+    body: DropIndexRequest
+  ): Promise<DryRunResult | MaintenanceActionResult> =>
+    api.post<DryRunResult | MaintenanceActionResult>(
+      "/maintenance/drop-index",
       body
     ),
 

@@ -22,6 +22,7 @@ import {
   Gauge,
   Database,
   Users,
+  Puzzle,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,7 @@ const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
     key: "operate",
     items: [
       { href: "/maintenance", key: "maintenance", icon: Wrench, writerOnly: true },
+      { href: "/toolkit", key: "dbaToolkit", icon: Puzzle, writerOnly: true },
       { href: "/backups", key: "backups", icon: DatabaseBackup, writerOnly: true },
       { href: "/snapshots", key: "snapshots", icon: Camera, writerOnly: true },
       { href: "/config", key: "config", icon: Settings2, writerOnly: true },

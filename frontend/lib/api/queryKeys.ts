@@ -49,6 +49,12 @@ export const qk = {
     execute: () => ["sql", "execute"] as const,
   },
 
+  toolkit: {
+    all: () => ["toolkit"] as const,
+    catalog: () => ["toolkit", "catalog"] as const,
+    run: (id: string) => ["toolkit", "run", id] as const,
+  },
+
   profiles: {
     all: () => ["profiles"] as const,
     detail: (name: string) => ["profiles", name] as const,
@@ -107,6 +113,7 @@ export const qk = {
     vacuum: () => ["maintenance_ops", "vacuum"] as const,
     analyze: () => ["maintenance_ops", "analyze"] as const,
     reindex: () => ["maintenance_ops", "reindex"] as const,
+    dropIndex: () => ["maintenance_ops", "drop-index"] as const,
   },
 
   configops: {
