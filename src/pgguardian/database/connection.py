@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import psycopg
+import psycopg.conninfo
 from psycopg import sql as pgsql
 from psycopg.rows import dict_row
 
@@ -83,16 +84,17 @@ def resolve_connection_string(
         username = os.getenv("PGUSER", settings.username)
         password = os.getenv("PGPASSWORD", settings.password or "")
 
+    # make_conninfo quotes values: a password with a space or quote must still connect.
+    params: dict[str, object] = {
+        "host": host,
+        "port": port,
+        "dbname": database,
+        "user": username,
+        "connect_timeout": settings.connect_timeout,
+    }
     if password:
-        return (
-            f"host={host} port={port} dbname={database} "
-            f"user={username} password={password} "
-            f"connect_timeout={settings.connect_timeout}"
-        )
-    return (
-        f"host={host} port={port} dbname={database} "
-        f"user={username} connect_timeout={settings.connect_timeout}"
-    )
+        params["password"] = password
+    return psycopg.conninfo.make_conninfo(**params)
 
 
 def build_connection_params(settings: PgGuardianSettings) -> ConnectionParams:
@@ -204,6 +206,15 @@ class DbClient:
     def connection(self) -> AbstractContextManager[psycopg.Connection[dict[str, Any]]]:
         """Open a connection using this client's resolved target."""
         return self._connection()
+
+    def for_database(self, database: str) -> DbClient:
+        """Same server and credentials, connected to another database."""
+        conninfo = resolve_connection_string(self._settings, self._cli_connection_string)
+        return DbClient(
+            self._settings,
+            psycopg.conninfo.make_conninfo(conninfo, dbname=database),
+            statement_timeout=self._statement_timeout,
+        )
 
     def fetch_all(self, sql: str, params: tuple[object, ...] | None = None) -> list[dict]:
         """Run a read-only SELECT and return rows as plain dicts."""

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { LanguageSwitcher } from "@/components/language-switcher";
-import PggBackdrop from "@/components/pgg-backdrop";
+import { BrandMark } from "@/components/brand-mark";
 import { useT, type TFunction } from "@/lib/i18n";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -60,6 +60,13 @@ function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
 }
 
+const DBA_TERMS = ["pg_stat_statements", "EXPLAIN", "VACUUM", "pg_locks", "WAL", "pg_dump"];
+
+const BACKEND_ERRORS: Record<string, string> = {
+  "Invalid credentials.": "login.errors.invalid",
+  "Account disabled.": "login.errors.disabled",
+};
+
 export default function LoginPage() {
   const t = useT();
   const router = useRouter();
@@ -72,6 +79,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = React.useState(false);
   const [mustChange, setMustChange] = React.useState(false);
   const [lockedSeconds, setLockedSeconds] = React.useState(0);
+  const [loginError, setLoginError] = React.useState<string | null>(null);
   const failures = React.useRef(0);
 
   React.useEffect(() => {
@@ -92,6 +100,7 @@ export default function LoginPage() {
 
   async function onLogin(values: LoginValues) {
     if (lockedSeconds > 0) return;
+    setLoginError(null);
     try {
       await login(values);
       failures.current = 0;
@@ -102,7 +111,9 @@ export default function LoginPage() {
       }
       router.replace(destination);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("login.errors.failed"));
+      const detail = error instanceof Error ? error.message : "";
+      const known = BACKEND_ERRORS[detail];
+      setLoginError(known ? t(known) : detail || t("login.errors.failed"));
       failures.current += 1;
       if (failures.current >= 3) {
         failures.current = 0;
@@ -127,101 +138,108 @@ export default function LoginPage() {
   const busy = form.formState.isSubmitting || lockedSeconds > 0;
 
   return (
-    <div className="pgg-stage flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
-      <PggBackdrop />
+    <div className="dark pgg-stage relative flex min-h-screen flex-col items-center justify-center px-4 py-10 text-foreground">
+      <LanguageSwitcher className="absolute right-4 top-4" />
 
-      <div className="dark absolute right-4 top-4 z-20">
-        <LanguageSwitcher />
-      </div>
-
-      <div className="dark relative z-10 w-full max-w-[420px]">
-        <div className="pgg-card p-7 sm:p-9">
-          <div className="mb-7 flex flex-col items-center gap-3 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-accent shadow-lg">
-              <ShieldCheck className="h-6 w-6" />
-            </span>
-            <div className="space-y-1">
-              <h1 className="text-xl font-bold tracking-tight text-guardian-white">PgGuardian</h1>
-              <p className="text-[13px] text-muted-foreground">{t("login.subtitle")}</p>
-            </div>
+      <div className="pgg-rise w-full max-w-[400px]">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/40">
+          <div className="border-b border-border bg-muted/40 px-6 py-4">
+            <BrandMark />
+            <p className="mt-3 font-mono text-[11px] text-muted-foreground">
+              <span className="text-guardian-lime">postgres=#</span> \conninfo
+            </p>
           </div>
 
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onLogin)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("login.email")}</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="username"
-                        autoFocus
-                        disabled={busy}
-                        className="border-white/15 bg-white/5"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("login.password")}</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          {...field}
-                          type={showPassword ? "text" : "password"}
-                          autoComplete="current-password"
-                          disabled={busy}
-                          className="border-white/15 bg-white/5 pr-9"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          aria-label={t(showPassword ? "login.hidePassword" : "login.showPassword")}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <div className="space-y-5 px-6 py-6">
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">{t("login.title")}</h1>
+              <p className="mt-1 text-[13px] text-muted-foreground">{t("login.subtitle")}</p>
+            </div>
 
-              {lockedSeconds > 0 && (
-                <p role="alert" className="text-[13px] font-medium text-warning">
-                  {t("login.locked", { seconds: lockedSeconds })}
-                </p>
-              )}
-
-              <Button type="submit" className="w-full" disabled={busy}>
-                {form.formState.isSubmitting ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <ArrowRight />
-                )}
-                {t("login.submit")}
-              </Button>
-            </form>
-          </Form>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onLogin)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t("login.email")}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            autoComplete="username"
+                            autoFocus
+                            disabled={busy}
+                            className="h-10"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t("login.password")}</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              {...field}
+                              type={showPassword ? "text" : "password"}
+                              autoComplete="current-password"
+                              disabled={busy}
+                              className="h-10 pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword((v) => !v)}
+                              aria-label={t(showPassword ? "login.hidePassword" : "login.showPassword")}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                            >
+                              {showPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+    
+                  {(loginError || lockedSeconds > 0) && (
+                    <p
+                      role="alert"
+                      className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px]"
+                    >
+                      {lockedSeconds > 0
+                        ? t("login.locked", { seconds: lockedSeconds })
+                        : loginError}
+                    </p>
+                  )}
+    
+                  <Button type="submit" className="h-10 w-full" disabled={busy}>
+                    {form.formState.isSubmitting && <Loader2 className="animate-spin" />}
+                    {t("login.submit")}
+                    {!form.formState.isSubmitting && <ArrowRight />}
+                  </Button>
+                </form>
+              </Form>
+          </div>
         </div>
 
-        <p className="mt-5 text-center text-[11px] text-guardian-lavender-soft/45">
-          {t("nav.tagline")}
-        </p>
+        <ul
+          aria-hidden
+          className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground/70"
+        >
+          {DBA_TERMS.map((term) => (
+            <li key={term}>{term}</li>
+          ))}
+        </ul>
       </div>
 
       {/* No way to dismiss: the API refuses everything until the password changes. */}

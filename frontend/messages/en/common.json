@@ -56,7 +56,8 @@
       "roles": "Roles",
       "users": "Users",
       "report": "Report",
-      "settings": "Settings"
+      "settings": "Settings",
+      "pgbadger": "pgBadger Analysis"
     }
   },
   "header": {
@@ -70,21 +71,6 @@
     "account": "Account"
   },
   "login": {
-    "headline": "See what is slowing your database down and what to change.",
-    "features": {
-      "statements": {
-        "title": "Repeated SQL analysis",
-        "desc": "The most frequent statements per profile, with their cost, plans and suggested fixes."
-      },
-      "diagnostics": {
-        "title": "Live diagnostics",
-        "desc": "Locks, long-running queries, bloat, replication lag and a health score."
-      },
-      "operations": {
-        "title": "Guarded operations",
-        "desc": "VACUUM, backups and role management, with a preview and explicit confirmation."
-      }
-    },
     "title": "Sign in",
     "subtitle": "Sign in with your account to continue.",
     "email": "Email",
@@ -108,12 +94,14 @@
       "newShort": "Password must be at least 8 characters",
       "mismatch": "Passwords do not match",
       "failed": "Sign in failed",
-      "changeFailed": "Could not change the password"
+      "changeFailed": "Could not change the password",
+      "invalid": "Incorrect email or password.",
+      "disabled": "This account has been disabled."
     }
   },
   "profileGate": {
     "title": "Choose a connection profile",
-    "subtitle": "Pick the database to connect to before continuing. No screen loads any data until a profile is selected.",
+    "subtitle": "Choose which server to connect to. Nothing connects to a database until you do.",
     "loading": "Loading profiles...",
     "error": "Could not load the profiles.",
     "retry": "Try again",
@@ -123,7 +111,10 @@
     "manageProfiles": "Manage profiles",
     "default": "Default",
     "connect": "Connect",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "searchPlaceholder": "Search profiles or servers...",
+    "noMatch": "No profiles match your search.",
+    "emptyViewerHint": "Ask an administrator to create a profile."
   },
   "table": {
     "search": "Search...",

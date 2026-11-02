@@ -56,7 +56,8 @@
       "roles": "Roller",
       "users": "Kullanıcılar",
       "report": "Rapor",
-      "settings": "Ayarlar"
+      "settings": "Ayarlar",
+      "pgbadger": "pgBadger Analizi"
     }
   },
   "header": {
@@ -70,21 +71,6 @@
     "account": "Hesap"
   },
   "login": {
-    "headline": "Veritabanınızda neyin yavaşladığını ve neyi değiştirmeniz gerektiğini görün.",
-    "features": {
-      "statements": {
-        "title": "Tekrar eden SQL analizi",
-        "desc": "Her profil için en sık çalışan sorgular, maliyetleri, planları ve önerilen düzeltmeler."
-      },
-      "diagnostics": {
-        "title": "Canlı teşhis",
-        "desc": "Kilitler, uzun süren sorgular, şişkinlik, replikasyon gecikmesi ve sağlık puanı."
-      },
-      "operations": {
-        "title": "Korumalı operasyonlar",
-        "desc": "VACUUM, yedekleme ve rol yönetimi; önizleme ve açık onay ile."
-      }
-    },
     "title": "Giriş yap",
     "subtitle": "Devam etmek için hesabınızla oturum açın.",
     "email": "E-posta",
@@ -108,12 +94,14 @@
       "newShort": "Şifre en az 8 karakter olmalı",
       "mismatch": "Şifreler eşleşmiyor",
       "failed": "Giriş başarısız",
-      "changeFailed": "Şifre değiştirilemedi"
+      "changeFailed": "Şifre değiştirilemedi",
+      "invalid": "E-posta veya şifre hatalı.",
+      "disabled": "Bu hesap devre dışı bırakılmış."
     }
   },
   "profileGate": {
     "title": "Bağlantı profili seçin",
-    "subtitle": "Devam etmek için hangi veritabanına bağlanacağınızı seçin. Siz seçim yapmadan hiçbir ekran veri yüklemez.",
+    "subtitle": "Hangi sunucuya bağlanacağınızı seçin. Siz seçene kadar hiçbir veritabanına bağlanılmaz.",
     "loading": "Profiller yükleniyor...",
     "error": "Profiller yüklenemedi.",
     "retry": "Tekrar dene",
@@ -123,7 +111,10 @@
     "manageProfiles": "Profilleri yönet",
     "default": "Varsayılan",
     "connect": "Bağlan",
-    "logout": "Çıkış yap"
+    "logout": "Çıkış yap",
+    "searchPlaceholder": "Profil veya sunucu ara...",
+    "noMatch": "Aramayla eşleşen profil yok.",
+    "emptyViewerHint": "Profil oluşturmak için bir yöneticiye başvurun."
   },
   "table": {
     "search": "Ara...",

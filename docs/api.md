@@ -94,6 +94,22 @@ binaries, `502/503` database errors (sanitized).
 
 PgGuardian's own diagnostic queries carry a `/* pgguardian */` comment and are left out.
 
+### pgBadger reports
+
+Reports belong to the selected profile and are stored in `~/.config/pgguardian/pgbadger.db`
+(`PGGUARDIAN_PGBADGER_FILE`). The uploaded HTML is not kept: example blocks are never read,
+and values in the remaining SQL and event messages are masked.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/pgbadger/reports` | Reports of the profile |
+| `POST /api/v1/pgbadger/reports` | Upload a report (multipart `file`, 200 MB limit) |
+| `POST /api/v1/pgbadger/reports/{id}/analyze` | Run the review; task progress is kept |
+| `GET /api/v1/pgbadger/reports/{id}` | Findings, per-role tasks, activity (`lang=tr\|en`) |
+| `PUT /api/v1/pgbadger/reports/{id}/tasks/{task}` | Set `todo`, `doing` or `done` |
+| `GET /api/v1/pgbadger/reports/{id}/export` | `section=all\|summary\|findings\|backend\|ui\|db`, `format=html\|md` |
+| `DELETE /api/v1/pgbadger/reports/{id}` | Remove a report |
+
 ## Large databases
 
 - Every listing is bounded (`LIMIT`, API caps at 500 for diagnostics).

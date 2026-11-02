@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ColumnDef,
   flexRender,
@@ -13,12 +13,13 @@ import {
   ColumnFiltersState,
   getFilteredRowModel,
 } from "@tanstack/react-table";
-import { endpoints, type Profile, type ProfileCreate } from "@/lib/api/types";
+import { endpoints, type ConnectionTestResult, type Profile, type ProfileCreate } from "@/lib/api/types";
 import { api, ApiError } from "@/lib/api/client";
 import { qk } from "@/lib/api/queryKeys";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -52,7 +53,12 @@ import { useI18n } from "@/lib/i18n";
 import { useProfileStore } from "@/store/useProfileStore";
 import {
   AlertTriangle,
+  CheckCircle2,
+  Pencil,
+  PlugZap,
   Plus,
+  Save,
+  XCircle,
   Trash2,
   Star,
   Search,
@@ -68,6 +74,17 @@ import { cn } from "@/lib/utils";
 import { useForm } from "react-hook-form";
 
 type PageSize = 10 | 25 | 50;
+
+const EMPTY_FORM: ProfileCreate = {
+  name: "",
+  host: "localhost",
+  port: 5432,
+  database: "postgres",
+  username: "postgres",
+  password: "",
+  password_env: "",
+  is_default: false,
+};
 
 const NO_PROFILES: Profile[] = [];
 
@@ -96,19 +113,20 @@ export default function ConnectionsPage() {
     watch,
     setValue,
     setError,
+    getValues,
+    trigger,
     formState: { errors, isSubmitting },
-  } = useForm<ProfileCreate>({
-    defaultValues: {
-      name: "",
-      host: "localhost",
-      port: 5432,
-      database: "postgres",
-      username: "postgres",
-      password: "",
-      password_env: "",
-      is_default: false,
-    },
-  });
+  } = useForm<ProfileCreate>({ defaultValues: EMPTY_FORM });
+
+  const [editing, setEditing] = useState<Profile | null>(null);
+  const [clearPassword, setClearPassword] = useState(false);
+  const [formTest, setFormTest] = useState<ConnectionTestResult | null>(null);
+
+  // A result only describes the values it was run with.
+  useEffect(() => {
+    const subscription = watch(() => setFormTest(null));
+    return () => subscription.unsubscribe();
+  }, [watch]);
 
   // This page is reachable before a profile is chosen, so it only ever talks to /profiles.
   const { data: profiles, isLoading, isError, isFetching, refetch } = useQuery({
@@ -118,9 +136,68 @@ export default function ConnectionsPage() {
 
   const closeDialog = () => {
     setDialogOpen(false);
-    reset();
+    reset(EMPTY_FORM);
+    setEditing(null);
+    setClearPassword(false);
+    setFormTest(null);
     setShowPassword(false);
   };
+
+  const openEdit = (profile: Profile) => {
+    reset({
+      name: profile.name,
+      host: profile.host,
+      port: profile.port,
+      database: profile.database,
+      username: profile.username,
+      password: "",
+      password_env: profile.password_env ?? "",
+      is_default: profile.is_default,
+    });
+    setEditing(profile);
+    setClearPassword(false);
+    setFormTest(null);
+    setDialogOpen(true);
+  };
+
+  const connectionFields = (data: ProfileCreate) => ({
+    host: data.host?.trim() || undefined,
+    port: data.port ? Number(data.port) : undefined,
+    database: data.database?.trim() || undefined,
+    username: data.username?.trim() || undefined,
+    password: data.password ? data.password : null,
+    password_env: data.password_env?.trim() || null,
+  });
+
+  const formTestMutation = useMutation({
+    mutationFn: (body: Parameters<typeof endpoints.testConnection>[0]) =>
+      endpoints.testConnection(body),
+    onSuccess: setFormTest,
+  });
+
+  const handleFormTest = async () => {
+    if (!(await trigger(["port", "password_env"]))) return;
+    formTestMutation.mutate({
+      ...connectionFields(getValues()),
+      existing_name: editing && !clearPassword ? editing.name : undefined,
+    });
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: ({ name, body }: { name: string; body: ProfileCreate & { clear_password: boolean } }) =>
+      api.put<Profile>(`/profiles/${encodeURIComponent(name)}`, body, { skipToast: true }),
+    onSuccess: (saved, { name }) => {
+      toast.success(t("connections.toast.updated"));
+      queryClient.invalidateQueries({ queryKey: qk.profiles.all() });
+      // The open session may now point somewhere else: never keep the old server's rows.
+      const store = useProfileStore.getState();
+      if (store.selectedProfileName === name) {
+        store.setSelectedProfileName(saved.name);
+        queryClient.resetQueries({ predicate: (q) => q.queryKey[0] !== "profiles" });
+      }
+      closeDialog();
+    },
+  });
 
   const createMutation = useMutation({
     // skipToast: validation failures are shown next to the field that caused them.
@@ -169,6 +246,10 @@ export default function ConnectionsPage() {
   const hasDefault = allProfiles.some((p) => p.is_default);
 
   const showSubmitError = (error: unknown) => {
+    if (error instanceof ApiError && error.data?.detail === "password_required") {
+      setError("password", { message: t("connections.form.passwordRequired") });
+      return;
+    }
     const validation = error instanceof ApiError ? error.validationErrors : null;
     let placed = false;
     for (const item of validation ?? []) {
@@ -192,22 +273,24 @@ export default function ConnectionsPage() {
       return;
     }
     // POST /profiles is an upsert: an existing name would be silently replaced.
-    if (allProfiles.some((p) => p.name === name)) {
+    if (name !== editing?.name && allProfiles.some((p) => p.name === name)) {
       setError("name", { message: t("connections.form.nameTaken", { name }) });
       return;
     }
     const payload: ProfileCreate = {
       name,
-      host: data.host?.trim() || undefined,
-      port: data.port ? Number(data.port) : undefined,
-      database: data.database?.trim() || undefined,
-      username: data.username?.trim() || undefined,
-      password: data.password ? data.password : null,
-      password_env: data.password_env?.trim() || null,
+      ...connectionFields(data),
       is_default: data.is_default ?? false,
     };
     try {
-      await createMutation.mutateAsync(payload);
+      if (editing) {
+        await updateMutation.mutateAsync({
+          name: editing.name,
+          body: { ...payload, clear_password: clearPassword },
+        });
+      } else {
+        await createMutation.mutateAsync(payload);
+      }
     } catch (error) {
       showSubmitError(error);
     }
@@ -301,6 +384,10 @@ export default function ConnectionsPage() {
               >
                 {t("connections.test.action")}
               </Button>
+              <Button variant="ghost" size="sm" onClick={() => openEdit(p)} className="h-7 px-2">
+                <Pencil className="h-3.5 w-3.5" />
+                {t("connections.edit")}
+              </Button>
               {!p.is_default && (
                 <Button
                   variant="ghost"
@@ -380,8 +467,14 @@ export default function ConnectionsPage() {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{t("connections.form.title")}</DialogTitle>
-                  <DialogDescription>{t("connections.form.description")}</DialogDescription>
+                  <DialogTitle>
+                    {editing
+                      ? t("connections.form.editTitle", { name: editing.name })
+                      : t("connections.form.title")}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {t(editing ? "connections.form.editDescription" : "connections.form.description")}
+                  </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={onSubmitCreate} className="space-y-3">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -471,9 +564,27 @@ export default function ConnectionsPage() {
                       id="profile-password"
                       type={showPassword ? "text" : "password"}
                       autoComplete="new-password"
+                      disabled={clearPassword}
                       {...register("password")}
-                      placeholder="••••••••"
+                      placeholder={editing ? t("connections.form.passwordKeep") : "••••••••"}
+                      className={cn(errors.password && "border-destructive/50")}
                     />
+                    {errors.password && (
+                      <p className="text-xs text-destructive">{errors.password.message}</p>
+                    )}
+                    {editing && (
+                      <label className="flex cursor-pointer items-center gap-2 pt-0.5 text-xs text-muted-foreground">
+                        <Checkbox
+                          checked={clearPassword}
+                          onCheckedChange={(value) => {
+                            setClearPassword(value === true);
+                            setFormTest(null);
+                            if (value === true) setValue("password", "");
+                          }}
+                        />
+                        {t("connections.form.clearPassword")}
+                      </label>
+                    )}
                   </div>
 
                   <div className="space-y-1">
@@ -525,24 +636,70 @@ export default function ConnectionsPage() {
                     </p>
                   )}
 
-                  <DialogFooter>
+                  {formTest && (
+                    <div
+                      role="status"
+                      className={cn(
+                        "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
+                        formTest.ok
+                          ? "border-success/40 bg-success/10"
+                          : "border-destructive/40 bg-destructive/10"
+                      )}
+                    >
+                      {formTest.ok ? (
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                      ) : (
+                        <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {formTest.ok
+                            ? t("connections.test.okLatency", { ms: formTest.latency_ms ?? 0 })
+                            : t("connections.test.failed")}
+                        </p>
+                        <p className="break-words font-mono text-[11px] text-muted-foreground">
+                          {formTest.reason === "password_required"
+                            ? t("connections.form.passwordRequired")
+                            : (formTest.version ?? formTest.message)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <DialogFooter className="gap-2 sm:justify-between">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleFormTest}
+                      disabled={formTestMutation.isPending}
+                    >
+                      {formTestMutation.isPending ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <PlugZap className="h-3.5 w-3.5" />
+                      )}
+                      {t("connections.test.action")}
+                    </Button>
+                    <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={closeDialog}>
                       {t("common.cancel")}
                     </Button>
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={isSubmitting || createMutation.isPending}
+                      disabled={isSubmitting}
                     >
-                      {isSubmitting || createMutation.isPending ? (
+                      {isSubmitting ? (
                         <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : editing ? (
+                        <Save className="h-3.5 w-3.5" />
                       ) : (
                         <Plus className="h-3.5 w-3.5" />
                       )}
-                      {isSubmitting || createMutation.isPending
-                        ? t("connections.form.creating")
-                        : t("connections.form.create")}
+                      {t(editing ? "connections.form.save" : "connections.form.create")}
                     </Button>
+                    </div>
                   </DialogFooter>
                 </form>
               </DialogContent>

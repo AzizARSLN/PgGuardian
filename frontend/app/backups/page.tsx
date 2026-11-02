@@ -56,8 +56,8 @@ import {
 } from "@/components/ui/table";
 import { IfWriter } from "@/components/role-guard";
 
-import { API_BASE_URL } from "@/lib/api/client";
-import { endpoints, BackupJob, BackupRequest, RestoreRequest } from "@/lib/api/types";
+import { api, API_BASE_URL } from "@/lib/api/client";
+import { endpoints, BackupJob, BackupRequest, BackupSchema, RestoreRequest } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
 import useConfirm from "@/lib/hooks/useConfirm";
 import { useI18n, useT } from "@/lib/i18n";
@@ -69,12 +69,17 @@ import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 type BackupStatus = "queued" | "running" | "done" | "failed";
 
 /** The API also returns the owning profile; the shared type does not list it yet. */
-type Job = BackupJob & { profile?: string | null };
+type Job = BackupJob & {
+  profile?: string | null;
+  directory?: string | null;
+  schemas?: string[];
+};
 
 /** Options the backups API accepts beyond the shared request type. */
 type StartBackupBody = BackupRequest & {
   compression?: number;
-  schema_name?: string;
+  schema_names?: string[];
+  directory?: string;
   table_name?: string;
   filename?: string;
 };
@@ -86,11 +91,29 @@ const FIELD = "h-8 text-xs";
 const EMPTY_FORM = {
   format: "custom",
   compression: "6",
-  schema: "",
+  directory: "",
   table: "",
   filename: "",
   database: "",
 };
+
+const NO_SCHEMAS: BackupSchema[] = [];
+
+interface DatabaseChoice {
+  name: string;
+  allow_connections: boolean;
+}
+
+function SectionTitle({ step, children }: { step: number; children: React.ReactNode }) {
+  return (
+    <p className="flex items-center gap-1.5 text-xs font-semibold">
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted font-mono text-[10px]">
+        {step}
+      </span>
+      {children}
+    </p>
+  );
+}
 
 function getStatusMeta(status: string): {
   level: BackupStatus;
@@ -203,6 +226,37 @@ export default function BackupsPage() {
   const [restoreDb, setRestoreDb] = useState("");
   const [restoreClean, setRestoreClean] = useState(false);
 
+  // Unticked rather than ticked: every schema is included until taken out.
+  const [unticked, setUnticked] = useState<string[]>([]);
+
+  const optionsQuery = useQuery({
+    queryKey: qk.backups.options(selectedProfile),
+    queryFn: () => endpoints.getBackupOptions(),
+    enabled: createOpen,
+  });
+  const databasesQuery = useQuery({
+    queryKey: [...qk.databases.all(), selectedProfile],
+    queryFn: () => api.get<DatabaseChoice[]>("/databases"),
+    enabled: createOpen,
+  });
+  const chosenDatabase = form.database || optionsQuery.data?.default_database || "";
+  const schemasQuery = useQuery({
+    queryKey: qk.backups.schemas(selectedProfile, chosenDatabase),
+    queryFn: () => endpoints.getBackupSchemas(chosenDatabase),
+    enabled: createOpen && Boolean(chosenDatabase),
+  });
+  const schemas = schemasQuery.data ?? NO_SCHEMAS;
+  const chosenSchemas = useMemo(
+    () => schemas.map((schema) => schema.name).filter((name) => !unticked.includes(name)),
+    [schemas, unticked]
+  );
+  const databaseChoices = useMemo(() => {
+    const names = (databasesQuery.data ?? [])
+      .filter((database) => database.allow_connections)
+      .map((database) => database.name);
+    return chosenDatabase && !names.includes(chosenDatabase) ? [chosenDatabase, ...names] : names;
+  }, [databasesQuery.data, chosenDatabase]);
+
   const backupsQuery = useQuery({
     queryKey: qk.backups.all(),
     queryFn: () => endpoints.listBackups() as Promise<Job[]>,
@@ -246,8 +300,10 @@ export default function BackupsPage() {
       toast.success(t("backups.toast.backupQueued"));
       setCreateOpen(false);
       setForm(EMPTY_FORM);
+      setUnticked([]);
     },
-    onError: () => toast.error(t("backups.toast.backupFailed")),
+    // The API client already shows why, for example an unwritable directory.
+    onError: () => undefined,
   });
 
   const restoreMutation = useMutation({
@@ -263,16 +319,20 @@ export default function BackupsPage() {
   });
 
   const isPlainForm = form.format === "plain";
+  const allSchemas = schemas.length > 0 && chosenSchemas.length === schemas.length;
+  const canStart =
+    schemasQuery.isSuccess && chosenSchemas.length > 0 && !createBackupMutation.isPending;
 
   const handleCreate = async () => {
+    const directory = form.directory.trim() || optionsQuery.data?.default_directory || "";
     const ok = await confirm({
       title: t("backups.create"),
-      description: isPlainForm
-        ? t("backups.confirm.createPlain", { format: form.format.toUpperCase() })
-        : t("backups.confirm.create", {
-            format: form.format.toUpperCase(),
-            compression: form.compression,
-          }),
+      description: t("backups.confirm.summary", {
+        database: chosenDatabase,
+        schemas: allSchemas ? t("backups.createDialog.allSchemas") : chosenSchemas.join(", "),
+        directory,
+        format: form.format.toUpperCase(),
+      }),
       risk_level: "MAINTENANCE",
       confirm_label: t("backups.start"),
       cancel_label: t("common.cancel"),
@@ -282,10 +342,12 @@ export default function BackupsPage() {
     createBackupMutation.mutate({
       confirm: true,
       format: form.format,
-      database: form.database.trim() || undefined,
+      database: chosenDatabase,
+      directory: form.directory.trim() || undefined,
+      // Everything ticked means the whole database, including objects outside schemas.
+      schema_names: allSchemas && !form.table.trim() ? undefined : chosenSchemas,
       // pg_dump would gzip a plain .sql, which psql could not restore.
       compression: isPlainForm ? undefined : Number(form.compression),
-      schema_name: form.schema.trim() || undefined,
       table_name: form.table.trim() || undefined,
       filename: form.filename.trim() || undefined,
     });
@@ -377,7 +439,21 @@ export default function BackupsPage() {
     {
       accessorKey: "file",
       header: t("backups.columns.file"),
-      cell: ({ row }) => <span className="break-all font-mono">{row.original.file || "-"}</span>,
+      cell: ({ row }) => (
+        <div className="max-w-xs space-y-0.5">
+          <p className="break-all font-mono">{row.original.file || "-"}</p>
+          {row.original.directory && (
+            <p className="break-all font-mono text-[11px] text-muted-foreground">
+              {row.original.directory}
+            </p>
+          )}
+          {row.original.schemas && row.original.schemas.length > 0 && (
+            <p className="break-all font-mono text-[11px] text-info">
+              {row.original.schemas.join(", ")}
+            </p>
+          )}
+        </div>
+      ),
     },
     {
       accessorKey: "status",
@@ -495,7 +571,7 @@ export default function BackupsPage() {
                   {t("backups.create")}
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="md:max-w-xl">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2 text-base">
                     <DatabaseBackup className="h-4 w-4 text-info" />
@@ -505,38 +581,57 @@ export default function BackupsPage() {
                     {t("backups.createDialog.description")}
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-3 py-1">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="max-h-[65vh] space-y-4 overflow-y-auto py-1 pr-1">
+                  <section className="space-y-1.5">
+                    <SectionTitle step={1}>{t("backups.createDialog.locationStep")}</SectionTitle>
+                    <Input
+                      value={form.directory}
+                      onChange={(e) => setForm({ ...form, directory: e.target.value })}
+                      placeholder={optionsQuery.data?.default_directory}
+                      aria-label={t("backups.createDialog.locationStep")}
+                      className={cn(FIELD, "font-mono")}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {t("backups.createDialog.locationHint")}
+                    </p>
                     <div className="space-y-1">
-                      <Label className="text-xs">{t("backups.createDialog.format")}</Label>
+                      <Label className="text-xs">{t("backups.createDialog.filename")}</Label>
+                      <Input
+                        value={form.filename}
+                        onChange={(e) => setForm({ ...form, filename: e.target.value })}
+                        placeholder="nightly"
+                        className={cn(FIELD, "font-mono")}
+                      />
+                    </div>
+                  </section>
+
+                  <section className="space-y-1.5">
+                    <SectionTitle step={2}>{t("backups.createDialog.format")}</SectionTitle>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <Select
                         value={form.format}
                         onValueChange={(format) => setForm({ ...form, format })}
                       >
-                        <SelectTrigger className={FIELD}>
+                        <SelectTrigger className={FIELD} aria-label={t("backups.createDialog.format")}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="custom">
-                            {t("backups.createDialog.formats.custom")}
-                          </SelectItem>
-                          <SelectItem value="plain">
-                            {t("backups.createDialog.formats.plain")}
-                          </SelectItem>
-                          <SelectItem value="directory">
-                            {t("backups.createDialog.formats.directory")}
-                          </SelectItem>
+                          {["custom", "plain", "directory"].map((format) => (
+                            <SelectItem key={format} value={format}>
+                              {t(`backups.createDialog.formats.${format}`)}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t("backups.createDialog.compression")}</Label>
                       <Select
                         value={form.compression}
                         disabled={isPlainForm}
                         onValueChange={(compression) => setForm({ ...form, compression })}
                       >
-                        <SelectTrigger className={FIELD}>
+                        <SelectTrigger
+                          className={FIELD}
+                          aria-label={t("backups.createDialog.compression")}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -555,45 +650,118 @@ export default function BackupsPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t("backups.createDialog.database")}</Label>
-                      <Input
-                        value={form.database}
-                        onChange={(e) => setForm({ ...form, database: e.target.value })}
-                        placeholder={t("backups.createDialog.databasePlaceholder")}
+                  </section>
+
+                  <section className="space-y-1.5">
+                    <SectionTitle step={3}>{t("backups.createDialog.database")}</SectionTitle>
+                    <Select
+                      value={chosenDatabase}
+                      onValueChange={(database) => {
+                        setForm({ ...form, database, table: "" });
+                        setUnticked([]);
+                      }}
+                    >
+                      <SelectTrigger
                         className={cn(FIELD, "font-mono")}
-                      />
+                        aria-label={t("backups.createDialog.database")}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {databaseChoices.map((name) => (
+                          <SelectItem key={name} value={name} className="font-mono">
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </section>
+
+                  <section className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <SectionTitle step={4}>{t("backups.createDialog.schemas")}</SectionTitle>
+                      {schemas.length > 1 && (
+                        <span className="flex gap-2 text-[11px]">
+                          <button
+                            type="button"
+                            className="text-info hover:underline"
+                            onClick={() => setUnticked([])}
+                          >
+                            {t("backups.createDialog.selectAll")}
+                          </button>
+                          <button
+                            type="button"
+                            className="text-info hover:underline"
+                            onClick={() => setUnticked(schemas.map((schema) => schema.name))}
+                          >
+                            {t("backups.createDialog.selectNone")}
+                          </button>
+                        </span>
+                      )}
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t("backups.createDialog.filename")}</Label>
-                      <Input
-                        value={form.filename}
-                        onChange={(e) => setForm({ ...form, filename: e.target.value })}
-                        placeholder="nightly"
-                        className={cn(FIELD, "font-mono")}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t("backups.createDialog.schema")}</Label>
-                      <Input
-                        value={form.schema}
-                        onChange={(e) => setForm({ ...form, schema: e.target.value })}
-                        placeholder="public"
-                        className={cn(FIELD, "font-mono")}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t("backups.createDialog.table")}</Label>
-                      <Input
-                        value={form.table}
-                        onChange={(e) => setForm({ ...form, table: e.target.value })}
-                        placeholder="orders"
-                        className={cn(FIELD, "font-mono")}
-                      />
-                    </div>
-                  </div>
+                    {schemasQuery.isLoading || optionsQuery.isLoading ? (
+                      <Skeleton className="h-16 w-full" />
+                    ) : schemasQuery.isError || optionsQuery.isError ? (
+                      <div className="rounded-md border border-destructive/40 px-2.5 py-2 text-xs" role="alert">
+                        <p>{t("backups.createDialog.schemasFailed")}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-1.5 h-6 px-2 text-[11px]"
+                          onClick={() => {
+                            optionsQuery.refetch();
+                            schemasQuery.refetch();
+                          }}
+                        >
+                          {t("common.retry")}
+                        </Button>
+                      </div>
+                    ) : (
+                      <ul className="max-h-40 divide-y divide-border overflow-y-auto rounded-md border border-border">
+                        {schemas.map((schema) => (
+                          <li key={schema.name}>
+                            <label className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-muted/50">
+                              <Checkbox
+                                checked={!unticked.includes(schema.name)}
+                                onCheckedChange={(value) =>
+                                  setUnticked((current) =>
+                                    value === true
+                                      ? current.filter((name) => name !== schema.name)
+                                      : [...current, schema.name]
+                                  )
+                                }
+                              />
+                              <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                                {schema.name}
+                              </span>
+                              <span className="shrink-0 text-[11px] text-muted-foreground">
+                                {t("backups.createDialog.schemaTables", { count: schema.tables })}
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-[11px] text-muted-foreground">
+                      {chosenSchemas.length === 0 && schemasQuery.isSuccess
+                        ? t("backups.createDialog.pickOne")
+                        : allSchemas
+                          ? t("backups.createDialog.wholeDatabase")
+                          : t("backups.createDialog.partialHint")}
+                    </p>
+                    {chosenSchemas.length === 1 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t("backups.createDialog.table")}</Label>
+                        <Input
+                          value={form.table}
+                          onChange={(e) => setForm({ ...form, table: e.target.value })}
+                          placeholder="orders"
+                          className={cn(FIELD, "font-mono")}
+                        />
+                      </div>
+                    )}
+                  </section>
+
                   <p className="flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2 text-xs text-warning">
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     {t("backups.createDialog.warning")}
@@ -612,7 +780,7 @@ export default function BackupsPage() {
                     size="sm"
                     className="h-8 text-xs"
                     onClick={handleCreate}
-                    disabled={createBackupMutation.isPending}
+                    disabled={!canStart}
                   >
                     {createBackupMutation.isPending ? (
                       <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

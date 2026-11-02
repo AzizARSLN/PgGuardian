@@ -1,0 +1,107 @@
+{
+  "pgbadger": {
+    "title": "pgBadger Analysis",
+    "subtitle": "Upload a pgBadger report from the field and see where the problem is and what each team should do.",
+    "privacy": "The uploaded HTML is not kept. Example queries are not read and values in SQL and error messages are masked; data stays on this server and is not sent anywhere.",
+    "upload": "Upload report",
+    "uploading": "Uploading...",
+    "uploaded": "Report uploaded",
+    "empty": "No reports for this profile yet.",
+    "columns": {
+      "file": "File",
+      "period": "Period",
+      "uploaded": "Uploaded by",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "waiting": "Waiting for review",
+      "done": "Reviewed"
+    },
+    "open": "Open",
+    "delete": "Delete",
+    "deleted": "Report deleted",
+    "confirmDelete": "Delete report \"{name}\" and its task tracking?",
+    "start": "Start review",
+    "again": "Review again",
+    "analyzing": "Reviewing...",
+    "analyzed": "Review finished",
+    "notAnalyzed": "The report is uploaded. Start the review to get the problems and each team's tasks.",
+    "back": "Reports",
+    "tabs": {
+      "summary": "Summary",
+      "findings": "Problems",
+      "backend": "Backend",
+      "ui": "UI",
+      "db": "DBA",
+      "activity": "History"
+    },
+    "summary": {
+      "queries": "Queries",
+      "duration": "Total query time",
+      "locks": "Lock waits",
+      "events": "Events",
+      "topShare": "Share of the 10 costliest queries",
+      "peak": "Peak",
+      "whereTitle": "Where does the time go?",
+      "topTitle": "Top priorities",
+      "scope": "Only statements above the log threshold are in the report; use SQL Analysis for fast but frequent queries."
+    },
+    "kinds": {
+      "application": "Application",
+      "backup": "Backups",
+      "test": "Test application",
+      "job": "Scheduled jobs",
+      "tool": "Manual query tools",
+      "unknown": "Unnamed"
+    },
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "filterAll": "All",
+    "progress": "{done} / {total} done",
+    "noTasks": "No tasks for this team.",
+    "task": {
+      "todo": "To do",
+      "doing": "In progress",
+      "done": "Done"
+    },
+    "roleDesc": {
+      "backend": "Work on services, queries and transactions.",
+      "ui": "Work on screens and user flows.",
+      "db": "Work on the server, indexes and maintenance."
+    },
+    "showSql": "SQL",
+    "messages": "Error messages",
+    "tasks": "Tasks",
+    "activity": {
+      "at": "Time",
+      "actor": "Who",
+      "action": "Action",
+      "detail": "Detail",
+      "uploaded": "Uploaded",
+      "analyzed": "Reviewed",
+      "task": "Task updated",
+      "exported": "Exported",
+      "deleted": "Deleted"
+    },
+    "export": {
+      "button": "Share",
+      "html": "Download HTML",
+      "md": "Download Markdown",
+      "sections": {
+        "all": "Full report",
+        "summary": "Summary",
+        "findings": "Problems",
+        "backend": "Backend tasks",
+        "ui": "UI tasks",
+        "db": "DBA tasks"
+      }
+    },
+    "exported": "Report downloaded",
+    "invalid": "This file is not a pgBadger HTML report."
+  }
+}

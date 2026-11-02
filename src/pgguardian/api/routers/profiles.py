@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from pgguardian.api.deps import get_api_settings
 from pgguardian.api.settings import ApiSettings
 from pgguardian.cli import GlobalOptions, build_settings
+from pgguardian.config.settings import PgGuardianSettings, get_settings
 from pgguardian.database.connection import DbClient
 from pgguardian.utils.security import sanitize_error
 from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore, PROFILE_NAME_PATTERN
@@ -61,6 +63,50 @@ class ProfileCreate(BaseModel):
         return value
 
 
+class ProfileUpdate(ProfileCreate):
+    """Edit a profile. An empty password keeps the stored one."""
+
+    clear_password: bool = False
+
+
+class ConnectionTest(ProfileCreate):
+    """Unsaved form values. ``existing_name`` lets an edit reuse the stored password."""
+
+    name: str = "connection-test"
+    existing_name: str | None = None
+
+
+PASSWORD_REQUIRED = "password_required"
+
+
+def _kept_password(
+    existing: Profile, host: str, port: int, *, password_env: str | None, clear: bool = False
+) -> str | None:
+    """The stored password, if it may stay with this target.
+
+    It never follows a changed host or port: repointing a profile at another
+    server must not hand that server the old password.
+    """
+    if clear or password_env or not existing.password:
+        return None
+    if (existing.host, existing.port) != (host, port):
+        raise HTTPException(status_code=400, detail=PASSWORD_REQUIRED)
+    return existing.password
+
+
+def _try_connect(resolved: PgGuardianSettings, settings: ApiSettings) -> dict:
+    """Failure is a result here, not an HTTP error."""
+    resolved.connect_timeout = settings.connect_timeout
+    started = time.perf_counter()
+    try:
+        version, _ = DbClient(resolved).ping()
+    except Exception as exc:
+        cause = exc.__cause__ or exc
+        return {"ok": False, "version": None, "reason": None, "message": sanitize_error(cause)}
+    elapsed = int((time.perf_counter() - started) * 1000)
+    return {"ok": True, "version": version, "reason": None, "message": None, "latency_ms": elapsed}
+
+
 def _store() -> ProfileStore:
     return ProfileStore()
 
@@ -78,7 +124,73 @@ def upsert_profile(body: ProfileCreate) -> Profile:
         profile = Profile.model_validate(body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _store().save(profile).redacted()
+    store = _store()
+    store.save(profile)
+    return (store.set_default(profile.name) if profile.is_default else profile).redacted()
+
+
+@router.post("/test")
+def test_connection(
+    body: ConnectionTest, settings: ApiSettings = Depends(get_api_settings)
+) -> dict:
+    """Try the values currently in the form, without saving anything."""
+    password = body.password or None
+    if not password and body.existing_name:
+        try:
+            existing = _store().get(body.existing_name)
+        except ProfileNotFoundError:
+            existing = None
+        if existing is not None:
+            try:
+                password = _kept_password(
+                    existing, body.host, body.port, password_env=body.password_env
+                )
+            except HTTPException:
+                return {"ok": False, "version": None, "reason": PASSWORD_REQUIRED, "message": None}
+    profile = Profile(
+        name="connection-test",
+        host=body.host,
+        port=body.port,
+        database=body.database,
+        username=body.username,
+        password=password,
+        password_env=body.password_env,
+    )
+    resolved = get_settings(**profile.to_overrides())
+    return _try_connect(resolved, settings)
+
+
+@router.put("/{name}", response_model=Profile)
+def update_profile(name: str, body: ProfileUpdate) -> Profile:
+    """Change a profile, including its name. An empty password keeps the stored one."""
+    store = _store()
+    try:
+        existing = store.get(name)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if body.name != name and any(p.name == body.name for p in store.list()):
+        raise HTTPException(status_code=409, detail=f"Profile '{body.name}' already exists.")
+    password = body.password or _kept_password(
+        existing, body.host, body.port, password_env=body.password_env, clear=body.clear_password
+    )
+    updated = existing.model_copy(
+        update={
+            "name": body.name,
+            "host": body.host,
+            "port": body.port,
+            "database": body.database,
+            "username": body.username,
+            "password": password,
+            "password_env": body.password_env,
+            "server": body.server if body.server is not None else existing.server,
+            "description": body.description if body.description is not None else existing.description,
+            "is_default": body.is_default,
+        }
+    )
+    store.save(updated)
+    if body.name != name:
+        store.delete(name)
+    return (store.set_default(updated.name) if updated.is_default else updated).redacted()
 
 
 @router.get("/{name}", response_model=Profile)
@@ -97,12 +209,7 @@ def test_profile(name: str, settings: ApiSettings = Depends(get_api_settings)) -
         resolved = build_settings(GlobalOptions(profile=name))
     except ProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    resolved.connect_timeout = settings.connect_timeout
-    try:
-        version, _ = DbClient(resolved).ping()
-    except Exception as exc:
-        return {"ok": False, "version": None, "message": sanitize_error(exc)}
-    return {"ok": True, "version": version, "message": None}
+    return _try_connect(resolved, settings)
 
 
 @router.delete("/{name}")

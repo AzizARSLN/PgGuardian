@@ -605,6 +605,50 @@ export interface ReloadConfigResult {
   reloaded: boolean;
 }
 
+export interface SessionInfo {
+  pid: number;
+  username: string | null;
+  database: string | null;
+  state: string | null;
+  backend_type: string | null;
+  application_name: string | null;
+  client_addr: string | null;
+  client_hostname: string | null;
+  client_port: number | null;
+  wait_event_type: string | null;
+  wait_event: string | null;
+  state_seconds: number | null;
+  xact_seconds: number | null;
+  backend_seconds: number | null;
+  blocked_by: number[];
+  query: string | null;
+}
+
+export interface SessionReport {
+  sessions: SessionInfo[];
+  limit: number;
+  truncated: boolean;
+}
+
+export interface BackupOptions {
+  default_directory: string;
+  default_database: string;
+}
+
+export interface BackupSchema {
+  name: string;
+  owner: string | null;
+  tables: number;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  version: string | null;
+  reason?: string | null;
+  message: string | null;
+  latency_ms?: number;
+}
+
 export const endpoints = {
   getHealth: (): Promise<HealthReport> =>
     api.get<HealthReport>("/health"),
@@ -614,6 +658,9 @@ export const endpoints = {
 
   getConnections: (limit = 20): Promise<ConnectionReport> =>
     api.get<ConnectionReport>("/connections", { params: { limit } }),
+
+  getSessions: (limit = 500): Promise<SessionReport> =>
+    api.get<SessionReport>(`/queries/sessions?limit=${limit}`),
 
   getActiveQueries: (limit = 20): Promise<QueryReport> =>
     api.get<QueryReport>("/queries/active", { params: { limit } }),
@@ -680,8 +727,12 @@ export const endpoints = {
   deleteProfile: (name: string): Promise<DeletedResult> =>
     api.delete<DeletedResult>(`/profiles/${encodeURIComponent(name)}?confirm=true`),
 
-  testProfile: (name: string): Promise<{ ok: boolean; version: string | null; message: string | null }> =>
+  testProfile: (name: string): Promise<ConnectionTestResult> =>
     api.post(`/profiles/${encodeURIComponent(name)}/test`),
+
+  testConnection: (
+    body: Omit<ProfileCreate, "name"> & { existing_name?: string }
+  ): Promise<ConnectionTestResult> => api.post("/profiles/test", body),
 
   setDefaultProfile: (name: string): Promise<Profile> =>
     api.post<Profile>(`/profiles/${name}/default`),
@@ -911,6 +962,12 @@ export const endpoints = {
 
   downloadBackup: (jobId: string): Promise<Blob> =>
     api.get<Blob>(`/backups/${jobId}/download`),
+
+  getBackupOptions: (): Promise<BackupOptions> =>
+    api.get<BackupOptions>("/backups/options"),
+
+  getBackupSchemas: (database: string): Promise<BackupSchema[]> =>
+    api.get<BackupSchema[]>(`/backups/schemas?database=${encodeURIComponent(database)}`),
 
   startBackup: (body: BackupRequest): Promise<BackupJob> =>
     api.post<BackupJob>("/backups", body),

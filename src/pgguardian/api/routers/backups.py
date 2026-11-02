@@ -51,6 +51,12 @@ class BackupRequest(MutationRequest):
         default=None, ge=0, le=9, description="pg_dump compression level (custom/directory only)."
     )
     schema_name: str | None = Field(default=None, description="Dump only this schema.")
+    schema_names: list[str] | None = Field(
+        default=None, description="Dump only these schemas. Empty or unset: the whole database."
+    )
+    directory: str | None = Field(
+        default=None, description="Absolute directory on the API server. Unset: the default one."
+    )
     table_name: str | None = Field(default=None, description="Dump only this table.")
     filename: str | None = Field(
         default=None, description="File name prefix; the job id and extension are appended."
@@ -84,7 +90,33 @@ class BackupJob(BaseModel):
     finished_at: str | None = None
     error: str | None = None
     profile: str | None = None
+    directory: str | None = None
+    schemas: list[str] = Field(default_factory=list)
 
+
+class BackupOptions(BaseModel):
+    """Defaults for the create form."""
+
+    default_directory: str
+    default_database: str
+
+
+class SchemaChoice(BaseModel):
+    """One schema that can be included in a backup."""
+
+    name: str
+    owner: str | None = None
+    tables: int = 0
+
+
+_SCHEMAS_SQL = (
+    "SELECT n.nspname AS name, pg_get_userbyid(n.nspowner) AS owner,"
+    " (SELECT count(*)::int FROM pg_class c WHERE c.relnamespace = n.oid"
+    "  AND c.relkind IN ('r', 'p')) AS tables"
+    " FROM pg_namespace n"
+    " WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'"
+    " ORDER BY n.nspname"
+)
 
 _ALLOWED_FORMATS = {"custom": "c", "plain": "p", "directory": "d"}
 _SUFFIXES = {"custom": "dump", "plain": "sql", "directory": "dir"}
@@ -112,6 +144,60 @@ def _backup_dir(settings: ApiSettings) -> Path:
     path = Path(settings.backup_dir).expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _target_directory(raw: str | None, settings: ApiSettings) -> Path:
+    """Where the dump goes. The file name is generated, so nothing gets overwritten."""
+    if not raw or not raw.strip():
+        return _backup_dir(settings)
+    path = Path(raw.strip()).expanduser()
+    if "\0" in raw or not path.is_absolute():
+        raise HTTPException(status_code=400, detail="Backup directory must be an absolute path.")
+    path = path.resolve()
+    if settings.backup_allowed_dirs:
+        roots = [Path(r).resolve() for r in settings.backup_allowed_dirs.split(os.pathsep) if r]
+        if not any(path == root or root in path.parents for root in roots):
+            raise HTTPException(
+                status_code=403, detail="Backup directory is outside PGGUARDIAN_BACKUP_ALLOWED_DIRS."
+            )
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".pgguardian-{uuid.uuid4().hex[:8]}"
+        probe.touch()
+        probe.unlink()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Backup directory is not writable: {exc.strerror or exc}"
+        ) from exc
+    return path
+
+
+def _list_schemas(client: DbClient, database: str) -> list[dict]:
+    return client.for_database(database).fetch_all(_SCHEMAS_SQL)
+
+
+def _quote_pattern(name: str) -> str:
+    """pg_dump pattern matching exactly this name.
+
+    Double quotes keep wildcards and case literal. Non-ASCII letters go through
+    as "?" because on Windows argv reaches pg_dump in the ANSI code page and the
+    server rejects those bytes as invalid UTF-8.
+    """
+    parts = re.findall(r"[\x00-\x7f]+|[^\x00-\x7f]", name)
+    return "".join(
+        '"' + part.replace('"', '""') + '"' if part.isascii() else "?" for part in parts
+    )
+
+
+def _pattern_collisions(name: str, known: set[str]) -> list[str]:
+    """Other schemas the "?" wildcards of this name would also match."""
+    regex = "".join(re.escape(c) if c.isascii() else "." for c in name)
+    return [other for other in known if other != name and re.fullmatch(regex, other)]
+
+
+def _job_path(job: BackupJob, default_directory: Path) -> Path:
+    base = Path(job.directory) if job.directory else default_directory
+    return base / Path(job.file or "").name
 
 
 def _jobs(request: Request) -> dict:
@@ -294,6 +380,30 @@ def list_backups(
     return sorted(jobs.values(), key=lambda job: job.started_at, reverse=True)
 
 
+@router.get("/options", response_model=BackupOptions)
+def backup_options(
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> BackupOptions:
+    """Default directory and database for the selected profile."""
+    return BackupOptions(
+        default_directory=str(_backup_dir(settings).resolve()),
+        default_database=client.settings.database,
+    )
+
+
+@router.get("/schemas", response_model=list[SchemaChoice])
+def backup_schemas(
+    database: str,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> list[SchemaChoice]:
+    """Schemas of one database on the selected profile's server."""
+    _safe_database_name(database)
+    with mapped_errors(settings):
+        return [SchemaChoice(**row) for row in _list_schemas(client, database)]
+
+
 @router.get("/{job_id}", response_model=BackupJob)
 def get_backup(
     job_id: str, request: Request, settings: ApiSettings = Depends(get_api_settings)
@@ -316,7 +426,7 @@ def download_backup(
         raise HTTPException(status_code=404, detail=f"Backup job '{job_id}' not found.")
     if job.kind != "backup" or job.status != "done" or not job.file:
         raise HTTPException(status_code=409, detail=f"Backup '{job_id}' is not ready for download.")
-    path = directory / Path(job.file).name
+    path = _job_path(job, directory)
     if path.is_dir():
         raise HTTPException(
             status_code=400,
@@ -361,12 +471,36 @@ def start_backup(
         validate_identifier(body.table_name, what="table name") if body.table_name else None
     )
     prefix = _safe_file_prefix(body.filename, suffix) if body.filename else None
+    if body.table_name and body.schema_names and len(body.schema_names) > 1:
+        raise HTTPException(status_code=400, detail="A table backup needs exactly one schema.")
     require_confirm(body, "backup.create")
+    target_directory = _target_directory(body.directory, settings)
     pg_dump = _require_binary("pg_dump")
     with mapped_errors(settings):
         client.ping()
         env, host, port, default_db, username = _dump_env(client)
     database = _safe_database_name(body.database or default_db)
+    # Checked against the catalog, so any real schema name works and nothing else does.
+    selected = sorted(set(body.schema_names or []))
+    if selected:
+        with mapped_errors(settings):
+            known = {row["name"] for row in _list_schemas(client, database)}
+        missing = [name for name in selected if name not in known]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Schemas not found in '{database}': {', '.join(missing)}.",
+            )
+        unselected = known - set(selected)
+        for name in selected:
+            if collisions := _pattern_collisions(name, unselected):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Schema '{name}' cannot be told apart from '{collisions[0]}' "
+                        "on this server; select both or rename one."
+                    ),
+                )
     job_id = uuid.uuid4().hex[:12]
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     filename = f"{prefix}-{job_id}.{suffix}" if prefix else f"{database}-{stamp}-{job_id}.{suffix}"
@@ -381,6 +515,8 @@ def start_backup(
         file=filename,
         started_at=_utc_now(),
         profile=client.settings.active_profile,
+        directory=str(target_directory),
+        schemas=selected or ([schema_name] if schema_name else []),
     )
     _claim(job_id)
     registry[job_id] = job
@@ -388,7 +524,7 @@ def start_backup(
     audit("backup.create", database, RiskLevel.MAINTENANCE, settings)
 
     def _run() -> None:
-        target = directory / filename
+        target = target_directory / filename
         cmd = [
             pg_dump,
             "-w",
@@ -409,9 +545,12 @@ def start_backup(
             cmd.append("--data-only")
         if body.compression is not None:
             cmd.append(f"--compress={body.compression}")
+        owner = selected[0] if selected else schema_name
         if table_name:
-            qualified = f'"{schema_name}"."{table_name}"' if schema_name else f'"{table_name}"'
+            qualified = f'{_quote_pattern(owner)}."{table_name}"' if owner else f'"{table_name}"'
             cmd.append(f"--table={qualified}")
+        elif selected:
+            cmd.extend(f"--schema={_quote_pattern(name)}" for name in selected)
         elif schema_name:
             cmd.append(f'--schema="{schema_name}"')
         cmd.append(database)
@@ -473,7 +612,7 @@ def start_restore(
                 f"refusing to restore it into '{current_profile or 'the default server'}'."
             ),
         )
-    source = directory / Path(job.file).name
+    source = _job_path(job, directory)
     if not source.exists():
         raise HTTPException(status_code=404, detail="Backup file no longer on disk.")
     is_plain = source.is_file() and source.suffix.lower() == ".sql"
@@ -497,6 +636,8 @@ def start_restore(
         file=job.file,
         started_at=_utc_now(),
         profile=current_profile,
+        directory=job.directory,
+        schemas=job.schemas,
     )
     _claim(job_id)
     registry[job_id] = restore_job

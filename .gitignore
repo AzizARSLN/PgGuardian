@@ -50,3 +50,6 @@ Thumbs.db
 [Dd]esktop.ini
 *.swp
 *~
+
+# Reports hold production SQL and can hold personal data
+pgbadger*.html

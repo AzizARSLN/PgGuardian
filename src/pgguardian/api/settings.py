@@ -30,6 +30,10 @@ class ApiSettings(PgGuardianSettings):
         default=False, description="Mark the refresh cookie Secure (enable behind HTTPS)."
     )
     backup_dir: str = Field(default="./backups", description="pg_dump/pg_restore work directory.")
+    backup_allowed_dirs: str | None = Field(
+        default=None,
+        description="os.pathsep separated roots a backup may be written under. Unset: any path.",
+    )
     audit_log_file: str | None = Field(
         default=None, description="Optional JSONL file for the audit trail."
     )
