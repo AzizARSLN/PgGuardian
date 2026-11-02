@@ -1,1 +1,288 @@
-{}
+{
+  "maintenance": {
+    "title": "Database Maintenance",
+    "subtitle": "Run VACUUM, ANALYZE and REINDEX with a preview and confirmation",
+    "refresh": "Refresh status",
+    "running": "Running…",
+    "dryRun": "Dry run (SQL preview)",
+    "apply": "Apply {command}",
+    "options": "{command} options",
+    "scopeHint": "Enter schema and table together; leave both empty to run {command} on the whole database.",
+    "reindexHint": "Schema is required. Enter either a table or an index, not both.",
+    "never": "Never",
+    "fields": {
+      "schema": "Schema",
+      "table": "Table",
+      "index": "Index",
+      "schemaOptional": "Schema (optional)",
+      "tableOptional": "Table (optional)"
+    },
+    "hints": {
+      "full": "Takes ACCESS EXCLUSIVE LOCK; reclaims space but locks the table",
+      "analyze": "Updates statistics after VACUUM",
+      "freeze": "Protects against transaction ID wraparound",
+      "concurrently": "Rebuilds the index without locking the table (recommended)"
+    },
+    "errors": {
+      "scopePair": "Enter schema and table together, or leave both empty.",
+      "reindexScope": "REINDEX needs a schema plus either a table or an index, not both."
+    },
+    "toast": {
+      "done": "{command} finished",
+      "failed": "{command} failed",
+      "noDryRun": "The dry run returned no result",
+      "refreshed": "Maintenance status refreshed"
+    },
+    "confirm": {
+      "title": "Run {command}?",
+      "run": "Run {command}",
+      "vacuum": "Runs a standard VACUUM. It does not lock the table but can generate heavy I/O.",
+      "vacuumFull": "Runs VACUUM FULL. It locks the table with ACCESS EXCLUSIVE LOCK and generates heavy I/O. Run it during low traffic.",
+      "analyze": "Updates table statistics so the query planner can make better decisions. Does not block reads or writes.",
+      "reindex": "Runs a standard REINDEX. Writes to the table are blocked until it finishes.",
+      "reindexConcurrent": "Runs REINDEX CONCURRENTLY. It does not block writes but takes longer and adds CPU and I/O load."
+    },
+    "notes": {
+      "vacuum": "Standard VACUUM runs without locking the table.",
+      "vacuumFull": "This takes ACCESS EXCLUSIVE LOCK. Run it during low traffic.",
+      "analyze": "ANALYZE does not block reads or writes and helps the query planner.",
+      "reindex": "Standard REINDEX blocks writes until it finishes.",
+      "reindexConcurrent": "CONCURRENTLY does not block writes but takes longer."
+    },
+    "preview": {
+      "title": "SQL preview",
+      "empty": "Set the options and run a dry run. Changing an option requires a new preview."
+    },
+    "stats": {
+      "tables": "Total tables",
+      "deadRatio": "Dead tuple ratio",
+      "neverVacuumed": "Never vacuumed",
+      "neverAnalyzed": "Never analyzed",
+      "autovacuumWorkers": "Autovacuum workers"
+    },
+    "table": {
+      "title": "Table maintenance status",
+      "subtitle": "Dead tuple ratio with VACUUM and ANALYZE history",
+      "status": "Status",
+      "table": "Table",
+      "live": "Live",
+      "dead": "Dead",
+      "deadPercent": "Dead %",
+      "lastVacuum": "Last VACUUM",
+      "lastAnalyze": "Last ANALYZE",
+      "emptyTitle": "No tables found",
+      "emptyHint": "This database has no tables yet."
+    }
+  },
+  "backups": {
+    "title": "Backup and Restore",
+    "subtitle": "pg_dump backups, download and restore",
+    "create": "Create backup",
+    "start": "Start backup",
+    "download": "Download",
+    "directoryDownloadHint": "Directory format backups cannot be downloaded as one file; copy them from the server's backup directory.",
+    "interrupted": "Interrupted: the server stopped before this job finished.",
+    "pollEvery": "refreshes every {seconds}s",
+    "pollManual": "manual refresh",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "done": "Finished",
+      "failed": "Failed"
+    },
+    "toast": {
+      "backupQueued": "Backup job started",
+      "backupFailed": "Could not start the backup",
+      "restoreQueued": "Restore job started",
+      "restoreFailed": "Could not start the restore",
+      "downloadPreparing": "Preparing file...",
+      "downloadStarted": "Download started",
+      "downloadFailed": "Download failed"
+    },
+    "confirm": {
+      "create": "Format: {format}, compression: {compression}. This is a MAINTENANCE action and can increase server I/O.",
+      "createPlain": "Format: {format}. This is a MAINTENANCE action and can increase server I/O.",
+      "restore": "Backup #{id} will be restored into \"{database}\". It may conflict with existing objects. This is a DANGEROUS action.",
+      "restoreClean": "Backup #{id} will be restored into \"{database}\". Existing objects are dropped first (CLEAN). This is a DANGEROUS action."
+    },
+    "createDialog": {
+      "title": "Create a new backup",
+      "description": "Choose a format, compression and optionally a schema or table.",
+      "format": "Format",
+      "formats": {
+        "custom": "Custom (compressed .dump)",
+        "plain": "Plain SQL (.sql)",
+        "directory": "Directory (folder on the server)"
+      },
+      "compression": "Compression level (0-9)",
+      "level": "Level {level}",
+      "levelNone": "Level {level} (no compression)",
+      "levelMax": "Level {level} (maximum)",
+      "database": "Database (optional)",
+      "databasePlaceholder": "connected database",
+      "filename": "File name prefix (optional)",
+      "schema": "Schema (optional)",
+      "table": "Table (optional)",
+      "warning": "This needs MAINTENANCE confirmation and can increase server I/O."
+    },
+    "restore": {
+      "title": "Restore — DANGEROUS",
+      "action": "Restore",
+      "continue": "Continue to confirmation",
+      "database": "Target database name",
+      "databasePlaceholder": "target database",
+      "databaseHint": "You will be asked to type this name again on the confirmation screen.",
+      "databaseRequired": "Target database name is required",
+      "clean": "CLEAN (remove existing objects)",
+      "cleanHint": "Drops existing objects before restoring. Adds risk.",
+      "cleanPlainHint": "Not available for plain SQL backups.",
+      "profileMismatch": "This backup belongs to the \"{profile}\" profile. Select that profile before restoring it.",
+      "warning": "A restore can overwrite database objects and cause data loss. It needs DANGEROUS confirmation."
+    },
+    "stats": {
+      "total": "Total jobs",
+      "totalHint": "Successful backups: {success} · Failed jobs: {failed}",
+      "success": "Successful backups",
+      "last": "Last: {date}",
+      "none": "No backups yet",
+      "size": "Total size",
+      "sizeHint": "Successful backups only",
+      "failed": "Failed jobs",
+      "failedHint": "Error details appear in the list"
+    },
+    "list": {
+      "title": "Backup jobs",
+      "subtitle": "{poll} · {count} jobs",
+      "emptyTitle": "No backup jobs yet",
+      "emptyHint": "Take the first one with \"Create backup\"."
+    },
+    "columns": {
+      "id": "ID",
+      "kind": "Type",
+      "profile": "Profile",
+      "database": "Database",
+      "file": "File",
+      "status": "Status",
+      "size": "Size",
+      "started": "Started",
+      "finished": "Finished",
+      "actions": "Actions"
+    }
+  },
+  "snapshots": {
+    "title": "Snapshots",
+    "subtitle": "History of health, connections, locks, queries and disk",
+    "allProfiles": "all profiles",
+    "capture": "Take snapshot",
+    "prune": "Prune old ({days}d+)",
+    "pollEvery": "refreshes every {seconds}s",
+    "pollManual": "manual refresh",
+    "toast": {
+      "captured": "Snapshot taken",
+      "captureFailed": "Could not take the snapshot",
+      "pruned": "Prune finished: {removed} removed, last {days} days kept",
+      "pruneFailed": "Prune failed"
+    },
+    "confirm": {
+      "capture": "Records pg_stat_* views, health checks and connection data. This is a MAINTENANCE action with brief read I/O.",
+      "pruneTitle": "Prune snapshots — DANGEROUS",
+      "prune": "Snapshots older than {days} days will be permanently deleted for ALL profiles. This cannot be undone.",
+      "prunePlaceholder": "Type prune to confirm"
+    },
+    "stats": {
+      "total": "Total snapshots",
+      "old": "{count} older than {days} days",
+      "noneOld": "None older than {days} days",
+      "avgScore": "Average score",
+      "last": "Last snapshot: {ago}",
+      "none": "No snapshots yet",
+      "latestConnections": "Latest connections",
+      "latestSize": "Latest database size"
+    },
+    "list": {
+      "title": "Snapshot list",
+      "subtitle": "{poll} · showing {shown} / {total}",
+      "filterPlaceholder": "Search: host, database, status, version...",
+      "emptyTitle": "No snapshots yet",
+      "emptyHint": "Create the first one with \"Take snapshot\".",
+      "noMatchTitle": "No matching snapshots",
+      "noMatchHint": "Try clearing the filter."
+    },
+    "columns": {
+      "id": "ID",
+      "score": "Score",
+      "status": "Status",
+      "target": "Target",
+      "taken": "Taken at",
+      "connections": "Connections",
+      "size": "Size",
+      "dead": "Dead tuples",
+      "blocking": "Blocking",
+      "deadlocks": "Deadlocks",
+      "longQueries": "Long queries"
+    }
+  },
+  "config": {
+    "title": "Server Configuration",
+    "subtitle": "PostgreSQL parameters with guarded changes through ALTER SYSTEM SET",
+    "reload": "Reload configuration",
+    "reloading": "Reloading…",
+    "edit": "Edit",
+    "internalHint": "internal parameters cannot be changed.",
+    "pendingRestartNotice": "{count} settings need a server restart to take effect. A reload does not apply them.",
+    "status": {
+      "restartRequired": "Restart required",
+      "applied": "Applied"
+    },
+    "toast": {
+      "updated": "Setting updated",
+      "updateFailed": "Could not update the setting",
+      "noChange": "No change",
+      "reloaded": "Configuration reloaded (SIGHUP)",
+      "reloadCalled": "pg_reload_conf() called",
+      "reloadFailed": "Could not reload the configuration",
+      "refreshed": "Settings refreshed"
+    },
+    "confirm": {
+      "changeTitle": "Change \"{name}\"?",
+      "changePostmaster": "This setting ({context}) takes effect only after a PostgreSQL server restart.",
+      "changeSighup": "This setting ({context}) is applied by pg_reload_conf(). Reload the configuration after this change.",
+      "changeOther": "This setting ({context}) may take effect for new connections or sessions after a configuration reload.",
+      "changeAction": "Apply ALTER SYSTEM SET",
+      "reloadTitle": "Reload the server configuration?",
+      "reload": "Calls pg_reload_conf(), which loads postgresql.conf and ALTER SYSTEM changes through SIGHUP. Running connections are not dropped. postmaster settings still need a restart.",
+      "reloadAction": "Run pg_reload_conf()"
+    },
+    "stats": {
+      "total": "Total settings",
+      "sighup": "SIGHUP (reload)",
+      "superuser": "Superuser context",
+      "postmaster": "Postmaster (restart)",
+      "pendingRestart": "Pending restart"
+    },
+    "list": {
+      "title": "Configuration settings",
+      "subtitle": "Listing {shown} / {total} settings",
+      "searchPlaceholder": "Search name, value or category...",
+      "category": "Category",
+      "allCategories": "All categories",
+      "allContexts": "All contexts",
+      "emptyTitle": "No settings found",
+      "emptyHint": "Change the filters or clear the search term."
+    },
+    "columns": {
+      "name": "Setting",
+      "value": "Value",
+      "unit": "Unit",
+      "context": "Context",
+      "status": "Status",
+      "actions": "Action"
+    },
+    "pagination": {
+      "summary": "Page {page} / {pages} · {total} records in total",
+      "pageSize": "Per page:",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  }
+}

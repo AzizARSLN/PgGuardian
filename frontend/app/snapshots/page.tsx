@@ -2,110 +2,128 @@
 
 import * as React from "react";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  AlertCircle,
   Camera,
+  HardDrive,
+  Loader2,
   Play,
   RefreshCw,
   Trash2,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  Users,
-  HardDrive,
-  Activity,
-  Lock,
-  AlertTriangle,
   TrendingUp,
-  Skull,
+  Users,
 } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RiskBadge } from "@/components/ui/risk-badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { IfWriter } from "@/components/role-guard";
 
 import { endpoints, Snapshot } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 import useConfirm from "@/lib/hooks/useConfirm";
-import { formatBytes, formatDate, formatDateAgo, formatNumber, formatPercent } from "@/lib/utils";
+import { useI18n, useT } from "@/lib/i18n";
+import { cn, formatBytes } from "@/lib/utils";
+import { useProfileStore } from "@/store/useProfileStore";
+import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 
-function ScoreGauge({ score }: { score: number }) {
-  const clamped = Math.max(0, Math.min(100, score));
-  const color =
-    clamped >= 85 ? "var(--chart-2)" : clamped >= 60 ? "var(--chart-3)" : "var(--chart-4)";
-  const circumference = 2 * Math.PI * 26;
-  const offset = circumference - (clamped / 100) * circumference;
+const LIST_LIMIT = 100;
+const PRUNE_DAYS = 90;
+const DAY_MS = 24 * 3600 * 1000;
+// The list key varies by profile, so invalidate every variant through its prefix.
+const SNAPSHOTS_PREFIX = ["snapshots"];
 
-  return (
-    <div className="relative w-16 h-16 shrink-0">
-      <svg className="w-16 h-16 -rotate-90" viewBox="0 0 100 100">
-        <defs>
-          <linearGradient id={`snap-gauge-${score}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={color} stopOpacity="1" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.5" />
-          </linearGradient>
-        </defs>
-        <circle cx="50" cy="50" r="26" stroke="rgba(255,255,255,0.08)" strokeWidth="6" fill="none" />
-        <circle
-          cx="50"
-          cy="50"
-          r="26"
-          stroke={`url(#snap-gauge-${score})`}
-          strokeWidth="6"
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 0.6s ease-out" }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span
-          className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-br"
-          style={{ backgroundImage: `linear-gradient(135deg, ${color}, ${color}88)` }}
-        >
-          {Math.round(clamped)}
-        </span>
-      </div>
-    </div>
+const CELL = "px-2 py-1.5 text-xs";
+const HEAD = "h-8 px-2 text-xs";
+
+function scoreTone(score: number): string {
+  if (score >= 85) return "text-success";
+  if (score >= 60) return "text-warning";
+  return "text-destructive";
+}
+
+function usageRisk(ratio: number): RiskLevel {
+  if (ratio >= 0.85) return "DANGEROUS";
+  if (ratio >= 0.6) return "WARNING";
+  return "OK";
+}
+
+function riskTone(risk: RiskLevel): string {
+  if (risk === "DANGEROUS") return "text-destructive font-semibold";
+  if (risk === "WARNING") return "text-warning font-semibold";
+  return "";
+}
+
+function useFormatAgo() {
+  const { locale } = useI18n();
+  return React.useCallback(
+    (value: string) => {
+      const time = new Date(value).getTime();
+      if (Number.isNaN(time)) return "-";
+      const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+      const seconds = Math.round((time - Date.now()) / 1000);
+      const abs = Math.abs(seconds);
+      if (abs < 60) return format.format(seconds, "second");
+      if (abs < 3600) return format.format(Math.round(seconds / 60), "minute");
+      if (abs < 86400) return format.format(Math.round(seconds / 3600), "hour");
+      return format.format(Math.round(seconds / 86400), "day");
+    },
+    [locale]
   );
 }
 
 export default function SnapshotsPage() {
+  const t = useT();
+  const { formatNumber, formatDate } = useI18n();
+  const formatAgo = useFormatAgo();
   const qc = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const pollInterval = useUIPrefsStore((s) => s.pollInterval);
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
+  const profile = useProfileStore((s) => s.selectedProfileName) ?? undefined;
   const refMs = autoRefresh ? pollInterval : false;
 
   const [notesFilter, setNotesFilter] = useState("");
 
-  const { data: snapshots, isLoading, refetch } = useQuery({
-    queryKey: qk.snapshots.all(),
-    queryFn: () => endpoints.listSnapshots(undefined, undefined, undefined, 100),
-    refetchInterval: refMs,
+  const snapshotsQuery = useQuery({
+    queryKey: qk.snapshots.all(profile, undefined, undefined, LIST_LIMIT),
+    queryFn: () => endpoints.listSnapshots(profile, undefined, undefined, LIST_LIMIT),
+    refetchInterval: (query) => (query.state.status === "error" ? false : refMs),
   });
+  const snapshots = snapshotsQuery.data;
 
   const captureMutation = useMutation({
-    mutationFn: () => endpoints.captureSnapshot(),
+    // The store labels a snapshot with this name; without it the snapshot would
+    // not show up in this profile's list.
+    mutationFn: () => endpoints.captureSnapshot(profile),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.snapshots.all() });
-      toast.success("Snapshot başarıyla alındı");
+      qc.invalidateQueries({ queryKey: SNAPSHOTS_PREFIX });
+      toast.success(t("snapshots.toast.captured"));
     },
-    onError: () => toast.error("Snapshot alınamadı"),
+    onError: () => toast.error(t("snapshots.toast.captureFailed")),
   });
 
   const pruneMutation = useMutation({
-    mutationFn: () => endpoints.pruneSnapshots(90),
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: qk.snapshots.all() });
-      toast.success(`Prune tamamlandı: ${r.removed} adet silindi, ${r.keep_days} gün saklandı`);
+    mutationFn: () => endpoints.pruneSnapshots(PRUNE_DAYS),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: SNAPSHOTS_PREFIX });
+      toast.success(
+        t("snapshots.toast.pruned", { removed: result.removed, days: result.keep_days })
+      );
     },
-    onError: () => toast.error("Prune işlemi başarısız"),
+    onError: () => toast.error(t("snapshots.toast.pruneFailed")),
   });
 
   const sortedSnapshots = useMemo(() => {
@@ -117,381 +135,391 @@ export default function SnapshotsPage() {
   }, [snapshots]);
 
   const filteredSnapshots = useMemo(() => {
-    if (!notesFilter.trim()) return sortedSnapshots;
-    const f = notesFilter.toLowerCase();
-    return sortedSnapshots.filter((s) => {
-      const hay = [
-        s.database,
-        s.host,
-        s.profile,
-        s.server,
-        s.status,
-        s.server_version,
-      ]
+    const needle = notesFilter.trim().toLowerCase();
+    if (!needle) return sortedSnapshots;
+    return sortedSnapshots.filter((s) =>
+      [s.database, s.host, s.profile, s.server, s.status, s.server_version]
         .filter(Boolean)
         .join(" ")
-        .toLowerCase();
-      return hay.includes(f);
-    });
+        .toLowerCase()
+        .includes(needle)
+    );
   }, [sortedSnapshots, notesFilter]);
 
   const stats = useMemo(() => {
-    const list = sortedSnapshots;
     const now = Date.now();
-    const old90 = list.filter((s) => {
-      if (!s.taken_at) return false;
-      const diff = now - new Date(s.taken_at).getTime();
-      return diff > 90 * 24 * 3600 * 1000;
-    });
+    const old = sortedSnapshots.filter(
+      (s) => s.taken_at && now - new Date(s.taken_at).getTime() > PRUNE_DAYS * DAY_MS
+    );
     const avgScore =
-      list.length > 0
-        ? Math.round(list.reduce((acc, s) => acc + (s.score ?? 0), 0) / list.length)
+      sortedSnapshots.length > 0
+        ? Math.round(
+            sortedSnapshots.reduce((acc, s) => acc + (s.score ?? 0), 0) / sortedSnapshots.length
+          )
         : 0;
     return {
-      total: list.length,
-      latest: list[0] ?? null,
-      pruneCount: old90.length,
+      total: sortedSnapshots.length,
+      latest: sortedSnapshots[0] ?? null,
+      oldCount: old.length,
       avgScore,
     };
   }, [sortedSnapshots]);
 
   const handleCapture = async () => {
     const ok = await confirm({
-      title: "Snapshot Al",
-      description: "Tüm pg_stat_* tabloları, sağlık kontrolleri ve bağlantı anlık görüntüsü alınacak. İşlem MAINTENANCE seviyesindedir ve kısa bir okuma I/O'su oluşturur.",
+      title: t("snapshots.capture"),
+      description: t("snapshots.confirm.capture"),
       risk_level: "MAINTENANCE",
-      confirm_label: "Snapshot Al",
+      confirm_label: t("snapshots.capture"),
+      cancel_label: t("common.cancel"),
     });
-    if (!ok) return;
-    captureMutation.mutate();
+    if (ok) captureMutation.mutate();
   };
 
   const handlePrune = async () => {
-    if (stats.pruneCount === 0) {
-      toast.info("90 günden eski snapshot bulunmuyor");
-      return;
-    }
+    // Pruning spans every profile and this list is scoped and capped, so its
+    // count cannot decide whether there is anything to prune.
     const ok = await confirm({
-      title: "Snapshot Prune — DANGEROUS",
-      description: `90 günden eski ${stats.pruneCount} adet snapshot kalıcı olarak SİLİNECEK. Bu işlem geri alınamaz ve DANGEROUS onayı gerektirir.`,
+      title: t("snapshots.confirm.pruneTitle"),
+      description: t("snapshots.confirm.prune", { days: PRUNE_DAYS }),
       risk_level: "DANGEROUS",
       confirm_name_required: true,
       confirm_name_value: "prune",
-      confirm_name_placeholder: "Onaylamak için prune yazın",
-      confirm_label: "SİL",
+      confirm_name_placeholder: t("snapshots.confirm.prunePlaceholder"),
+      confirm_label: t("common.delete"),
+      cancel_label: t("common.cancel"),
     });
-    if (!ok) return;
-    pruneMutation.mutate();
+    if (ok) pruneMutation.mutate();
   };
 
+  const latest = stats.latest;
+  const connectionRatio = latest ? latest.connections / Math.max(1, latest.max_connections) : 0;
+  const pollLabel = refMs
+    ? t("snapshots.pollEvery", { seconds: refMs / 1000 })
+    : t("snapshots.pollManual");
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-            <Camera className="h-8 w-8 text-info" />
-            Snapshots
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Camera className="h-4 w-4 text-info" />
+            {t("snapshots.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Sağlık · bağlantı · kilit · sorgu · disk anlık görüntüleri, 10sn poll
+          <p className="text-xs text-muted-foreground">
+            {t("snapshots.subtitle")}
+            {" · "}
+            {profile ? (
+              <span className="font-mono">{profile}</span>
+            ) : (
+              t("snapshots.allProfiles")
+            )}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" className="h-12" onClick={() => refetch()}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} /> Yenile
-          </Button>
+        <div className="flex flex-wrap gap-2">
           <Button
-            variant="destructive"
-            className="h-12 px-6 bg-destructive hover:bg-destructive text-destructive-foreground"
-            onClick={handlePrune}
-            disabled={pruneMutation.isPending}
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => snapshotsQuery.refetch()}
           >
-            {pruneMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4 mr-2" />
-            )}
-            Prune (90g+) {stats.pruneCount > 0 && <span className="bg-black/20 px-2 py-0.5 rounded-md text-xs">{stats.pruneCount}</span>}
+            <RefreshCw
+              className={cn("mr-1.5 h-3.5 w-3.5", snapshotsQuery.isFetching && "animate-spin")}
+            />
+            {t("common.refresh")}
           </Button>
-          <Button
-            className="h-12 px-6 bg-gradient-to-r from-info to-info hover:from-info hover:to-info"
-            onClick={handleCapture}
-            disabled={captureMutation.isPending}
-          >
-            {captureMutation.isPending ? (
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-            ) : (
-              <Play className="h-5 w-5 mr-2" />
-            )}
-            Snapshot Al
-          </Button>
+          <IfWriter>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handlePrune}
+              disabled={pruneMutation.isPending}
+            >
+              {pruneMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {t("snapshots.prune", { days: PRUNE_DAYS })}
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleCapture}
+              disabled={captureMutation.isPending}
+            >
+              {captureMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {t("snapshots.capture")}
+            </Button>
+          </IfWriter>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <Card className="relative overflow-hidden border-info/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-info/10 via-transparent to-info/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Camera className="h-3.5 w-3.5 text-info" />
-                Toplam Snapshot
-              </span>
-            </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-info to-info">
-              {stats.total}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {stats.pruneCount > 0 ? (
-                <>
-                  <span className="text-destructive font-semibold">{stats.pruneCount}</span> adet 90g+ eski
-                </>
-              ) : (
-                "90g+ eski snapshot yok"
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border-success/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-success/10 via-transparent to-success/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <TrendingUp className="h-3.5 w-3.5 text-success" />
-                Ortalama Skor
-              </span>
-            </div>
-            <div className="flex items-end gap-3">
-              <ScoreGauge score={stats.avgScore} />
-              <div>
-                <div className="text-xs text-muted-foreground mt-3">
-                  {stats.latest ? (
-                    <>Son snapshot: {formatDateAgo(stats.latest.taken_at)}</>
-                  ) : (
-                    "Henüz snapshot yok"
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border-info/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-info/10 via-transparent to-info/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Users className="h-3.5 w-3.5 text-info" />
-                Son — Bağlantı
-              </span>
-            </div>
-            <div className="flex items-end gap-3">
-              <div>
-                <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-info to-info">
-                  {stats.latest?.connections ?? 0}
-                </div>
-                <div className="text-xs text-muted-foreground -mt-1">
-                  / {stats.latest?.max_connections ?? 0} max
-                </div>
-              </div>
-              <div className="ml-auto">
-                <RiskBadge
-                  riskLevel={
-                    stats.latest &&
-                    formatPercent(stats.latest.connections, stats.latest.max_connections) !== "0%"
-                      ? Number(((stats.latest.connections / Math.max(1, stats.latest.max_connections)) * 100).toFixed(0)) >= 85
-                        ? "DANGEROUS"
-                        : Number(((stats.latest.connections / Math.max(1, stats.latest.max_connections)) * 100).toFixed(0)) >= 60
-                        ? "WARNING"
-                        : "OK"
-                      : "OK"
-                  }
-                  size="sm"
-                >
-                  {stats.latest
-                    ? formatPercent(stats.latest.connections, stats.latest.max_connections, 0)
-                    : "0%"}
-                </RiskBadge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border-warning/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-warning/10 via-transparent to-warning/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <HardDrive className="h-3.5 w-3.5 text-warning" />
-                Son — DB Boyutu
-              </span>
-            </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning">
-              {formatBytes(stats.latest?.db_size_bytes ?? 0, 1)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {stats.latest ? `${stats.latest.host}:${stats.latest.port}/${stats.latest.database}` : "-"}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Camera className="h-5 w-5 text-info" />
-                Snapshot Listesi
-              </CardTitle>
-              <CardDescription>
-                Poll: {refMs ? `${refMs / 1000} sn` : "manuel"} · {filteredSnapshots.length} / {sortedSnapshots.length} gösteriliyor
-              </CardDescription>
-            </div>
-            <div className="w-full sm:max-w-sm">
-              <Input
-                value={notesFilter}
-                onChange={(e) => setNotesFilter(e.target.value)}
-                placeholder="Ara: host, db, status, server version..."
-                className="pl-5"
-              />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="!p-0">
-          {isLoading && !snapshots ? (
-            <div className="p-12 text-center text-muted-foreground">Yükleniyor...</div>
-          ) : filteredSnapshots.length === 0 ? (
-            <div className="p-16 text-center">
-              <Camera className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-              <p className="font-semibold">
-                {sortedSnapshots.length === 0 ? "Henüz snapshot yok" : "Eşleşen snapshot bulunamadı"}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {sortedSnapshots.length === 0
-                  ? '"Snapshot Al" butonuyla ilk kaydı oluşturun.'
-                  : "Filtreyi temizlemeyi deneyin."}
-              </p>
-            </div>
+      {!snapshotsQuery.isError && (
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {snapshotsQuery.isLoading ? (
+            [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[70px] w-full rounded-md" />)
           ) : (
-            <div className="divide-y divide-border">
-              {filteredSnapshots.map((s, idx) => (
-                <SnapshotRow key={`${s.id}-${idx}`} snap={s} />
-              ))}
-            </div>
+            <>
+              <StatTile
+                icon={<Camera className="h-3.5 w-3.5 text-info" />}
+                label={t("snapshots.stats.total")}
+                value={formatNumber(stats.total)}
+                hint={
+                  stats.oldCount > 0
+                    ? t("snapshots.stats.old", { count: stats.oldCount, days: PRUNE_DAYS })
+                    : t("snapshots.stats.noneOld", { days: PRUNE_DAYS })
+                }
+              />
+              <StatTile
+                icon={<TrendingUp className="h-3.5 w-3.5 text-success" />}
+                label={t("snapshots.stats.avgScore")}
+                value={formatNumber(stats.avgScore)}
+                tone={stats.total > 0 ? scoreTone(stats.avgScore) : undefined}
+                hint={
+                  latest
+                    ? t("snapshots.stats.last", { ago: formatAgo(latest.taken_at) })
+                    : t("snapshots.stats.none")
+                }
+              />
+              <StatTile
+                icon={<Users className="h-3.5 w-3.5 text-info" />}
+                label={t("snapshots.stats.latestConnections")}
+                value={
+                  latest
+                    ? `${formatNumber(latest.connections)} / ${formatNumber(latest.max_connections)}`
+                    : "-"
+                }
+                tone={latest ? riskTone(usageRisk(connectionRatio)) : undefined}
+                hint={
+                  latest
+                    ? formatNumber(connectionRatio, {
+                        style: "percent",
+                        maximumFractionDigits: 0,
+                      })
+                    : "-"
+                }
+              />
+              <StatTile
+                icon={<HardDrive className="h-3.5 w-3.5 text-warning" />}
+                label={t("snapshots.stats.latestSize")}
+                value={latest ? formatBytes(latest.db_size_bytes ?? 0, 1) : "-"}
+                hint={latest ? `${latest.host}:${latest.port}/${latest.database}` : "-"}
+                monoHint
+              />
+            </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-md border border-border bg-card">
+        <div className="flex flex-col gap-2 border-b border-border px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold">{t("snapshots.list.title")}</h2>
+            <p className="text-xs text-muted-foreground">
+              {t("snapshots.list.subtitle", {
+                poll: pollLabel,
+                shown: filteredSnapshots.length,
+                total: sortedSnapshots.length,
+              })}
+            </p>
+          </div>
+          <Input
+            value={notesFilter}
+            onChange={(e) => setNotesFilter(e.target.value)}
+            placeholder={t("snapshots.list.filterPlaceholder")}
+            aria-label={t("common.search")}
+            className="h-8 w-full text-xs sm:max-w-xs"
+          />
+        </div>
+        {snapshotsQuery.isError ? (
+          <div className="flex items-center justify-between gap-2 px-3 py-3" role="alert">
+            <span className="flex items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {t("common.loadFailed")}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => snapshotsQuery.refetch()}
+            >
+              <RefreshCw className="mr-1.5 h-3 w-3" />
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : snapshotsQuery.isLoading ? (
+          <div className="space-y-1.5 p-3" aria-label={t("common.loading")}>
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+          </div>
+        ) : filteredSnapshots.length === 0 ? (
+          <div className="px-3 py-6 text-center">
+            <p className="text-sm font-medium">
+              {t(
+                sortedSnapshots.length === 0
+                  ? "snapshots.list.emptyTitle"
+                  : "snapshots.list.noMatchTitle"
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                sortedSnapshots.length === 0
+                  ? "snapshots.list.emptyHint"
+                  : "snapshots.list.noMatchHint"
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={HEAD}>{t("snapshots.columns.id")}</TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.score")}
+                  </TableHead>
+                  <TableHead className={HEAD}>{t("snapshots.columns.status")}</TableHead>
+                  <TableHead className={HEAD}>{t("snapshots.columns.target")}</TableHead>
+                  <TableHead className={HEAD}>{t("snapshots.columns.taken")}</TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.connections")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.size")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.dead")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.blocking")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.deadlocks")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("snapshots.columns.longQueries")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredSnapshots.map((snap) => (
+                  <SnapshotRow
+                    key={snap.id}
+                    snap={snap}
+                    takenAt={snap.taken_at ? formatDate(snap.taken_at) : "-"}
+                    ago={snap.taken_at ? formatAgo(snap.taken_at) : "-"}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function SnapshotRow({ snap }: { snap: Snapshot }) {
+function SnapshotRow({
+  snap,
+  takenAt,
+  ago,
+}: {
+  snap: Snapshot;
+  takenAt: string;
+  ago: string;
+}) {
+  const { formatNumber } = useI18n();
   const blocking = snap.blocking_pairs ?? 0;
   const deadlocks = snap.deadlocks ?? 0;
-  const longQ = snap.long_queries ?? 0;
-  const deadTupleRatio =
-    snap.live_tuples && snap.live_tuples > 0
-      ? (snap.dead_tuples ?? 0) / (snap.live_tuples + (snap.dead_tuples ?? 0))
-      : 0;
+  const longQueries = snap.long_queries ?? 0;
+  const dead = snap.dead_tuples ?? 0;
+  const totalTuples = (snap.live_tuples ?? 0) + dead;
+  const deadRatio = totalTuples > 0 ? dead / totalTuples : 0;
+  const score = snap.score ?? 0;
+
+  const deadRisk: RiskLevel = deadRatio > 0.4 ? "DANGEROUS" : deadRatio > 0.2 ? "WARNING" : "OK";
+  const longRisk: RiskLevel = longQueries > 20 ? "DANGEROUS" : longQueries > 5 ? "WARNING" : "OK";
+  const connectionRisk = usageRisk((snap.connections ?? 0) / Math.max(1, snap.max_connections ?? 0));
 
   return (
-    <div className="p-6 hover:bg-card transition-colors">
-      <div className="flex items-start gap-5 flex-wrap">
-        <div className="flex items-center gap-4">
-          <ScoreGauge score={snap.score ?? 0} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <code className="text-sm font-mono font-semibold text-foreground">#{snap.id}</code>
-              <Badge variant="outline" className="text-[10px] font-mono">
-                {snap.status || "-"}
-              </Badge>
-              {snap.profile && (
-                <Badge variant="outline" className="text-[10px] font-mono">
-                  profile={snap.profile}
-                </Badge>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              <span className="font-mono">
-                {snap.host}:{snap.port}/{snap.database}
-              </span>{" "}
-              · {snap.server_version}
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-              <span className="flex items-center gap-1">
-                <Activity className="h-3 w-3" /> {formatDate(snap.taken_at)}
-              </span>
-              <span className="opacity-60">·</span>
-              <span>{formatDateAgo(snap.taken_at)}</span>
-            </div>
-          </div>
+    <TableRow>
+      <TableCell className={cn(CELL, "font-mono")}>#{snap.id}</TableCell>
+      <TableCell className={cn(CELL, "text-right font-mono font-semibold", scoreTone(score))}>
+        {formatNumber(Math.round(score))}
+      </TableCell>
+      <TableCell className={CELL}>
+        <Badge variant="outline" className="font-mono text-xs">
+          {snap.status || "-"}
+        </Badge>
+      </TableCell>
+      <TableCell className={cn(CELL, "font-mono")}>
+        <div>
+          {snap.host}:{snap.port}/{snap.database}
         </div>
-
-        <div className="ml-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 flex-1 max-w-4xl">
-          <MiniStat
-            icon={<Users className="h-3.5 w-3.5 text-info" />}
-            label="Conn"
-            value={`${snap.connections ?? 0}/${snap.max_connections ?? 0}`}
-          />
-          <MiniStat
-            icon={<HardDrive className="h-3.5 w-3.5 text-warning" />}
-            label="Boyut"
-            value={formatBytes(snap.db_size_bytes ?? 0, 0)}
-          />
-          <MiniStat
-            icon={<AlertTriangle className="h-3.5 w-3.5 text-warning" />}
-            label="Dead"
-            value={formatNumber(snap.dead_tuples ?? 0)}
-            risk={deadTupleRatio > 0.2 ? "WARNING" : deadTupleRatio > 0.4 ? "DANGEROUS" : "OK"}
-          />
-          <MiniStat
-            icon={<Lock className="h-3.5 w-3.5 text-destructive" />}
-            label="Bloke"
-            value={String(blocking)}
-            risk={blocking > 0 ? "DANGEROUS" : blocking > 0 ? "WARNING" : "OK"}
-          />
-          <MiniStat
-            icon={<Skull className="h-3.5 w-3.5 text-destructive" />}
-            label="Deadlock"
-            value={String(deadlocks)}
-            risk={deadlocks > 0 ? "DANGEROUS" : "OK"}
-          />
-          <MiniStat
-            icon={<CheckCircle2 className="h-3.5 w-3.5 text-info" />}
-            label="Uzun Sorgu"
-            value={String(longQ)}
-            risk={longQ > 5 ? "WARNING" : longQ > 20 ? "DANGEROUS" : "OK"}
-          />
+        <div className="text-muted-foreground">
+          {snap.profile ? `${snap.profile} · ` : ""}
+          {snap.server_version}
         </div>
-      </div>
-    </div>
+      </TableCell>
+      <TableCell className={cn(CELL, "whitespace-nowrap font-mono")}>
+        <div>{takenAt}</div>
+        <div className="text-muted-foreground">{ago}</div>
+      </TableCell>
+      <TableCell className={cn(CELL, "text-right font-mono", riskTone(connectionRisk))}>
+        {formatNumber(snap.connections ?? 0)}/{formatNumber(snap.max_connections ?? 0)}
+      </TableCell>
+      <TableCell className={cn(CELL, "whitespace-nowrap text-right font-mono")}>
+        {formatBytes(snap.db_size_bytes ?? 0, 0)}
+      </TableCell>
+      <TableCell className={cn(CELL, "text-right font-mono", riskTone(deadRisk))}>
+        {formatNumber(dead)}
+      </TableCell>
+      <TableCell className={cn(CELL, "text-right font-mono", blocking > 0 && riskTone("DANGEROUS"))}>
+        {formatNumber(blocking)}
+      </TableCell>
+      <TableCell className={cn(CELL, "text-right font-mono", deadlocks > 0 && riskTone("DANGEROUS"))}>
+        {formatNumber(deadlocks)}
+      </TableCell>
+      <TableCell className={cn(CELL, "text-right font-mono", riskTone(longRisk))}>
+        {formatNumber(longQueries)}
+      </TableCell>
+    </TableRow>
   );
 }
 
-function MiniStat({
+function StatTile({
   icon,
   label,
   value,
-  risk = "INFO",
+  hint,
+  tone,
+  monoHint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
-  risk?: "OK" | "INFO" | "WARNING" | "MAINTENANCE" | "DANGEROUS";
+  hint: string;
+  tone?: string;
+  monoHint?: boolean;
 }) {
   return (
-    <div className="rounded-md bg-card px-3 py-2.5 min-w-[90px]">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {icon}
-        {label}
+        <span className="truncate">{label}</span>
       </div>
-      <div className="flex items-center gap-2 mt-1">
-        <div className="text-sm font-bold">{value}</div>
-        {risk !== "INFO" && risk !== "OK" && <RiskBadge riskLevel={risk} size="sm" showIcon={false} />}
+      <div className={cn("font-mono text-base font-semibold", tone)}>{value}</div>
+      <div className={cn("truncate text-xs text-muted-foreground", monoHint && "font-mono")} title={hint}>
+        {hint}
       </div>
     </div>
   );

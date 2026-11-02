@@ -1,32 +1,57 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useMemo, useRef, useState, type ComponentType } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getPaginationRowModel,
-  SortingState,
   getSortedRowModel,
-  ColumnFiltersState,
-  getFilteredRowModel,
+  SortingState,
+  useReactTable,
 } from "@tanstack/react-table";
 import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Power,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Server,
+  Settings2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import {
   endpoints,
-  type SettingInfo,
-  type SettingChange,
   type DryRunResult,
   type MutationRequest,
+  type SettingChange,
+  type SettingInfo,
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
+import { useConfirm } from "@/lib/hooks/useConfirm";
+import { useI18n, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { IfWriter } from "@/components/role-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -35,32 +60,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Settings2,
-  Search,
-  RefreshCw,
-  Save,
-  AlertCircle,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-  Power,
-  Pencil,
-  X,
-  Check,
-  Database,
-  Server,
-} from "lucide-react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { useConfirm } from "@/lib/hooks/useConfirm";
 
 type PageSize = 10 | 25 | 50;
 
@@ -69,15 +68,8 @@ type EditState = {
   newValue: string;
 } | null;
 
-function TableSkeleton() {
-  return (
-    <div className="p-6 space-y-3">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full" />
-      ))}
-    </div>
-  );
-}
+const CELL = "px-2 py-1.5 text-xs";
+const HEAD = "h-8 px-2 text-xs";
 
 const CONTEXT_RISK: Record<string, RiskLevel> = {
   internal: "OK",
@@ -90,32 +82,36 @@ const CONTEXT_RISK: Record<string, RiskLevel> = {
 };
 
 export default function ConfigPage() {
+  const t = useT();
+  const { formatNumber } = useI18n();
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
 
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [globalFilter, setGlobalFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [contextFilter, setContextFilter] = useState<string>("all");
   const [editState, setEditState] = useState<EditState>(null);
+  // Enter can fire again while the dry run or confirm dialog is still open.
+  const savingRef = useRef(false);
 
-  const { data: settings, isLoading, refetch } = useQuery({
+  const settingsQuery = useQuery({
     queryKey: qk.configops.all(),
     queryFn: () => endpoints.listSettings(),
   });
+  const settings = settingsQuery.data;
 
   const categories = useMemo(() => {
-    const cats = new Set<string>();
-    (settings ?? []).forEach((s) => s.category && cats.add(s.category));
-    return Array.from(cats).sort();
+    const values = new Set<string>();
+    (settings ?? []).forEach((s) => s.category && values.add(s.category));
+    return Array.from(values).sort();
   }, [settings]);
 
   const contexts = useMemo(() => {
-    const cts = new Set<string>();
-    (settings ?? []).forEach((s) => s.context && cts.add(s.context));
-    return Array.from(cts).sort();
+    const values = new Set<string>();
+    (settings ?? []).forEach((s) => s.context && values.add(s.context));
+    return Array.from(values).sort();
   }, [settings]);
 
   const filteredSettings = useMemo(() => {
@@ -127,50 +123,47 @@ export default function ConfigPage() {
       list = list.filter((s) => s.context === contextFilter);
     }
     if (globalFilter) {
-      const q = globalFilter.toLowerCase();
+      const needle = globalFilter.toLowerCase();
       list = list.filter(
         (s) =>
-          s.name.toLowerCase().includes(q) ||
-          (s.setting ?? "").toLowerCase().includes(q) ||
-          (s.category ?? "").toLowerCase().includes(q) ||
-          (s.unit ?? "").toLowerCase().includes(q)
+          s.name.toLowerCase().includes(needle) ||
+          (s.setting ?? "").toLowerCase().includes(needle) ||
+          (s.category ?? "").toLowerCase().includes(needle) ||
+          (s.unit ?? "").toLowerCase().includes(needle)
       );
     }
     return list;
   }, [settings, categoryFilter, contextFilter, globalFilter]);
 
-  const pendingRestartCount = (settings ?? []).filter((s) => s.pending_restart).length;
-  const superuserContextCount = (settings ?? []).filter(
+  const all = settings ?? [];
+  const pendingRestartCount = all.filter((s) => s.pending_restart).length;
+  const superuserContextCount = all.filter(
     (s) => s.context === "superuser" || s.context === "superuser_backend"
   ).length;
-  const sighupContextCount = (settings ?? []).filter((s) => s.context === "sighup").length;
-  const postmasterContextCount = (settings ?? []).filter((s) => s.context === "postmaster").length;
+  const sighupContextCount = all.filter((s) => s.context === "sighup").length;
+  const postmasterContextCount = all.filter((s) => s.context === "postmaster").length;
 
   const changeSettingMutation = useMutation({
     mutationFn: (payload: { name: string; body: SettingChange }) =>
       endpoints.changeSetting(payload.name, payload.body),
     onSuccess: () => {
-      toast.success("Ayar güncellendi");
+      toast.success(t("config.toast.updated"));
       queryClient.invalidateQueries({ queryKey: qk.configops.all() });
     },
     onError: () => {
-      toast.error("Ayar güncellenemedi");
+      toast.error(t("config.toast.updateFailed"));
     },
   });
 
   const reloadConfigMutation = useMutation({
     mutationFn: (body: MutationRequest) => endpoints.reloadConfig(body),
-    onSuccess: (res) => {
-      const r = res as { reloaded?: boolean };
-      if (r && r.reloaded) {
-        toast.success("Konfigürasyon başarıyla yeniden yüklendi (SIGHUP)");
-      } else {
-        toast.success("pg_reload_conf() çağrıldı");
-      }
+    onSuccess: (result) => {
+      const reloaded = (result as { reloaded?: boolean } | null)?.reloaded;
+      toast.success(t(reloaded ? "config.toast.reloaded" : "config.toast.reloadCalled"));
       queryClient.invalidateQueries({ queryKey: qk.configops.all() });
     },
     onError: () => {
-      toast.error("Konfigürasyon yeniden yüklenemedi");
+      toast.error(t("config.toast.reloadFailed"));
     },
   });
 
@@ -183,212 +176,192 @@ export default function ConfigPage() {
   };
 
   const handleEditSave = async (setting: SettingInfo) => {
-    if (!editState) return;
+    if (!editState || savingRef.current) return;
     const newValue = editState.newValue.trim();
     if (newValue === setting.setting) {
       setEditState(null);
-      toast.info("Değişiklik algılanmadı");
+      toast.info(t("config.toast.noChange"));
       return;
     }
 
+    savingRef.current = true;
     try {
-      const dryRunPayload: SettingChange = {
+      const dryRun = (await endpoints.changeSetting(setting.name, {
         value: newValue,
         dry_run: true,
-      };
-      const dryRunRes = (await endpoints.changeSetting(
-        setting.name,
-        dryRunPayload
-      )) as DryRunResult;
+      })) as DryRunResult;
 
-      const sql = dryRunRes?.sql ?? [
-        `ALTER SYSTEM SET ${setting.name} = '${newValue}';`,
-      ];
-      const risk = (dryRunRes?.risk ?? "DANGEROUS") as "MAINTENANCE" | "DANGEROUS";
+      // The dry run masks the value, but the user is approving this exact change.
+      const quoted = `'${newValue.replace(/'/g, "''")}'`;
+      const sql = (dryRun?.sql ?? [`ALTER SYSTEM SET ${setting.name} = '<value>'`]).map((line) =>
+        line.replace("'<value>'", () => quoted)
+      );
+      const context = setting.context ?? "-";
 
       const ok = await confirm({
-        title: `"${setting.name}" değeri değiştirilsin mi?`,
-        description:
+        title: t("config.confirm.changeTitle", { name: setting.name }),
+        description: t(
           setting.context === "postmaster"
-            ? `Bu ayarın (${setting.context}) uygulanması için PostgreSQL sunucusunun YENİDEN BAŞLATILMASI gerekir. Uygulamadan sonra sunucuyu restart etmelisiniz.`
+            ? "config.confirm.changePostmaster"
             : setting.context === "sighup"
-            ? `Bu ayar (${setting.context}) SIGHUP ile (pg_reload_conf) uygulanabilir. Değişiklik sonrası "Konfigürasyonu Yeniden Yükle" butonuna basmayı unutmayın.`
-            : `Bu ayar (${setting.context}) yeni bağlantılarda/süreçlerde devreye girebilir.`,
-        risk_level: risk,
+              ? "config.confirm.changeSighup"
+              : "config.confirm.changeOther",
+          { context }
+        ),
+        risk_level: dryRun?.risk === "MAINTENANCE" ? "MAINTENANCE" : "DANGEROUS",
         sql_preview: sql,
-        confirm_label: "ALTER SYSTEM SET Uygula",
-        cancel_label: "İptal",
+        confirm_label: t("config.confirm.changeAction"),
+        cancel_label: t("common.cancel"),
       });
       if (!ok) return;
 
-      const payload: SettingChange = {
-        value: newValue,
-        confirm: true,
-      };
-      await changeSettingMutation.mutateAsync({ name: setting.name, body: payload });
+      await changeSettingMutation.mutateAsync({
+        name: setting.name,
+        body: { value: newValue, confirm: true },
+      });
       setEditState(null);
-    } catch (e) {}
+    } catch {
+      // Already reported by the API client and the mutation; keep the edit open.
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   const handleReloadConfig = async () => {
     const ok = await confirm({
-      title: "Sunucu konfigürasyonu yeniden yüklensin mi?",
-      description:
-        "pg_reload_conf() çağrılacak ve postgresql.conf / ALTER SYSTEM değişiklikleri SIGHUP ile yüklenecektir. Bu işlem çalışan bağlantıları kesmez ancak tüm ayarlar (postmaster) için yeniden başlatma gerekebilir.",
+      title: t("config.confirm.reloadTitle"),
+      description: t("config.confirm.reload"),
       risk_level: "MAINTENANCE",
-      confirm_label: "pg_reload_conf() Çalıştır",
-      cancel_label: "İptal",
+      confirm_label: t("config.confirm.reloadAction"),
+      cancel_label: t("common.cancel"),
       sql_preview: ["SELECT pg_reload_conf();"],
     });
-    if (!ok) return;
-    await reloadConfigMutation.mutateAsync({ confirm: true });
+    if (ok) reloadConfigMutation.mutate({ confirm: true });
+  };
+
+  const handleRefresh = async () => {
+    const result = await settingsQuery.refetch();
+    if (!result.isError) toast.success(t("config.toast.refreshed"));
   };
 
   const columns: ColumnDef<SettingInfo>[] = [
     {
       accessorKey: "name",
-      header: "Ayar Adı",
-      size: 260,
+      header: t("config.columns.name"),
       cell: ({ row }) => {
         const s = row.original;
         return (
-          <div className="flex items-center gap-3 min-w-0">
-            {s.pending_restart && (
-              <div className="h-10 w-1.5 rounded-full bg-gradient-to-b from-destructive to-destructive shrink-0" />
-            )}
-            <div className="min-w-0">
-              <p className="font-mono text-sm font-semibold truncate">{s.name}</p>
-              {s.category && (
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5 truncate">
-                  {s.category}
-                </p>
-              )}
-            </div>
+          <div className="min-w-0">
+            <p className="truncate font-mono font-semibold">{s.name}</p>
+            {s.category && <p className="truncate text-muted-foreground">{s.category}</p>}
           </div>
         );
       },
     },
     {
       accessorKey: "setting",
-      header: "Değer",
-      size: 220,
+      header: t("config.columns.value"),
       cell: ({ row }) => {
         const s = row.original;
-        const isEditing = editState?.name === s.name;
-        if (isEditing && editState) {
+        if (editState?.name === s.name) {
           return (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Input
                 value={editState.newValue}
-                onChange={(e) =>
-                  setEditState({ ...editState, newValue: e.target.value })
-                }
+                onChange={(e) => setEditState({ ...editState, newValue: e.target.value })}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleEditSave(s);
                   if (e.key === "Escape") handleEditCancel();
                 }}
-                className="h-9 font-mono text-sm"
+                aria-label={t("config.columns.value")}
+                className="h-7 font-mono text-xs"
                 autoFocus
               />
               <Button
                 variant="outline"
                 size="icon"
+                aria-label={t("common.save")}
                 onClick={() => handleEditSave(s)}
                 disabled={changeSettingMutation.isPending}
-                className="h-9 w-9 rounded-full border-success/40 text-success hover:bg-success/10"
+                className="h-7 w-7 shrink-0 border-success/40 text-success hover:bg-success/10"
               >
-                <Check className="h-4 w-4" />
+                <Check className="h-3.5 w-3.5" />
               </Button>
               <Button
                 variant="outline"
                 size="icon"
+                aria-label={t("common.cancel")}
                 onClick={handleEditCancel}
-                className="h-9 w-9 rounded-full text-muted-foreground"
+                className="h-7 w-7 shrink-0 text-muted-foreground"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </Button>
             </div>
           );
         }
         return (
-          <div className="flex items-center gap-2">
-            <code className="text-sm font-mono bg-card px-3 py-1.5 rounded-md truncate max-w-[180px]">
-              {s.setting ?? "-"}
-            </code>
-            {s.unit && (
-              <span className="text-xs font-mono text-muted-foreground shrink-0">
-                {s.unit}
-              </span>
-            )}
-          </div>
+          <code className="block max-w-[260px] truncate font-mono" title={s.setting ?? undefined}>
+            {s.setting || "-"}
+          </code>
         );
       },
     },
     {
       accessorKey: "unit",
-      header: "Birim",
-      size: 90,
+      header: t("config.columns.unit"),
       cell: ({ row }) => (
-        <span className="text-xs font-mono text-muted-foreground">
-          {row.original.unit ?? "-"}
-        </span>
+        <span className="font-mono text-muted-foreground">{row.original.unit ?? "-"}</span>
       ),
-      enableColumnFilter: false,
     },
     {
       accessorKey: "context",
-      header: "Context",
-      size: 160,
+      header: t("config.columns.context"),
       cell: ({ row }) => {
-        const ctx = row.original.context ?? "-";
-        const risk = CONTEXT_RISK[ctx] ?? "INFO";
-        return <RiskBadge riskLevel={risk} size="sm">{ctx}</RiskBadge>;
-      },
-    },
-    {
-      accessorKey: "pending_restart",
-      header: "Durum",
-      size: 150,
-      cell: ({ row }) => {
-        const s = row.original;
-        if (s.pending_restart) {
-          return (
-            <RiskBadge riskLevel="DANGEROUS" size="sm" className="animate-pulse">
-              <AlertCircle className="h-3 w-3" />
-              RESTART GEREKİYOR
-            </RiskBadge>
-          );
-        }
+        const context = row.original.context ?? "-";
         return (
-          <RiskBadge riskLevel="OK" size="sm">
-            <Check className="h-3 w-3" />
-            Uygulandı
+          <RiskBadge riskLevel={CONTEXT_RISK[context] ?? "INFO"} size="sm">
+            <span className="font-mono">{context}</span>
           </RiskBadge>
         );
       },
     },
     {
+      accessorKey: "pending_restart",
+      header: t("config.columns.status"),
+      cell: ({ row }) =>
+        row.original.pending_restart ? (
+          <RiskBadge riskLevel="DANGEROUS" size="sm">
+            {t("config.status.restartRequired")}
+          </RiskBadge>
+        ) : (
+          <RiskBadge riskLevel="OK" size="sm">
+            {t("config.status.applied")}
+          </RiskBadge>
+        ),
+    },
+    {
       id: "actions",
-      header: () => <div className="text-right">İşlem</div>,
-      size: 110,
+      header: () => <div className="text-right">{t("config.columns.actions")}</div>,
       enableSorting: false,
       cell: ({ row }) => {
         const s = row.original;
-        const isEditing = editState?.name === s.name;
-        const busy = changeSettingMutation.isPending;
-        if (isEditing) return null;
+        if (editState?.name === s.name) return null;
+        const readOnly = s.context === "internal";
         return (
           <div className="flex items-center justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-md"
-              onClick={() => handleEditStart(s)}
-              disabled={busy}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Düzenle
-            </Button>
+            <IfWriter>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => handleEditStart(s)}
+                disabled={changeSettingMutation.isPending || readOnly}
+                title={readOnly ? t("config.internalHint") : undefined}
+              >
+                <Pencil className="mr-1 h-3 w-3" />
+                {t("config.edit")}
+              </Button>
+            </IfWriter>
           </div>
         );
       },
@@ -400,285 +373,245 @@ export default function ConfigPage() {
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    onSortingChange: setSorting,
     getSortedRowModel: getSortedRowModel(),
-    onColumnFiltersChange: setColumnFilters,
-    getFilteredRowModel: getFilteredRowModel(),
-    state: {
-      sorting,
-      columnFilters,
-    },
-    initialState: {
-      pagination: {
-        pageSize,
-      },
-      sorting: [{ id: "name", desc: false }],
-    },
+    onSortingChange: setSorting,
+    state: { sorting },
+    initialState: { pagination: { pageSize } },
   });
 
   const currentPage = table.getState().pagination.pageIndex;
   const pageCount = table.getPageCount();
-  const canPrev = currentPage > 0;
-  const canNext = currentPage < pageCount - 1;
+
+  const tiles = [
+    {
+      label: t("config.stats.total"),
+      value: all.length,
+      icon: Settings2,
+      tone: "text-foreground",
+    },
+    {
+      label: t("config.stats.sighup"),
+      value: sighupContextCount,
+      icon: RotateCcw,
+      tone: "text-foreground",
+    },
+    {
+      label: t("config.stats.superuser"),
+      value: superuserContextCount,
+      icon: Power,
+      tone: "text-foreground",
+    },
+    {
+      label: t("config.stats.postmaster"),
+      value: postmasterContextCount,
+      icon: Server,
+      tone: "text-foreground",
+    },
+    {
+      label: t("config.stats.pendingRestart"),
+      value: pendingRestartCount,
+      icon: AlertCircle,
+      tone: pendingRestartCount > 0 ? "text-destructive" : "text-success",
+    },
+  ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-            <Settings2 className="h-8 w-8 text-info" />
-            Sunucu Yapılandırması
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Settings2 className="h-4 w-4 text-info" />
+            {t("config.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            PostgreSQL postgresql.conf parametreleri — ALTER SYSTEM SET ile güvenli değiştirim
-          </p>
+          <p className="text-xs text-muted-foreground">{t("config.subtitle")}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => {
-              refetch();
-              toast.success("Ayarlar yenilendi");
-            }}
-            className="h-12 px-6 rounded-md"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Yenile
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleRefresh}>
+            <RefreshCw
+              className={cn("mr-1.5 h-3.5 w-3.5", settingsQuery.isFetching && "animate-spin")}
+            />
+            {t("common.refresh")}
           </Button>
-          <Button
-            onClick={handleReloadConfig}
-            disabled={reloadConfigMutation.isPending}
-            className={cn(
-              "h-12 px-6 rounded-md font-semibold",
-              pendingRestartCount > 0
-                ? "bg-gradient-to-r from-destructive to-warning hover:from-destructive hover:to-warning animate-pulse"
-                : "bg-gradient-to-r from-warning to-warning hover:from-warning hover:to-warning"
-            )}
-          >
-            {reloadConfigMutation.isPending ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Yükleniyor…
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                {pendingRestartCount > 0
-                  ? `${pendingRestartCount} Ayar · Konfigürasyonu Yeniden Yükle`
-                  : "Konfigürasyonu Yeniden Yükle (Reload)"}
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
-        {isLoading ? (
-          [0, 1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <Skeleton className="h-3 w-24 mb-3" />
-                <Skeleton className="h-9 w-16" />
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          [
-            {
-              label: "Toplam Ayar",
-              val: (settings ?? []).length,
-              icon: Settings2,
-              from: "from-info",
-              to: "to-info",
-            },
-            {
-              label: "SIGHUP (Reload)",
-              val: sighupContextCount,
-              icon: RotateCcw,
-              from: "from-warning",
-              to: "to-warning",
-              risk: sighupContextCount > 0 ? ("MAINTENANCE" as RiskLevel) : null,
-            },
-            {
-              label: "Süperuser Context",
-              val: superuserContextCount,
-              icon: Power,
-              from: "from-destructive",
-              to: "to-info",
-              risk: superuserContextCount > 50 ? ("WARNING" as RiskLevel) : null,
-            },
-            {
-              label: "Postmaster (Restart)",
-              val: postmasterContextCount,
-              icon: Server,
-              from: "from-destructive",
-              to: "to-warning",
-              risk: postmasterContextCount > 0 ? ("DANGEROUS" as RiskLevel) : null,
-            },
-            {
-              label: "Restart Bekleyen",
-              val: pendingRestartCount,
-              icon: AlertCircle,
-              from: pendingRestartCount > 0 ? "from-destructive" : "from-success",
-              to: pendingRestartCount > 0 ? "to-destructive" : "to-success",
-              risk:
-                pendingRestartCount > 5
-                  ? ("DANGEROUS" as RiskLevel)
-                  : pendingRestartCount > 0
-                  ? ("WARNING" as RiskLevel)
-                  : ("OK" as RiskLevel),
-              borderWarn: pendingRestartCount > 0,
-            },
-          ].map((m) => (
-            <Card
-              key={m.label}
-              className={cn(
-                "relative overflow-hidden",
-                m.risk === "DANGEROUS" && "border-destructive/30",
-                m.risk === "WARNING" && "border-warning/30",
-                m.borderWarn && "border-destructive/30"
-              )}
+          <IfWriter>
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleReloadConfig}
+              disabled={reloadConfigMutation.isPending}
             >
-              <div
-                className={cn(
-                  "absolute inset-0 bg-gradient-to-br opacity-10 pointer-events-none",
-                  m.from,
-                  m.to
-                )}
-              />
-              <CardContent className="p-6 relative">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                      {m.label}
-                    </p>
-                    <p
-                      className={cn(
-                        "text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-br",
-                        m.from,
-                        m.to
-                      )}
-                    >
-                      {m.val}
-                    </p>
-                  </div>
-                  <div
-                    className={cn(
-                      "h-11 w-11 rounded-md bg-gradient-to-br flex items-center justify-center",
-                      m.from,
-                      m.to
-                    )}
-                    style={{ opacity: 0.85 }}
-                  >
-                    <m.icon className="h-5 w-5 text-foreground" />
-                  </div>
-                </div>
-                {m.risk && (
-                  <div className="mt-4">
-                    <RiskBadge riskLevel={m.risk} size="sm" className="w-full justify-center" />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))
-        )}
+              {reloadConfigMutation.isPending ? (
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {t(reloadConfigMutation.isPending ? "config.reloading" : "config.reload")}
+            </Button>
+          </IfWriter>
+        </div>
       </div>
 
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Database className="h-5 w-5 text-info" />
-                Yapılandırma Ayarları
-              </CardTitle>
-              <CardDescription>
-                {filteredSettings.length} / {(settings ?? []).length} ayar listeleniyor
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative w-full md:w-72">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  value={globalFilter ?? ""}
-                  onChange={(e) => {
-                    setGlobalFilter(String(e.target.value));
-                    table.setPageIndex(0);
-                  }}
-                  placeholder="Ayar ara (ad/değer/kategori)..."
-                  className="pl-11 h-11"
+      {!settingsQuery.isError && (
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+          {settingsQuery.isLoading
+            ? [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[54px] w-full rounded-md" />)
+            : tiles.map((tile) => (
+                <StatTile
+                  key={tile.label}
+                  label={tile.label}
+                  value={formatNumber(tile.value)}
+                  icon={tile.icon}
+                  tone={tile.tone}
                 />
-              </div>
-              <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); table.setPageIndex(0); }}>
-                <SelectTrigger className="h-11 w-full md:w-56 rounded-full">
-                  <span className="text-xs text-muted-foreground mr-1">Kategori:</span>
-                  <SelectValue placeholder="Kategori seç..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tüm Kategoriler</SelectItem>
-                  {categories.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={contextFilter} onValueChange={(v) => { setContextFilter(v); table.setPageIndex(0); }}>
-                <SelectTrigger className="h-11 w-full md:w-48 rounded-full">
-                  <span className="text-xs text-muted-foreground mr-1">Context:</span>
-                  <SelectValue placeholder="Context seç..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tümü</SelectItem>
-                  {contexts.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              ))}
+        </div>
+      )}
+
+      {pendingRestartCount > 0 && (
+        <p
+          className="flex items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          role="status"
+        >
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {t("config.pendingRestartNotice", { count: pendingRestartCount })}
+        </p>
+      )}
+
+      <div className="overflow-hidden rounded-md border border-border bg-card">
+        <div className="flex flex-col gap-2 border-b border-border px-3 py-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold">{t("config.list.title")}</h2>
+            <p className="text-xs text-muted-foreground">
+              {t("config.list.subtitle", {
+                shown: filteredSettings.length,
+                total: all.length,
+              })}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="!p-0">
-          <div className="rounded-lg overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full md:w-56">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={globalFilter}
+                onChange={(e) => {
+                  setGlobalFilter(e.target.value);
+                  table.setPageIndex(0);
+                }}
+                placeholder={t("config.list.searchPlaceholder")}
+                aria-label={t("common.search")}
+                className="h-8 pl-8 text-xs"
+              />
+            </div>
+            <Select
+              value={categoryFilter}
+              onValueChange={(value) => {
+                setCategoryFilter(value);
+                table.setPageIndex(0);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-full text-xs md:w-48"
+                aria-label={t("config.list.category")}
+              >
+                <SelectValue placeholder={t("config.list.category")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("config.list.allCategories")}</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={contextFilter}
+              onValueChange={(value) => {
+                setContextFilter(value);
+                table.setPageIndex(0);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-full text-xs md:w-40"
+                aria-label={t("config.columns.context")}
+              >
+                <SelectValue placeholder={t("config.columns.context")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("config.list.allContexts")}</SelectItem>
+                {contexts.map((context) => (
+                  <SelectItem key={context} value={context}>
+                    {context}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {settingsQuery.isError ? (
+          <div className="flex items-center justify-between gap-2 px-3 py-3" role="alert">
+            <span className="flex items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {t("common.loadFailed")}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => settingsQuery.refetch()}
+            >
+              <RefreshCw className="mr-1.5 h-3 w-3" />
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : settingsQuery.isLoading ? (
+          <div className="space-y-1.5 p-3" aria-label={t("common.loading")}>
+            {Array.from({ length: 10 }).map((_, i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                {table.getHeaderGroups().map((hg) => (
-                  <TableRow key={hg.id}>
-                    {hg.headers.map((h) => (
-                      <TableHead
-                        key={h.id}
-                        style={{ width: h.column.getSize() }}
-                        className={cn(
-                          h.id === "actions" && "text-right"
-                        )}
-                      >
-                        {h.isPlaceholder
-                          ? null
-                          : flexRender(h.column.columnDef.header, h.getContext())}
-                      </TableHead>
-                    ))}
+                {table.getHeaderGroups().map((group) => (
+                  <TableRow key={group.id}>
+                    {group.headers.map((header) => {
+                      const sorted = header.column.getIsSorted();
+                      return (
+                        <TableHead
+                          key={header.id}
+                          aria-sort={
+                            sorted === "asc"
+                              ? "ascending"
+                              : sorted === "desc"
+                                ? "descending"
+                                : undefined
+                          }
+                          className={cn(HEAD, header.column.getCanSort() && "cursor-pointer select-none")}
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(header.column.columnDef.header, header.getContext())}
+                            {sorted === "asc" && <ArrowUp className="h-3 w-3" />}
+                            {sorted === "desc" && <ArrowDown className="h-3 w-3" />}
+                          </span>
+                        </TableHead>
+                      );
+                    })}
                   </TableRow>
                 ))}
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {table.getRowModel().rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={columns.length} className="!p-0">
-                      <TableSkeleton />
-                    </TableCell>
-                  </TableRow>
-                ) : table.getRowModel().rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="p-16 text-center">
-                      <Settings2 className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                      <p className="font-semibold text-lg">Ayar bulunamadı</p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Filtreleri değiştirerek veya arama terimini temizleyerek tekrar deneyin.
-                      </p>
+                    <TableCell colSpan={columns.length} className="px-3 py-6 text-center">
+                      <p className="text-sm font-medium">{t("config.list.emptyTitle")}</p>
+                      <p className="text-xs text-muted-foreground">{t("config.list.emptyHint")}</p>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -687,21 +620,11 @@ export default function ConfigPage() {
                       key={row.id}
                       className={cn(
                         row.original.pending_restart &&
-                          "bg-destructive/5 [&:hover]:bg-destructive/10"
+                          "bg-destructive/5 shadow-[inset_3px_0_0_0_hsl(var(--destructive))] hover:bg-destructive/10"
                       )}
-                      style={
-                        row.original.pending_restart
-                          ? {
-                              boxShadow: "inset 4px 0 0 0 rgb(239 68 68 / 0.7)",
-                            }
-                          : undefined
-                      }
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <TableCell
-                          key={cell.id}
-                          style={{ width: cell.column.getSize() }}
-                        >
+                        <TableCell key={cell.id} className={CELL}>
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                       ))}
@@ -711,70 +634,91 @@ export default function ConfigPage() {
               </TableBody>
             </Table>
           </div>
-          {!isLoading && filteredSettings.length > 0 && (
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-t border-border">
-              <div className="flex items-center gap-3 text-sm">
-                <p className="text-muted-foreground">
-                  Sayfa{" "}
-                  <span className="font-semibold text-foreground">
-                    {currentPage + 1}
-                  </span>{" "}
-                  / {Math.max(1, pageCount)} · Toplam{" "}
-                  <span className="font-semibold text-foreground">
-                    {filteredSettings.length}
-                  </span>{" "}
-                  kayıt
-                </p>
-                <div className="h-6 w-px bg-muted" />
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Sayfa başına:</span>
-                  <Select
-                    value={String(pageSize)}
-                    onValueChange={(v) => {
-                      const n = Number(v) as PageSize;
-                      setPageSize(n);
-                      table.setPageSize(n);
-                    }}
+        )}
+
+        {!settingsQuery.isLoading && !settingsQuery.isError && filteredSettings.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <span>
+                {t("config.pagination.summary", {
+                  page: currentPage + 1,
+                  pages: Math.max(1, pageCount),
+                  total: filteredSettings.length,
+                })}
+              </span>
+              <span className="flex items-center gap-1.5">
+                {t("config.pagination.pageSize")}
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(value) => {
+                    const next = Number(value) as PageSize;
+                    setPageSize(next);
+                    table.setPageSize(next);
+                  }}
+                >
+                  <SelectTrigger
+                    className="h-7 w-[68px] font-mono text-xs"
+                    aria-label={t("config.pagination.pageSize")}
                   >
-                    <SelectTrigger className="h-9 w-[88px] rounded-md">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[10, 25, 50].map((n) => (
-                        <SelectItem key={n} value={String(n)}>
-                          {n}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.previousPage()}
-                  disabled={!canPrev}
-                  className="h-9 rounded-md"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Önceki
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.nextPage()}
-                  disabled={!canNext}
-                  className="h-9 rounded-md"
-                >
-                  Sonraki
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50].map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </span>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+                className="h-7 px-2 text-xs"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                {t("config.pagination.previous")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+                className="h-7 px-2 text-xs"
+              >
+                {t("config.pagination.next")}
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  icon: ComponentType<{ className?: string }>;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className={cn("font-mono text-base font-semibold", tone)}>{value}</div>
     </div>
   );
 }

@@ -1,1 +1,288 @@
-{}
+{
+  "maintenance": {
+    "title": "Veritabanı Bakımı",
+    "subtitle": "VACUUM, ANALYZE ve REINDEX işlemlerini önizleme ve onayla çalıştırın",
+    "refresh": "Durumu yenile",
+    "running": "Çalışıyor…",
+    "dryRun": "Dry run (SQL önizleme)",
+    "apply": "{command} uygula",
+    "options": "{command} seçenekleri",
+    "scopeHint": "Şema ve tabloyu birlikte girin; ikisini de boş bırakırsanız {command} tüm veritabanında çalışır.",
+    "reindexHint": "Şema zorunludur. Tablo veya indeksten yalnızca birini girin.",
+    "never": "Hiç",
+    "fields": {
+      "schema": "Şema",
+      "table": "Tablo",
+      "index": "İndeks",
+      "schemaOptional": "Şema (isteğe bağlı)",
+      "tableOptional": "Tablo (isteğe bağlı)"
+    },
+    "hints": {
+      "full": "ACCESS EXCLUSIVE LOCK alır; yer açar ama tabloyu kilitler",
+      "analyze": "VACUUM sonrası istatistikleri günceller",
+      "freeze": "Transaction ID wraparound'a karşı korur",
+      "concurrently": "İndeksi tabloyu kilitlemeden yeniden oluşturur (önerilen)"
+    },
+    "errors": {
+      "scopePair": "Şema ve tabloyu birlikte girin ya da ikisini de boş bırakın.",
+      "reindexScope": "REINDEX için şema ile birlikte tablo veya indeksten yalnızca birini girin."
+    },
+    "toast": {
+      "done": "{command} tamamlandı",
+      "failed": "{command} başarısız oldu",
+      "noDryRun": "Dry run sonucu dönmedi",
+      "refreshed": "Bakım durumu yenilendi"
+    },
+    "confirm": {
+      "title": "{command} çalıştırılsın mı?",
+      "run": "{command} çalıştır",
+      "vacuum": "Standart VACUUM çalıştırılacak. Tabloyu kilitlemez ancak yoğun I/O üretebilir.",
+      "vacuumFull": "VACUUM FULL çalıştırılacak. Tabloyu ACCESS EXCLUSIVE LOCK ile kilitler ve yoğun I/O üretir. Düşük trafik saatlerinde çalıştırmanız önerilir.",
+      "analyze": "Tablo istatistikleri güncellenecek ve sorgu planlayıcısı daha iyi kararlar alabilecek. Okuma ve yazmaları engellemez.",
+      "reindex": "Standart REINDEX çalıştırılacak. İşlem bitene kadar tabloya yazmalar engellenir.",
+      "reindexConcurrent": "REINDEX CONCURRENTLY çalıştırılacak. Yazmaları engellemez ancak daha uzun sürer ve CPU ile I/O kullanımını artırır."
+    },
+    "notes": {
+      "vacuum": "Standart VACUUM, tabloyu kilitlemeden çalışır.",
+      "vacuumFull": "Bu işlem ACCESS EXCLUSIVE LOCK alır. Düşük trafikte çalıştırın.",
+      "analyze": "ANALYZE okuma ve yazmaları engellemez, sorgu planlayıcısına yardımcı olur.",
+      "reindex": "Standart REINDEX, işlem bitene kadar yazmaları engeller.",
+      "reindexConcurrent": "CONCURRENTLY yazmaları engellemez ama daha uzun sürer."
+    },
+    "preview": {
+      "title": "SQL önizlemesi",
+      "empty": "Seçenekleri ayarlayıp dry run çalıştırın. Seçenekleri değiştirirseniz önizleme yenilenmelidir."
+    },
+    "stats": {
+      "tables": "Toplam tablo",
+      "deadRatio": "Ölü tuple oranı",
+      "neverVacuumed": "Hiç VACUUM görmemiş",
+      "neverAnalyzed": "Hiç ANALYZE görmemiş",
+      "autovacuumWorkers": "Autovacuum worker"
+    },
+    "table": {
+      "title": "Tablo bakım durumu",
+      "subtitle": "Ölü tuple oranı ile VACUUM ve ANALYZE geçmişi",
+      "status": "Durum",
+      "table": "Tablo",
+      "live": "Canlı",
+      "dead": "Ölü",
+      "deadPercent": "Ölü %",
+      "lastVacuum": "Son VACUUM",
+      "lastAnalyze": "Son ANALYZE",
+      "emptyTitle": "Tablo bulunamadı",
+      "emptyHint": "Bu veritabanında henüz tablo yok."
+    }
+  },
+  "backups": {
+    "title": "Yedekleme ve Geri Yükleme",
+    "subtitle": "pg_dump yedekleri, indirme ve geri yükleme",
+    "create": "Yedek oluştur",
+    "start": "Yedeği başlat",
+    "download": "İndir",
+    "directoryDownloadHint": "Directory formatındaki yedekler tek dosya olarak indirilemez; sunucudaki yedek dizininden kopyalayın.",
+    "interrupted": "Yarıda kesildi: sunucu, bu iş bitmeden durdu.",
+    "pollEvery": "{seconds} sn'de bir yenilenir",
+    "pollManual": "elle yenilenir",
+    "status": {
+      "queued": "Kuyrukta",
+      "running": "Çalışıyor",
+      "done": "Tamamlandı",
+      "failed": "Hatalı"
+    },
+    "toast": {
+      "backupQueued": "Yedekleme işi başlatıldı",
+      "backupFailed": "Yedekleme başlatılamadı",
+      "restoreQueued": "Geri yükleme işi başlatıldı",
+      "restoreFailed": "Geri yükleme başlatılamadı",
+      "downloadPreparing": "Dosya hazırlanıyor...",
+      "downloadStarted": "İndirme başladı",
+      "downloadFailed": "İndirme başarısız"
+    },
+    "confirm": {
+      "create": "Format: {format}, sıkıştırma: {compression}. Bu işlem MAINTENANCE seviyesindedir ve sunucu I/O kullanımını artırabilir.",
+      "createPlain": "Format: {format}. Bu işlem MAINTENANCE seviyesindedir ve sunucu I/O kullanımını artırabilir.",
+      "restore": "#{id} yedeği \"{database}\" veritabanına geri yüklenecek. Mevcut nesnelerle çakışabilir. Bu işlem DANGEROUS seviyesindedir.",
+      "restoreClean": "#{id} yedeği \"{database}\" veritabanına geri yüklenecek. Önce mevcut nesneler silinecek (CLEAN). Bu işlem DANGEROUS seviyesindedir."
+    },
+    "createDialog": {
+      "title": "Yeni yedek oluştur",
+      "description": "Format, sıkıştırma ve isteğe bağlı olarak şema veya tablo seçin.",
+      "format": "Format",
+      "formats": {
+        "custom": "Custom (sıkıştırılmış .dump)",
+        "plain": "Plain SQL (.sql)",
+        "directory": "Directory (sunucuda dizin)"
+      },
+      "compression": "Sıkıştırma seviyesi (0-9)",
+      "level": "Seviye {level}",
+      "levelNone": "Seviye {level} (sıkıştırma yok)",
+      "levelMax": "Seviye {level} (en yüksek)",
+      "database": "Veritabanı (isteğe bağlı)",
+      "databasePlaceholder": "bağlı veritabanı",
+      "filename": "Dosya adı öneki (isteğe bağlı)",
+      "schema": "Şema (isteğe bağlı)",
+      "table": "Tablo (isteğe bağlı)",
+      "warning": "Bu işlem MAINTENANCE onayı gerektirir ve sunucu I/O kullanımını artırabilir."
+    },
+    "restore": {
+      "title": "Geri yükle — DANGEROUS",
+      "action": "Geri yükle",
+      "continue": "Onay ekranına geç",
+      "database": "Hedef veritabanı adı",
+      "databasePlaceholder": "hedef veritabanı",
+      "databaseHint": "Bu adı onay ekranında aynen tekrar yazmanız istenecek.",
+      "databaseRequired": "Hedef veritabanı adı zorunlu",
+      "clean": "CLEAN (mevcut nesneleri temizle)",
+      "cleanHint": "Geri yüklemeden önce mevcut nesneleri siler. Riski artırır.",
+      "cleanPlainHint": "Plain SQL yedeklerinde kullanılamaz.",
+      "profileMismatch": "Bu yedek \"{profile}\" profiline ait. Geri yüklemek için önce o profili seçin.",
+      "warning": "Geri yükleme, veritabanı nesnelerinin üzerine yazabilir ve veri kaybına neden olabilir. DANGEROUS onayı gerektirir."
+    },
+    "stats": {
+      "total": "Toplam iş",
+      "totalHint": "Başarılı yedek: {success} · Hatalı iş: {failed}",
+      "success": "Başarılı yedek",
+      "last": "Son: {date}",
+      "none": "Henüz yedek yok",
+      "size": "Toplam boyut",
+      "sizeHint": "Yalnızca başarılı yedekler",
+      "failed": "Hatalı iş",
+      "failedHint": "Hata ayrıntısı listede görünür"
+    },
+    "list": {
+      "title": "Yedek işleri",
+      "subtitle": "{poll} · {count} iş",
+      "emptyTitle": "Henüz yedek işi yok",
+      "emptyHint": "İlk yedeği \"Yedek oluştur\" düğmesiyle alın."
+    },
+    "columns": {
+      "id": "ID",
+      "kind": "Tür",
+      "profile": "Profil",
+      "database": "Veritabanı",
+      "file": "Dosya",
+      "status": "Durum",
+      "size": "Boyut",
+      "started": "Başlangıç",
+      "finished": "Bitiş",
+      "actions": "İşlemler"
+    }
+  },
+  "snapshots": {
+    "title": "Anlık Görüntüler",
+    "subtitle": "Sağlık, bağlantı, kilit, sorgu ve disk geçmişi",
+    "allProfiles": "tüm profiller",
+    "capture": "Snapshot al",
+    "prune": "Eskileri temizle ({days}g+)",
+    "pollEvery": "{seconds} sn'de bir yenilenir",
+    "pollManual": "elle yenilenir",
+    "toast": {
+      "captured": "Snapshot alındı",
+      "captureFailed": "Snapshot alınamadı",
+      "pruned": "Temizlik tamamlandı: {removed} kayıt silindi, son {days} gün saklandı",
+      "pruneFailed": "Temizlik başarısız"
+    },
+    "confirm": {
+      "capture": "pg_stat_* görünümleri, sağlık kontrolleri ve bağlantı bilgileri kaydedilecek. Bu işlem MAINTENANCE seviyesindedir ve kısa süreli okuma I/O'su oluşturur.",
+      "pruneTitle": "Snapshot temizliği — DANGEROUS",
+      "prune": "{days} günden eski snapshot'lar TÜM profiller için kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+      "prunePlaceholder": "Onaylamak için prune yazın"
+    },
+    "stats": {
+      "total": "Toplam snapshot",
+      "old": "{count} kayıt {days} günden eski",
+      "noneOld": "{days} günden eski kayıt yok",
+      "avgScore": "Ortalama skor",
+      "last": "Son snapshot: {ago}",
+      "none": "Henüz snapshot yok",
+      "latestConnections": "Son bağlantı sayısı",
+      "latestSize": "Son veritabanı boyutu"
+    },
+    "list": {
+      "title": "Snapshot listesi",
+      "subtitle": "{poll} · {shown} / {total} gösteriliyor",
+      "filterPlaceholder": "Ara: host, veritabanı, durum, sürüm...",
+      "emptyTitle": "Henüz snapshot yok",
+      "emptyHint": "İlk kaydı \"Snapshot al\" düğmesiyle oluşturun.",
+      "noMatchTitle": "Eşleşen snapshot bulunamadı",
+      "noMatchHint": "Filtreyi temizlemeyi deneyin."
+    },
+    "columns": {
+      "id": "ID",
+      "score": "Skor",
+      "status": "Durum",
+      "target": "Hedef",
+      "taken": "Alınma zamanı",
+      "connections": "Bağlantı",
+      "size": "Boyut",
+      "dead": "Ölü tuple",
+      "blocking": "Bloke",
+      "deadlocks": "Deadlock",
+      "longQueries": "Uzun sorgu"
+    }
+  },
+  "config": {
+    "title": "Sunucu Yapılandırması",
+    "subtitle": "PostgreSQL parametreleri ve ALTER SYSTEM SET ile korumalı değişiklik",
+    "reload": "Yapılandırmayı yeniden yükle",
+    "reloading": "Yükleniyor…",
+    "edit": "Düzenle",
+    "internalHint": "internal parametreler değiştirilemez.",
+    "pendingRestartNotice": "{count} ayarın uygulanması için sunucunun yeniden başlatılması gerekiyor. Yeniden yükleme (reload) bunu çözmez.",
+    "status": {
+      "restartRequired": "Restart gerekli",
+      "applied": "Uygulandı"
+    },
+    "toast": {
+      "updated": "Ayar güncellendi",
+      "updateFailed": "Ayar güncellenemedi",
+      "noChange": "Değişiklik yok",
+      "reloaded": "Yapılandırma yeniden yüklendi (SIGHUP)",
+      "reloadCalled": "pg_reload_conf() çağrıldı",
+      "reloadFailed": "Yapılandırma yeniden yüklenemedi",
+      "refreshed": "Ayarlar yenilendi"
+    },
+    "confirm": {
+      "changeTitle": "\"{name}\" değeri değiştirilsin mi?",
+      "changePostmaster": "Bu ayarın ({context}) uygulanması için PostgreSQL sunucusunun yeniden başlatılması gerekir.",
+      "changeSighup": "Bu ayar ({context}) pg_reload_conf() ile uygulanır. Değişiklikten sonra yapılandırmayı yeniden yükleyin.",
+      "changeOther": "Bu ayar ({context}) yapılandırma yeniden yüklendikten sonra yeni bağlantılarda veya oturumlarda devreye girebilir.",
+      "changeAction": "ALTER SYSTEM SET uygula",
+      "reloadTitle": "Sunucu yapılandırması yeniden yüklensin mi?",
+      "reload": "pg_reload_conf() çağrılacak; postgresql.conf ve ALTER SYSTEM değişiklikleri SIGHUP ile yüklenecek. Çalışan bağlantıları kesmez. postmaster ayarları için yine de yeniden başlatma gerekir.",
+      "reloadAction": "pg_reload_conf() çalıştır"
+    },
+    "stats": {
+      "total": "Toplam ayar",
+      "sighup": "SIGHUP (reload)",
+      "superuser": "Superuser context",
+      "postmaster": "Postmaster (restart)",
+      "pendingRestart": "Restart bekleyen"
+    },
+    "list": {
+      "title": "Yapılandırma ayarları",
+      "subtitle": "{shown} / {total} ayar listeleniyor",
+      "searchPlaceholder": "Ad, değer veya kategori ara...",
+      "category": "Kategori",
+      "allCategories": "Tüm kategoriler",
+      "allContexts": "Tüm context'ler",
+      "emptyTitle": "Ayar bulunamadı",
+      "emptyHint": "Filtreleri değiştirin veya arama terimini temizleyin."
+    },
+    "columns": {
+      "name": "Ayar",
+      "value": "Değer",
+      "unit": "Birim",
+      "context": "Context",
+      "status": "Durum",
+      "actions": "İşlem"
+    },
+    "pagination": {
+      "summary": "Sayfa {page} / {pages} · Toplam {total} kayıt",
+      "pageSize": "Sayfa başına:",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    }
+  }
+}
