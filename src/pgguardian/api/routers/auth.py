@@ -30,6 +30,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 ACCESS_TTL = timedelta(hours=12)
 REFRESH_TTL = timedelta(days=7)
 REFRESH_COOKIE = "pgg_refresh"
+REFRESH_GRACE_SECONDS = 30
 
 
 class LoginRequest(BaseModel):
@@ -280,7 +281,7 @@ def refresh(
     session = client.fetch_one(
         "SELECT s.id, s.user_id, u.email, u.full_name, u.app_role, u.is_active, "
         "u.password_must_change FROM pgguardian_sessions s JOIN pgguardian_users u "
-        "ON u.id = s.user_id WHERE s.refresh_hash = %s",
+        "ON u.id = s.user_id WHERE s.refresh_hash = %s AND s.expires_at > now()",
         (_jti_hash(refresh_token),),
     )
     if session is None:
@@ -288,7 +289,13 @@ def refresh(
     if not session["is_active"]:
         raise HTTPException(status_code=401, detail="Account disabled.")
     user_id = int(session["user_id"])
-    client.execute_raw("DELETE FROM pgguardian_sessions WHERE id = %s", (int(session["id"]),))
+    # Keep the old token briefly: a reload can abort this response after the
+    # rotation, and the browser would be left holding a dead cookie.
+    client.execute_raw(
+        "UPDATE pgguardian_sessions SET expires_at = LEAST(expires_at, now() + %s * interval '1 second')"
+        " WHERE id = %s",
+        (REFRESH_GRACE_SECONDS, int(session["id"])),
+    )
     access, new_refresh, expires_in = _mint_tokens(
         user_id=user_id,
         email=str(session["email"]),

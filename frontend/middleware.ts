@@ -70,6 +70,7 @@ function getRoleFromJwt(token: string): string | null {
   }
 }
 
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -81,7 +82,9 @@ export function middleware(request: NextRequest) {
   const hasRefresh = Boolean(refreshCookie?.value);
 
   if (pathname === "/login") {
-    if (hasRefresh) {
+    // With ?next the app just failed to restore the session from this cookie;
+    // sending it back would loop between the two pages.
+    if (hasRefresh && !request.nextUrl.searchParams.has("next")) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
       url.search = "";
