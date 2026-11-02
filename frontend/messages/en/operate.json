@@ -100,10 +100,9 @@
       "downloadFailed": "Download failed"
     },
     "confirm": {
-      "create": "Format: {format}, compression: {compression}. This is a MAINTENANCE action and can increase server I/O.",
-      "createPlain": "Format: {format}. This is a MAINTENANCE action and can increase server I/O.",
       "restore": "Backup #{id} will be restored into \"{database}\". It may conflict with existing objects. This is a DANGEROUS action.",
-      "restoreClean": "Backup #{id} will be restored into \"{database}\". Existing objects are dropped first (CLEAN). This is a DANGEROUS action."
+      "restoreClean": "Backup #{id} will be restored into \"{database}\". Existing objects are dropped first (CLEAN). This is a DANGEROUS action.",
+      "summary": "Database: {database}\nSchemas: {schemas}\nLocation: {directory}\nFormat: {format}"
     },
     "createDialog": {
       "title": "Create a new backup",
@@ -118,12 +117,21 @@
       "level": "Level {level}",
       "levelNone": "Level {level} (no compression)",
       "levelMax": "Level {level} (maximum)",
-      "database": "Database (optional)",
-      "databasePlaceholder": "connected database",
+      "database": "Database",
       "filename": "File name prefix (optional)",
-      "schema": "Schema (optional)",
-      "table": "Table (optional)",
-      "warning": "This needs MAINTENANCE confirmation and can increase server I/O."
+      "table": "Only this table (optional)",
+      "warning": "This needs MAINTENANCE confirmation and can increase server I/O.",
+      "locationStep": "Location",
+      "locationHint": "Full folder path on the API server; leave empty for the default shown above. The folder is created if missing.",
+      "schemas": "Schemas",
+      "selectAll": "Select all",
+      "selectNone": "Clear",
+      "allSchemas": "all schemas",
+      "schemaTables": "{count} tables",
+      "schemasFailed": "Could not load the schemas. Check that the database accepts connections.",
+      "pickOne": "Select at least one schema to back up.",
+      "wholeDatabase": "The whole database is backed up.",
+      "partialHint": "Only the selected schemas are backed up. Extensions and objects outside schemas are left out."
     },
     "restore": {
       "title": "Restore — DANGEROUS",

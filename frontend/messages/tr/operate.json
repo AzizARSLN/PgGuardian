@@ -100,10 +100,9 @@
       "downloadFailed": "İndirme başarısız"
     },
     "confirm": {
-      "create": "Format: {format}, sıkıştırma: {compression}. Bu işlem MAINTENANCE seviyesindedir ve sunucu I/O kullanımını artırabilir.",
-      "createPlain": "Format: {format}. Bu işlem MAINTENANCE seviyesindedir ve sunucu I/O kullanımını artırabilir.",
       "restore": "#{id} yedeği \"{database}\" veritabanına geri yüklenecek. Mevcut nesnelerle çakışabilir. Bu işlem DANGEROUS seviyesindedir.",
-      "restoreClean": "#{id} yedeği \"{database}\" veritabanına geri yüklenecek. Önce mevcut nesneler silinecek (CLEAN). Bu işlem DANGEROUS seviyesindedir."
+      "restoreClean": "#{id} yedeği \"{database}\" veritabanına geri yüklenecek. Önce mevcut nesneler silinecek (CLEAN). Bu işlem DANGEROUS seviyesindedir.",
+      "summary": "Veritabanı: {database}\nŞemalar: {schemas}\nKonum: {directory}\nFormat: {format}"
     },
     "createDialog": {
       "title": "Yeni yedek oluştur",
@@ -118,12 +117,21 @@
       "level": "Seviye {level}",
       "levelNone": "Seviye {level} (sıkıştırma yok)",
       "levelMax": "Seviye {level} (en yüksek)",
-      "database": "Veritabanı (isteğe bağlı)",
-      "databasePlaceholder": "bağlı veritabanı",
+      "database": "Veritabanı",
       "filename": "Dosya adı öneki (isteğe bağlı)",
-      "schema": "Şema (isteğe bağlı)",
-      "table": "Tablo (isteğe bağlı)",
-      "warning": "Bu işlem MAINTENANCE onayı gerektirir ve sunucu I/O kullanımını artırabilir."
+      "table": "Yalnızca bu tablo (isteğe bağlı)",
+      "warning": "Bu işlem MAINTENANCE onayı gerektirir ve sunucu I/O kullanımını artırabilir.",
+      "locationStep": "Konum",
+      "locationHint": "API sunucusundaki tam klasör yolu; boş bırakılırsa yukarıda görünen varsayılan kullanılır. Klasör yoksa oluşturulur.",
+      "schemas": "Şemalar",
+      "selectAll": "Tümünü seç",
+      "selectNone": "Temizle",
+      "allSchemas": "tüm şemalar",
+      "schemaTables": "{count} tablo",
+      "schemasFailed": "Şemalar alınamadı. Veritabanına bağlanılabildiğini kontrol edin.",
+      "pickOne": "Yedek almak için en az bir şema seçin.",
+      "wholeDatabase": "Tüm veritabanı yedeklenir.",
+      "partialHint": "Yalnızca seçili şemalar yedeklenir. Eklentiler ve şema dışı nesneler bu yedeğe dahil olmaz."
     },
     "restore": {
       "title": "Geri yükle — DANGEROUS",

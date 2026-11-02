@@ -121,6 +121,9 @@ export const qk = {
 
   backups: {
     all: () => ["backups"] as const,
+    options: (profile: string | null) => ["backups", "options", profile] as const,
+    schemas: (profile: string | null, database: string) =>
+      ["backups", "schemas", profile, database] as const,
     detail: (jobId: string) => ["backups", jobId] as const,
     download: (jobId: string) =>
       ["backups", "download", jobId] as const,

@@ -398,3 +398,16 @@ def test_saved_profile_without_selection_is_409(
     response = client.post("/api/v1/backups", json={"confirm": True})
     assert response.status_code == 409
     assert "profile" in response.json()["detail"].lower()
+
+
+def test_schema_patterns_survive_windows_argv() -> None:
+    assert backups._quote_pattern("sales") == '"sales"'
+    assert backups._quote_pattern("Bad%Name") == '"Bad%Name"'
+    assert backups._quote_pattern('a"b') == '"a""b"'
+    assert backups._quote_pattern("ağ-şema") == '"a"?"-"?"ema"'
+    assert all(ord(c) < 128 for c in backups._quote_pattern("ğüşıöç"))
+
+
+def test_wildcard_collisions_are_detected() -> None:
+    assert backups._pattern_collisions("ağ", {"ağ", "az", "abc"}) == ["az"]
+    assert backups._pattern_collisions("sales", {"sales", "sale5"}) == []

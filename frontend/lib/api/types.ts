@@ -630,6 +630,17 @@ export interface SessionReport {
   truncated: boolean;
 }
 
+export interface BackupOptions {
+  default_directory: string;
+  default_database: string;
+}
+
+export interface BackupSchema {
+  name: string;
+  owner: string | null;
+  tables: number;
+}
+
 export const endpoints = {
   getHealth: (): Promise<HealthReport> =>
     api.get<HealthReport>("/health"),
@@ -939,6 +950,12 @@ export const endpoints = {
 
   downloadBackup: (jobId: string): Promise<Blob> =>
     api.get<Blob>(`/backups/${jobId}/download`),
+
+  getBackupOptions: (): Promise<BackupOptions> =>
+    api.get<BackupOptions>("/backups/options"),
+
+  getBackupSchemas: (database: string): Promise<BackupSchema[]> =>
+    api.get<BackupSchema[]>(`/backups/schemas?database=${encodeURIComponent(database)}`),
 
   startBackup: (body: BackupRequest): Promise<BackupJob> =>
     api.post<BackupJob>("/backups", body),

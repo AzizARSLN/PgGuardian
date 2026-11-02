@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import psycopg
+import psycopg.conninfo
 from psycopg import sql as pgsql
 from psycopg.rows import dict_row
 
@@ -204,6 +205,15 @@ class DbClient:
     def connection(self) -> AbstractContextManager[psycopg.Connection[dict[str, Any]]]:
         """Open a connection using this client's resolved target."""
         return self._connection()
+
+    def for_database(self, database: str) -> DbClient:
+        """Same server and credentials, connected to another database."""
+        conninfo = resolve_connection_string(self._settings, self._cli_connection_string)
+        return DbClient(
+            self._settings,
+            psycopg.conninfo.make_conninfo(conninfo, dbname=database),
+            statement_timeout=self._statement_timeout,
+        )
 
     def fetch_all(self, sql: str, params: tuple[object, ...] | None = None) -> list[dict]:
         """Run a read-only SELECT and return rows as plain dicts."""
