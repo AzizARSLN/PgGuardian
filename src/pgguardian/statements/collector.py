@@ -13,7 +13,7 @@ from typing import Any
 from psycopg import errors as pgerrors
 from psycopg.sql import SQL, Composable, Identifier, Literal
 
-from pgguardian.database.connection import DbClient
+from pgguardian.database.connection import INTERNAL_QUERY_TAG, DbClient
 
 SORT_COLUMNS = {
     "total_time": "total_ms",
@@ -223,6 +223,7 @@ def list_statements(
     """Statements of the current database with totals, excluding our own probes."""
     filters: list[Composable] = [
         SQL("query NOT ILIKE {}").format(Literal("%pg_stat_statements%")),
+        SQL("query NOT LIKE {}").format(Literal(INTERNAL_QUERY_TAG.strip() + "%")),
         SQL("calls >= {}").format(Literal(min_calls)),
     ]
     if search:

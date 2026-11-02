@@ -74,6 +74,15 @@ def test_repeated_statement_metrics(client: DbClient, table: str) -> None:
     assert detail is not None and detail["queryid"] == item["queryid"]
 
 
+def test_own_diagnostics_are_left_out(client: DbClient, table: str) -> None:
+    info = collector.status(client)
+    client.ping()
+    client.ping()
+    items = collector.list_statements(client, info, limit=500)["items"]
+    assert not any("version()" in item["query"] for item in items)
+    assert any(table in item["query"] for item in items)
+
+
 @pytest.mark.parametrize("version_override", [None, 150000])
 def test_generic_plan_on_both_paths(client: DbClient, table: str, version_override: int | None) -> None:
     info = collector.status(client)
