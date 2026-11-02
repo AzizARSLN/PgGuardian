@@ -252,3 +252,42 @@
     animation: none;
   }
 }
+
+/* Sign-in screen: centred card over a database-flavoured backdrop. */
+.pgg-login {
+  background-color: hsl(var(--background));
+}
+
+.pgg-db-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Statement-log watermark: the kind of SQL this console issues, at texture contrast. */
+.pgg-db-sql {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 2rem;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 2.7;
+  letter-spacing: 0.08em;
+  color: hsl(var(--foreground) / 0.055);
+  overflow-wrap: break-word;
+}
+
+/* Table rhythm: column and row rules of a data grid, faded outwards. */
+.pgg-db-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, hsl(var(--border) / 0.75) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--border) / 0.75) 1px, transparent 1px);
+  background-size: 68px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 78% 68% at 50% 50%, #000 18%, transparent 100%);
+  mask-image: radial-gradient(ellipse 78% 68% at 50% 50%, #000 18%, transparent 100%);
+}

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,22 @@ function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
 }
 
-const DBA_TERMS = ["pg_stat_statements", "EXPLAIN", "VACUUM", "pg_locks", "WAL", "pg_dump"];
+/**
+ * Backdrop texture: real statements the console runs, kept as a low-contrast
+ * watermark so it reads as a statement log rather than decoration.
+ */
+const SQL_WATERMARK = [
+  "SELECT schemaname, relname, n_dead_tup, last_autovacuum FROM pg_stat_user_tables ORDER BY n_dead_tup DESC;",
+  "SELECT pid, usename, state, wait_event_type, query_start FROM pg_stat_activity WHERE state <> 'idle';",
+  "SELECT relname, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) FROM pg_stat_user_indexes;",
+  "CREATE INDEX CONCURRENTLY idx_orders_created_at ON public.orders (created_at);",
+  "VACUUM (ANALYZE, VERBOSE) public.orders;",
+  "REINDEX INDEX CONCURRENTLY public.idx_orders_created_at;",
+  "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM public.orders WHERE created_at >= now() - interval '7 days';",
+  "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;",
+  "pg_locks  ·  pg_stat_replication  ·  pg_stat_statements  ·  WAL  ·  dead tuples  ·  bloat  ·  checkpoint",
+  "autovacuum  ·  shared_buffers  ·  index scan  ·  seq scan  ·  replication lag  ·  lock wait  ·  pgbadger",
+].join("   ");
 
 const BACKEND_ERRORS: Record<string, string> = {
   "Invalid credentials.": "login.errors.invalid",
@@ -138,109 +153,99 @@ export default function LoginPage() {
   const busy = form.formState.isSubmitting || lockedSeconds > 0;
 
   return (
-    <div className="dark pgg-stage relative flex min-h-screen flex-col items-center justify-center px-4 py-10 text-foreground">
-      <LanguageSwitcher className="absolute right-4 top-4" />
+    <div className="dark pgg-login relative flex min-h-screen items-center justify-center px-6 py-12 text-foreground">
+      {/* Database-flavoured backdrop: a data-grid rhythm behind a statement log. */}
+      <div className="pgg-db-backdrop" aria-hidden>
+        <p className="pgg-db-sql">{SQL_WATERMARK}</p>
+        <div className="pgg-db-grid" />
+      </div>
 
-      <div className="pgg-rise w-full max-w-[400px]">
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/40">
-          <div className="border-b border-border bg-muted/40 px-6 py-4">
-            <BrandMark />
-            <p className="mt-3 font-mono text-[11px] text-muted-foreground">
-              <span className="text-guardian-lime">postgres=#</span> \conninfo
-            </p>
-          </div>
-
-          <div className="space-y-5 px-6 py-6">
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">{t("login.title")}</h1>
-              <p className="mt-1 text-[13px] text-muted-foreground">{t("login.subtitle")}</p>
-            </div>
-
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onLogin)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t("login.email")}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            autoComplete="username"
-                            autoFocus
-                            disabled={busy}
-                            className="h-10"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t("login.password")}</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              {...field}
-                              type={showPassword ? "text" : "password"}
-                              autoComplete="current-password"
-                              disabled={busy}
-                              className="h-10 pr-10"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword((v) => !v)}
-                              aria-label={t(showPassword ? "login.hidePassword" : "login.showPassword")}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                            >
-                              {showPassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-    
-                  {(loginError || lockedSeconds > 0) && (
-                    <p
-                      role="alert"
-                      className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px]"
-                    >
-                      {lockedSeconds > 0
-                        ? t("login.locked", { seconds: lockedSeconds })
-                        : loginError}
-                    </p>
-                  )}
-    
-                  <Button type="submit" className="h-10 w-full" disabled={busy}>
-                    {form.formState.isSubmitting && <Loader2 className="animate-spin" />}
-                    {t("login.submit")}
-                    {!form.formState.isSubmitting && <ArrowRight />}
-                  </Button>
-                </form>
-              </Form>
-          </div>
+      <main className="pgg-rise relative z-10 w-full max-w-[400px] rounded-xl border border-border bg-card p-7 shadow-2xl sm:p-9">
+        <div className="flex items-center justify-between gap-4">
+          <BrandMark />
+          <LanguageSwitcher className="bg-background" />
         </div>
 
-        <ul
-          aria-hidden
-          className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground/70"
-        >
-          {DBA_TERMS.map((term) => (
-            <li key={term}>{term}</li>
-          ))}
-        </ul>
-      </div>
+        <div className="mt-8">
+          <h1 className="text-xl font-semibold tracking-tight">{t("login.title")}</h1>
+          <p className="mt-1.5 text-[13px] text-muted-foreground">{t("login.subtitle")}</p>
+        </div>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onLogin)} className="mt-6 space-y-4">
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>{t("login.email")}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      autoComplete="username"
+                      autoFocus
+                      disabled={busy}
+                      className="h-10"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>{t("login.password")}</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input
+                        {...field}
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        disabled={busy}
+                        className="h-10 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={t(showPassword ? "login.hidePassword" : "login.showPassword")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {(loginError || lockedSeconds > 0) && (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive"
+              >
+                {lockedSeconds > 0 ? t("login.locked", { seconds: lockedSeconds }) : loginError}
+              </p>
+            )}
+
+            <Button type="submit" className="h-10 w-full" disabled={busy}>
+              {form.formState.isSubmitting && <Loader2 className="animate-spin" />}
+              {t("login.submit")}
+            </Button>
+          </form>
+        </Form>
+
+        <p className="mt-6 border-t border-border pt-4 text-[11px] leading-relaxed text-muted-foreground">
+          {t("login.footnote")}
+        </p>
+      </main>
 
       {/* No way to dismiss: the API refuses everything until the password changes. */}
       <Dialog open={mustChange}>

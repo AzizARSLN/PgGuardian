@@ -87,6 +87,7 @@
     "newPassword": "Yeni şifre",
     "confirmPassword": "Yeni şifre (tekrar)",
     "changeSubmit": "Şifreyi değiştir",
+    "footnote": "Bağlantı profilleri sunucuda saklanır; kritik bakım işlemleri denetim kaydına yazılır.",
     "errors": {
       "emailShort": "E-posta en az 3 karakter olmalı",
       "emailFormat": "Geçerli bir e-posta girin (ör: admin@local)",

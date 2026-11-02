@@ -87,6 +87,7 @@
     "newPassword": "New password",
     "confirmPassword": "New password (again)",
     "changeSubmit": "Change password",
+    "footnote": "Connection profiles stay on the server; critical maintenance actions are written to the audit log.",
     "errors": {
       "emailShort": "Email must be at least 3 characters",
       "emailFormat": "Enter a valid email (e.g. admin@local)",
