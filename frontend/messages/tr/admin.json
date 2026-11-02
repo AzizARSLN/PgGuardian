@@ -21,7 +21,8 @@
       "createFailed": "Profil oluşturulamadı",
       "deleted": "Profil silindi",
       "defaultUpdated": "Varsayılan profil güncellendi",
-      "defaultProtected": "Varsayılan profil silinemez. Önce başka bir profili varsayılan yapın."
+      "defaultProtected": "Varsayılan profil silinemez. Önce başka bir profili varsayılan yapın.",
+      "updated": "Profil güncellendi"
     },
     "confirmDelete": {
       "title": "\"{name}\" profili silinsin mi?",
@@ -50,7 +51,12 @@
       "isDefaultReplaces": "Mevcut varsayılan profilin yerini alır",
       "isDefaultHelp": "Listede varsayılan olarak gösterilir",
       "create": "Profili Oluştur",
-      "creating": "Oluşturuluyor…"
+      "editTitle": "\"{name}\" profilini düzenle",
+      "editDescription": "Bağlantı bilgilerini değiştirin; kaydetmeden önce test edebilirsiniz.",
+      "passwordKeep": "Boş bırakılırsa kayıtlı şifre korunur",
+      "clearPassword": "Kayıtlı şifreyi kaldır",
+      "passwordRequired": "Sunucu veya port değişti. Güvenlik için kayıtlı şifre yeni adrese gönderilmez; şifreyi yeniden girin.",
+      "save": "Kaydet"
     },
     "empty": {
       "title": "Henüz profil yok",
@@ -66,8 +72,10 @@
     "test": {
       "ok": "Bağlantı başarılı",
       "failed": "Bağlantı kurulamadı",
-      "action": "Bağlantıyı test et"
-    }
+      "action": "Bağlantıyı test et",
+      "okLatency": "Bağlantı başarılı ({ms} ms)"
+    },
+    "edit": "Düzenle"
   },
   "roles": {
     "title": "Roller ve İzinler",

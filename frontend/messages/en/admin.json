@@ -21,7 +21,8 @@
       "createFailed": "Could not create the profile",
       "deleted": "Profile deleted",
       "defaultUpdated": "Default profile updated",
-      "defaultProtected": "The default profile cannot be deleted. Make another profile the default first."
+      "defaultProtected": "The default profile cannot be deleted. Make another profile the default first.",
+      "updated": "Profile updated"
     },
     "confirmDelete": {
       "title": "Delete profile \"{name}\"?",
@@ -50,7 +51,12 @@
       "isDefaultReplaces": "Replaces the current default profile",
       "isDefaultHelp": "Shown as the default in the list",
       "create": "Create Profile",
-      "creating": "Creating…"
+      "editTitle": "Edit profile \"{name}\"",
+      "editDescription": "Change the connection details; you can test them before saving.",
+      "passwordKeep": "Leave empty to keep the stored password",
+      "clearPassword": "Remove the stored password",
+      "passwordRequired": "The server or port changed. For safety the stored password is not sent to a new address; enter it again.",
+      "save": "Save"
     },
     "empty": {
       "title": "No profiles yet",
@@ -66,8 +72,10 @@
     "test": {
       "ok": "Connection succeeded",
       "failed": "Could not connect",
-      "action": "Test connection"
-    }
+      "action": "Test connection",
+      "okLatency": "Connection succeeded ({ms} ms)"
+    },
+    "edit": "Edit"
   },
   "roles": {
     "title": "Roles and Privileges",

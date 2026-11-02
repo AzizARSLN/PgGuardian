@@ -641,6 +641,14 @@ export interface BackupSchema {
   tables: number;
 }
 
+export interface ConnectionTestResult {
+  ok: boolean;
+  version: string | null;
+  reason?: string | null;
+  message: string | null;
+  latency_ms?: number;
+}
+
 export const endpoints = {
   getHealth: (): Promise<HealthReport> =>
     api.get<HealthReport>("/health"),
@@ -719,8 +727,12 @@ export const endpoints = {
   deleteProfile: (name: string): Promise<DeletedResult> =>
     api.delete<DeletedResult>(`/profiles/${encodeURIComponent(name)}?confirm=true`),
 
-  testProfile: (name: string): Promise<{ ok: boolean; version: string | null; message: string | null }> =>
+  testProfile: (name: string): Promise<ConnectionTestResult> =>
     api.post(`/profiles/${encodeURIComponent(name)}/test`),
+
+  testConnection: (
+    body: Omit<ProfileCreate, "name"> & { existing_name?: string }
+  ): Promise<ConnectionTestResult> => api.post("/profiles/test", body),
 
   setDefaultProfile: (name: string): Promise<Profile> =>
     api.post<Profile>(`/profiles/${name}/default`),
