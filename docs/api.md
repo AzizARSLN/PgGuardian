@@ -30,6 +30,13 @@ Set `PGGUARDIAN_API_TOKEN` to require
 comparison). Unset = open access (local dev only). `/` and `/healthz`
 never need auth or a database.
 
+Every route needs a user JWT or the static API token. Anonymous access only works
+with `PGGUARDIAN_AUTH_DISABLED=1`, which is meant for local development.
+
+Database routes need an explicit profile (`X-Profile-Name` header or `?profile=`).
+When profiles are saved and the request names none, the API answers `409`: it never
+falls back to the default profile. With no saved profiles it uses `PGGUARDIAN_*`.
+
 ## Safety model (mutations)
 
 Read endpoints are always available. Mutations are classified:
@@ -73,6 +80,19 @@ Diagnostics (read-only): `GET /health /diagnose /connections
 Exit mapping: `400` validation/confirm, `401` auth, `403` writes disabled,
 `404` unknown target, `409` refused (self/backend busy), `501` missing
 binaries, `502/503` database errors (sanitized).
+
+### Statement analysis
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/statements/status` | pg_stat_statements state and what limits the data |
+| `GET /api/v1/statements` | Repeated statements (`sort`, `direction`, `limit`, `offset`, `min_calls`, `search`, `user`) |
+| `GET /api/v1/statements/{queryid}` | Metrics, IN-list variants, applications running it now |
+| `POST /api/v1/statements/{queryid}/explain` | Plan in a rolled back read-only transaction |
+| `GET /api/v1/statements/{queryid}/recommendations` | Findings, suggested SQL and hints to locate the caller |
+| `POST /api/v1/profiles/{name}/test` | Try a saved profile's connection |
+
+PgGuardian's own diagnostic queries carry a `/* pgguardian */` comment and are left out.
 
 ## Large databases
 
