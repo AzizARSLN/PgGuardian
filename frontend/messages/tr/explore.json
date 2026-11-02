@@ -1,1 +1,177 @@
-{}
+{
+  "sqlEditor": {
+    "title": "SQL Editörü",
+    "subtitle": "Şema ağacı, sorgu çalıştırma, geçmiş ve CSV dışa aktarımı",
+    "readOnlyMode": "Salt okunur",
+    "writeMode": "Yazma açık",
+    "unknownError": "Bilinmeyen hata",
+    "editor": {
+      "starterComment": "pgGuardian SQL Editörü"
+    },
+    "tree": {
+      "title": "Şema ağacı",
+      "tables": "Tablolar",
+      "views": "Görünümler",
+      "sequences": "Diziler",
+      "functions": "Fonksiyonlar",
+      "empty": "Boş",
+      "insert": "Sorguya ekle",
+      "system": "sistem"
+    },
+    "actions": {
+      "execute": "Çalıştır (F5)",
+      "running": "Çalışıyor...",
+      "format": "Biçimlendir",
+      "clear": "Temizle",
+      "downloadCsv": "CSV indir"
+    },
+    "tabs": {
+      "results": "Sonuçlar",
+      "messages": "Mesajlar",
+      "history": "Geçmiş"
+    },
+    "results": {
+      "empty": "Henüz sonuç yok. Bir sorgu çalıştırın.",
+      "noRows": "Satır dönmedi",
+      "rows": "{count} satır",
+      "affected": "{count} satır etkilendi",
+      "truncated": "Sonuç kısaltıldı"
+    },
+    "messages": {
+      "empty": "Henüz mesaj yok",
+      "running": "Sorgu çalıştırılıyor...",
+      "explaining": "{command} çalıştırılıyor...",
+      "cancelled": "Sorgu iptal edildi",
+      "summary": "{rows} satır, {duration}",
+      "success": "{command} başarılı: {summary}",
+      "failed": "Hata: {message}"
+    },
+    "history": {
+      "empty": "Henüz sorgu geçmişi yok"
+    },
+    "toast": {
+      "executed": "Sorgu çalıştırıldı",
+      "explained": "{command} tamamlandı",
+      "formatted": "SQL biçimlendirildi",
+      "empty": "Sorgu boş"
+    },
+    "confirm": {
+      "title": "Bu ifade çalıştırılsın mı?",
+      "description": "Risk: {risk}. Bu ifade veritabanını değiştirebilir ve geri alınamayabilir.",
+      "run": "Çalıştır"
+    }
+  },
+  "schemaBrowser": {
+    "title": "Şema Gezgini",
+    "subtitle": "Şemalar, tablolar, boyut ve ölü satır oranları",
+    "schemas": {
+      "title": "Şemalar",
+      "counts": "{user} kullanıcı · {system} sistem",
+      "user": "Kullanıcı şemaları",
+      "system": "Sistem şemaları"
+    },
+    "stats": {
+      "tables": "Tablo",
+      "size": "Toplam boyut",
+      "liveRows": "Canlı satır",
+      "deadRows": "Ölü satır"
+    },
+    "tables": {
+      "title": "Tablolar",
+      "hint": "Ayrıntı için satıra tıklayın",
+      "limitReached": "İlk {limit} tablo gösteriliyor",
+      "empty": "Bu şemada tablo yok",
+      "selectSchema": "Bir şema seçin"
+    },
+    "columns": {
+      "table": "Tablo",
+      "owner": "Sahip",
+      "size": "Boyut",
+      "liveRows": "Canlı satır",
+      "deadPercent": "Ölü satır %"
+    },
+    "pagination": {
+      "page": "Sayfa {page} / {total}",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    }
+  },
+  "tableDetail": {
+    "back": "Şema Gezgini'ne dön",
+    "subtitle": "Kolonlar, indeksler, kısıtlar, önizleme, profil ve CSV",
+    "rowCount": "{count} satır",
+    "stats": {
+      "size": "Boyut",
+      "liveRows": "Canlı satır",
+      "deadRows": "Ölü satır",
+      "owner": "Sahip"
+    },
+    "tabs": {
+      "columns": "Kolonlar",
+      "indexes": "İndeksler",
+      "constraints": "Kısıtlar",
+      "preview": "Önizleme ({limit})",
+      "profile": "Profil",
+      "import": "CSV içe aktar"
+    },
+    "columns": {
+      "name": "Kolon",
+      "type": "Veri tipi",
+      "nullable": "NULL durumu",
+      "default": "Varsayılan",
+      "empty": "Kolon bulunamadı"
+    },
+    "indexes": {
+      "empty": "İndeks tanımı yok"
+    },
+    "constraints": {
+      "empty": "Kısıt tanımı yok"
+    },
+    "preview": {
+      "summary": "{rows} satır · {columns} kolon"
+    },
+    "profile": {
+      "column": "Kolon",
+      "type": "Veri tipi",
+      "sampled": "Örneklenen satır",
+      "avgWidth": "Ort. uzunluk",
+      "unavailable": "Hesaplanamadı"
+    },
+    "pagination": {
+      "page": "Sayfa {page} / {total}",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    },
+    "export": {
+      "action": "CSV dışa aktar",
+      "preview": "Önizlemeyi CSV indir",
+      "done": "CSV dışa aktarıldı",
+      "capped": "Dışa aktarım ilk {limit} satırla sınırlıdır.",
+      "noData": "Dışa aktarılacak veri yok"
+    },
+    "analyze": {
+      "confirmTitle": "{table} için ANALYZE çalıştırılsın mı?",
+      "confirmDescription": "Planlayıcı istatistikleri güncellenir. Büyük tablolarda biraz sürebilir.",
+      "done": "{table} için ANALYZE tamamlandı"
+    },
+    "import": {
+      "fileLabel": "CSV dosyası",
+      "help": "Başlık satırı olan standart CSV. Önce Dry Run ile SQL önizlemesi alınır, ardından onayla yazılır.",
+      "selectFile": "Lütfen bir CSV dosyası seçin",
+      "dryRun": "Dry Run ile önizle",
+      "dryRunning": "Dry Run çalışıyor...",
+      "dryRunDone": "Dry Run tamamlandı",
+      "dryRunResult": "Dry Run sonucu",
+      "target": "Hedef: {target}",
+      "sqlPreview": "SQL önizlemesi",
+      "firstRows": "İlk {count} satır",
+      "clear": "Temizle",
+      "importing": "İçe aktarılıyor...",
+      "confirmAndImport": "Onayla ve içe aktar",
+      "confirmTitle": "{table} tablosuna içe aktarılsın mı?",
+      "confirmDescription": "Risk: {risk}. {note} Veritabanına yazma işlemi geri alınamaz.",
+      "confirmLabel": "İçe aktar",
+      "success": "İçe aktarım başarılı"
+    }
+  }
+}
