@@ -108,7 +108,18 @@ export function useConfirm() {
     [confirmNameMatch, handleConfirm]
   );
 
-  const Component = function ConfirmDialog() {
+  // Pages render <Component />, so its identity must stay stable: a new function
+  // on each render remounts the dialog and the name input loses focus per keystroke.
+  const renderDialog = React.useRef<() => React.ReactNode>(() => null);
+  const Component = React.useMemo(
+    () =>
+      function ConfirmDialog() {
+        return <>{renderDialog.current()}</>;
+      },
+    []
+  );
+
+  renderDialog.current = () => {
     if (!opts) return null;
 
     return (
