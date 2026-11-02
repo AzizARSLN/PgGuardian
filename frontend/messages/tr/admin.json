@@ -62,6 +62,11 @@
       "perPage": "Sayfa başına:",
       "previous": "Önceki",
       "next": "Sonraki"
+    },
+    "test": {
+      "ok": "Bağlantı başarılı",
+      "failed": "Bağlantı kurulamadı",
+      "action": "Bağlantıyı test et"
     }
   },
   "roles": {
@@ -300,13 +305,34 @@
       "clear": "TEMİZ"
     },
     "sections": {
-      "summary": { "title": "Özet", "description": "Raporun genel özeti" },
-      "health": { "title": "Sağlık Kontrolleri", "description": "Her kontrolün durumu ve değeri" },
-      "diagnostics": { "title": "Teşhis Bulguları", "description": "CRITICAL, WARNING ve INFO bulguları" },
-      "storage": { "title": "Depolama: İlk 10", "description": "En büyük tablo, indeks ve veritabanları" },
-      "replication": { "title": "Replikasyon", "description": "Replica gecikmesi ve slotlar" },
-      "connections": { "title": "Bağlantılar", "description": "Aktif, boşta ve bekleyen bağlantılar" },
-      "roles": { "title": "Roller", "description": "SUPERUSER, LOGIN ve yetki özeti" }
+      "summary": {
+        "title": "Özet",
+        "description": "Raporun genel özeti"
+      },
+      "health": {
+        "title": "Sağlık Kontrolleri",
+        "description": "Her kontrolün durumu ve değeri"
+      },
+      "diagnostics": {
+        "title": "Teşhis Bulguları",
+        "description": "CRITICAL, WARNING ve INFO bulguları"
+      },
+      "storage": {
+        "title": "Depolama: İlk 10",
+        "description": "En büyük tablo, indeks ve veritabanları"
+      },
+      "replication": {
+        "title": "Replikasyon",
+        "description": "Replica gecikmesi ve slotlar"
+      },
+      "connections": {
+        "title": "Bağlantılar",
+        "description": "Aktif, boşta ve bekleyen bağlantılar"
+      },
+      "roles": {
+        "title": "Roller",
+        "description": "SUPERUSER, LOGIN ve yetki özeti"
+      }
     },
     "summary": {
       "keys": "Rapor Bölümü",
@@ -315,9 +341,15 @@
       "raw": "Ham rapor (üst seviye)",
       "items": "{count} kayıt"
     },
-    "health": { "empty": "Sağlık kontrolü verisi yok" },
-    "diagnostics": { "empty": "Teşhis bulgusu yok" },
-    "storage": { "empty": "Depolama verisi yok" },
+    "health": {
+      "empty": "Sağlık kontrolü verisi yok"
+    },
+    "diagnostics": {
+      "empty": "Teşhis bulgusu yok"
+    },
+    "storage": {
+      "empty": "Depolama verisi yok"
+    },
     "replication": {
       "empty": "Replica veya slot yok",
       "replicas": "Replica'lar ({count})",

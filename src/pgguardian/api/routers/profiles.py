@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from pgguardian.api.deps import get_api_settings
+from pgguardian.api.settings import ApiSettings
+from pgguardian.cli import GlobalOptions, build_settings
+from pgguardian.database.connection import DbClient
+from pgguardian.utils.security import sanitize_error
 from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore, PROFILE_NAME_PATTERN
 
 read_router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
@@ -83,6 +88,21 @@ def get_profile(name: str) -> Profile:
         return _store().get(name).redacted()
     except ProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{name}/test")
+def test_profile(name: str, settings: ApiSettings = Depends(get_api_settings)) -> dict:
+    """Try to connect with a saved profile; failure is a result, not an HTTP error."""
+    try:
+        resolved = build_settings(GlobalOptions(profile=name))
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    resolved.connect_timeout = settings.connect_timeout
+    try:
+        version, _ = DbClient(resolved).ping()
+    except Exception as exc:
+        return {"ok": False, "version": None, "message": sanitize_error(exc)}
+    return {"ok": True, "version": version, "message": None}
 
 
 @router.delete("/{name}")

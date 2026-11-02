@@ -101,3 +101,14 @@ def test_no_profile_is_chosen_implicitly(client: TestClient) -> None:
     selected = client.get("/api/v1/health", headers={**headers, "X-Profile-Name": "prod"})
     assert selected.status_code == 503
     assert client.get("/api/v1/profiles", headers=headers).status_code == 200
+
+
+def test_profile_connection_test_reports_failure_as_result(client: TestClient) -> None:
+    headers = _auth(_token("Admin"))
+    client.post(
+        "/api/v1/profiles", headers=headers, json={"name": "down", "host": "127.0.0.1", "port": 55999}
+    )
+    response = client.post("/api/v1/profiles/down/test", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert client.post("/api/v1/profiles/none/test", headers=headers).status_code == 404

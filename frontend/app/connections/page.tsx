@@ -146,6 +146,17 @@ export default function ConnectionsPage() {
     },
   });
 
+  const testMutation = useMutation({
+    mutationFn: (name: string) => endpoints.testProfile(name),
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success(t("connections.test.ok"), { description: result.version ?? undefined });
+      } else {
+        toast.error(t("connections.test.failed"), { description: result.message ?? undefined });
+      }
+    },
+  });
+
   const defaultMutation = useMutation({
     mutationFn: (name: string) => endpoints.setDefaultProfile(name),
     onSuccess: () => {
@@ -281,6 +292,15 @@ export default function ConnectionsPage() {
         return (
           <IfWriter>
             <div className="flex items-center justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={testMutation.isPending}
+                onClick={() => testMutation.mutate(p.name)}
+                className="h-7 px-2"
+              >
+                {t("connections.test.action")}
+              </Button>
               {!p.is_default && (
                 <Button
                   variant="ghost"

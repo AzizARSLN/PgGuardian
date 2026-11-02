@@ -680,6 +680,9 @@ export const endpoints = {
   deleteProfile: (name: string): Promise<DeletedResult> =>
     api.delete<DeletedResult>(`/profiles/${encodeURIComponent(name)}?confirm=true`),
 
+  testProfile: (name: string): Promise<{ ok: boolean; version: string | null; message: string | null }> =>
+    api.post(`/profiles/${encodeURIComponent(name)}/test`),
+
   setDefaultProfile: (name: string): Promise<Profile> =>
     api.post<Profile>(`/profiles/${name}/default`),
 

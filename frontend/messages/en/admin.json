@@ -62,6 +62,11 @@
       "perPage": "Per page:",
       "previous": "Previous",
       "next": "Next"
+    },
+    "test": {
+      "ok": "Connection succeeded",
+      "failed": "Could not connect",
+      "action": "Test connection"
     }
   },
   "roles": {
@@ -300,13 +305,34 @@
       "clear": "CLEAR"
     },
     "sections": {
-      "summary": { "title": "Summary", "description": "Overview of the report" },
-      "health": { "title": "Health Checks", "description": "Status and value of each check" },
-      "diagnostics": { "title": "Diagnostic Findings", "description": "CRITICAL, WARNING and INFO findings" },
-      "storage": { "title": "Storage: Top 10", "description": "Largest tables, indexes and databases" },
-      "replication": { "title": "Replication", "description": "Replica lag and slots" },
-      "connections": { "title": "Connections", "description": "Active, idle and waiting connections" },
-      "roles": { "title": "Roles", "description": "SUPERUSER, LOGIN and privilege summary" }
+      "summary": {
+        "title": "Summary",
+        "description": "Overview of the report"
+      },
+      "health": {
+        "title": "Health Checks",
+        "description": "Status and value of each check"
+      },
+      "diagnostics": {
+        "title": "Diagnostic Findings",
+        "description": "CRITICAL, WARNING and INFO findings"
+      },
+      "storage": {
+        "title": "Storage: Top 10",
+        "description": "Largest tables, indexes and databases"
+      },
+      "replication": {
+        "title": "Replication",
+        "description": "Replica lag and slots"
+      },
+      "connections": {
+        "title": "Connections",
+        "description": "Active, idle and waiting connections"
+      },
+      "roles": {
+        "title": "Roles",
+        "description": "SUPERUSER, LOGIN and privilege summary"
+      }
     },
     "summary": {
       "keys": "Report Sections",
@@ -315,9 +341,15 @@
       "raw": "Raw report (top level)",
       "items": "{count} items"
     },
-    "health": { "empty": "No health check data" },
-    "diagnostics": { "empty": "No diagnostic findings" },
-    "storage": { "empty": "No storage data" },
+    "health": {
+      "empty": "No health check data"
+    },
+    "diagnostics": {
+      "empty": "No diagnostic findings"
+    },
+    "storage": {
+      "empty": "No storage data"
+    },
     "replication": {
       "empty": "No replicas or slots",
       "replicas": "Replicas ({count})",
