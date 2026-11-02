@@ -10,6 +10,7 @@
     "scopeHint": "Enter schema and table together; leave both empty to run {command} on the whole database.",
     "reindexHint": "Schema is required. Enter either a table or an index, not both.",
     "never": "Never",
+    "result": "Result",
     "fields": {
       "schema": "Schema",
       "table": "Table",
@@ -72,6 +73,29 @@
       "lastAnalyze": "Last ANALYZE",
       "emptyTitle": "No tables found",
       "emptyHint": "This database has no tables yet."
+    },
+    "batch": {
+      "selected": "Selected: {count}",
+      "selectAll": "Select all",
+      "selectNone": "Clear",
+      "selectRisky": "Select risky",
+      "targetsTitle": "Target tables ({count})",
+      "targetsHint": "VACUUM runs on the selected tables. FULL / ANALYZE / FREEZE come from the VACUUM tab.",
+      "andMore": "+{count} more tables",
+      "apply": "VACUUM selected tables",
+      "running": "Applying · {done}/{total}",
+      "noSelection": "Select at least one table from the list first.",
+      "confirmTitle": "Run VACUUM on {count} tables?",
+      "confirmDesc": "VACUUM will be applied to the selected tables in order.",
+      "confirmDescFull": "VACUUM FULL will be applied to the selected tables. Each table takes an ACCESS EXCLUSIVE LOCK; run it during low traffic.",
+      "resultsTitle": "Last VACUUM run",
+      "resultsHint": "Tables processed and their command results",
+      "statusPending": "Pending",
+      "statusRunning": "Running",
+      "statusOk": "Completed",
+      "statusFailed": "Failed",
+      "summary": "{ok} completed · {failed} failed",
+      "clearResults": "Close"
     }
   },
   "backups": {

@@ -1,18 +1,24 @@
 "use client";
 
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
   AlertCircle,
+  CheckCircle2,
   Database,
+  ListChecks,
+  Loader2,
   PlayCircle,
   RefreshCw,
   Search,
   Sparkles,
+  Target,
   TerminalSquare,
   Trash2,
   Wrench,
+  X,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,6 +38,7 @@ import { useConfirm } from "@/lib/hooks/useConfirm";
 import { useI18n, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { IfWriter } from "@/components/role-guard";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -108,6 +115,23 @@ function deadTone(percent: number): string {
   return "text-success";
 }
 
+/** Stable identity for a report row; also the selection key. */
+const tableKey = (row: TableMaintenance) => `${row.schema_name ?? ""}.${row.table_name}`;
+
+const RISKY_STATUSES: TableMaintenance["status"][] = ["WARNING", "CRITICAL"];
+
+/** How many per-table SQL previews the confirmation dialog shows. */
+const PREVIEW_LIMIT = 10;
+
+type BatchStatus = "pending" | "running" | "ok" | "failed";
+
+interface BatchRow {
+  key: string;
+  label: string;
+  status: BatchStatus;
+  detail: string;
+}
+
 function useMaintenanceAction<TBody extends MutationRequest>(
   path: "vacuum" | "analyze" | "reindex",
   command: string,
@@ -135,6 +159,7 @@ function useMaintenanceAction<TBody extends MutationRequest>(
 
 export default function MaintenancePage() {
   const t = useT();
+  const queryClient = useQueryClient();
   const { formatNumber, formatDate } = useI18n();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const [tab, setTab] = useState("vacuum");
@@ -335,11 +360,139 @@ export default function MaintenancePage() {
     </>
   );
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchRows, setBatchRows] = useState<BatchRow[] | null>(null);
+
+  const selectedTables = useMemo(
+    () => tables.filter((row) => selected.has(tableKey(row))),
+    [tables, selected]
+  );
+  const allSelected = tables.length > 0 && selected.size >= tables.length;
+  const okCount = batchRows?.filter((row) => row.status === "ok").length ?? 0;
+  const failedCount = batchRows?.filter((row) => row.status === "failed").length ?? 0;
+  const doneCount = okCount + failedCount;
+
+  const toggleRow = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const selectNone = () => setSelected(new Set());
+  const selectAll = () => setSelected(new Set(tables.map(tableKey)));
+  const selectRisky = () =>
+    setSelected(
+      new Set(tables.filter((row) => RISKY_STATUSES.includes(row.status)).map(tableKey))
+    );
+
+  // One request per table (the API takes a single scope); progress is reported
+  // per row so a long run over many tables stays observable.
+  const batchVacuum = useMutation({
+    mutationFn: async (targets: TableMaintenance[]) => {
+      const options = vacuumForm.getValues();
+      const body = { analyze: options.analyze, full: options.full, freeze: options.freeze };
+      const patch = (key: string, update: Partial<BatchRow>) =>
+        setBatchRows((prev) =>
+          prev ? prev.map((row) => (row.key === key ? { ...row, ...update } : row)) : prev
+        );
+
+      setBatchRows(
+        targets.map((row) => ({
+          key: tableKey(row),
+          label: `${row.schema_name ? `${row.schema_name}.` : ""}${row.table_name}`,
+          status: "pending" as BatchStatus,
+          detail: "",
+        }))
+      );
+
+      let ok = 0;
+      let failed = 0;
+      for (const row of targets) {
+        const key = tableKey(row);
+        patch(key, { status: "running" });
+        try {
+          const result = await api.post<MaintenanceActionResult>(
+            "/maintenance/vacuum",
+            { ...body, schema_name: row.schema_name, table_name: row.table_name, confirm: true },
+            { timeout: LONG_ACTION_TIMEOUT_MS, skipToast: true }
+          );
+          ok += 1;
+          patch(key, { status: "ok", detail: result?.command_status ?? "" });
+        } catch (error) {
+          failed += 1;
+          patch(key, {
+            status: "failed",
+            detail: error instanceof Error ? error.message : "",
+          });
+        }
+      }
+      return { ok, failed };
+    },
+    onSuccess: ({ ok, failed }) => {
+      toast.success(t("maintenance.toast.done", { command: "VACUUM" }), {
+        description: t("maintenance.batch.summary", { ok, failed }),
+      });
+      setSelected(new Set());
+      queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance(REPORT_LIMIT) });
+    },
+  });
+
+  const handleBatchVacuum = async () => {
+    const targets = selectedTables;
+    if (targets.length === 0) {
+      toast.error(t("maintenance.batch.noSelection"));
+      return;
+    }
+    const options = vacuumForm.getValues();
+    const scope = {
+      analyze: options.analyze,
+      full: options.full,
+      freeze: options.freeze,
+      dry_run: true,
+    };
+
+    // Show the SQL the API will actually run, bounded so a big selection stays fast.
+    const previews = await Promise.all(
+      targets.slice(0, PREVIEW_LIMIT).map(async (row) => {
+        try {
+          const result = await api.post<DryRunResult>(
+            "/maintenance/vacuum",
+            { ...scope, schema_name: row.schema_name, table_name: row.table_name },
+            { skipToast: true }
+          );
+          return result?.sql ?? [];
+        } catch {
+          return [];
+        }
+      })
+    );
+
+    const extra =
+      targets.length > PREVIEW_LIMIT
+        ? `\n${t("maintenance.batch.andMore", { count: targets.length - PREVIEW_LIMIT })}`
+        : "";
+
+    const ok = await confirm({
+      title: t("maintenance.batch.confirmTitle", { count: targets.length }),
+      description:
+        t(
+          options.full ? "maintenance.batch.confirmDescFull" : "maintenance.batch.confirmDesc"
+        ) + extra,
+      risk_level: options.full ? "DANGEROUS" : "MAINTENANCE",
+      sql_preview: previews.flat(),
+      confirm_label: t("maintenance.batch.apply"),
+      cancel_label: t("common.cancel"),
+    });
+    if (ok) batchVacuum.mutate(targets);
+  };
+
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3 lg:h-[calc(100vh-5rem)]">
       <ConfirmDialog />
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
             <Wrench className="h-4 w-4 text-warning" />
@@ -354,7 +507,7 @@ export default function MaintenancePage() {
       </div>
 
       {!report.isError && (
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="grid shrink-0 grid-cols-2 gap-2 md:grid-cols-5">
           {report.isLoading
             ? [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[54px] w-full rounded-md" />)
             : [
@@ -397,7 +550,7 @@ export default function MaintenancePage() {
         </div>
       )}
 
-      <div className={cn(PANEL, "p-3")}>
+      <div className={cn(PANEL, "shrink-0 p-3")}>
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="vacuum">VACUUM</TabsTrigger>
@@ -642,7 +795,59 @@ export default function MaintenancePage() {
         </Tabs>
       </div>
 
-      <div className={cn(PANEL, "overflow-hidden")}>
+      {batchRows && batchRows.length > 0 && (
+        <div className={cn(PANEL, "shrink-0 overflow-hidden")}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+            <div>
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+                <ListChecks className="h-3.5 w-3.5 text-success" />
+                {t("maintenance.batch.resultsTitle")}
+              </h2>
+              <p className="text-xs text-muted-foreground">{t("maintenance.batch.resultsHint")}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" size="sm" className="font-mono">
+                {t("maintenance.batch.summary", { ok: okCount, failed: failedCount })}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setBatchRows(null)}
+              >
+                <X className="mr-1 h-3 w-3" />
+                {t("maintenance.batch.clearResults")}
+              </Button>
+            </div>
+          </div>
+          <div className="max-h-40 overflow-auto">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow>
+                  <TableHead className={HEAD}>{t("maintenance.table.status")}</TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.table.table")}</TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.result")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {batchRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className={CELL}>
+                      <BatchStatusBadge status={row.status} />
+                    </TableCell>
+                    <TableCell className={cn(CELL, "font-mono")}>{row.label}</TableCell>
+                    <TableCell className={cn(CELL, "font-mono text-muted-foreground")}>
+                      {row.detail || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      <div className={cn(PANEL, "flex min-h-[360px] flex-1 flex-col overflow-hidden")}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div>
             <h2 className="flex items-center gap-1.5 text-sm font-semibold">
@@ -663,6 +868,72 @@ export default function MaintenancePage() {
             </RiskBadge>
           </div>
         </div>
+        {tables.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-mono text-xs text-muted-foreground">
+                {t("maintenance.batch.selected", { count: selected.size })}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={selectRisky}
+              >
+                <Target className="mr-1 h-3 w-3" />
+                {t("maintenance.batch.selectRisky")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={allSelected ? selectNone : selectAll}
+              >
+                {allSelected ? t("maintenance.batch.selectNone") : t("maintenance.batch.selectAll")}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <IfWriter>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={vacuumForm.watch("full") ? "destructive" : "default"}
+                  className="h-7 text-xs"
+                  onClick={handleBatchVacuum}
+                  disabled={selected.size === 0 || batchVacuum.isPending}
+                >
+                  {batchVacuum.isPending ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                      {t("maintenance.batch.running", {
+                        done: doneCount,
+                        total: batchRows?.length ?? 0,
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      <PlayCircle className="mr-1.5 h-3 w-3" />
+                      {t("maintenance.batch.apply")}
+                    </>
+                  )}
+                </Button>
+              </IfWriter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleRefresh}
+                disabled={report.isFetching}
+              >
+                <RefreshCw className={cn("mr-1.5 h-3 w-3", report.isFetching && "animate-spin")} />
+                {t("maintenance.refresh")}
+              </Button>
+            </div>
+          </div>
+        )}
         {report.isError ? (
           <QueryError onRetry={() => report.refetch()} />
         ) : report.isLoading ? (
@@ -677,10 +948,17 @@ export default function MaintenancePage() {
             <p className="text-xs text-muted-foreground">{t("maintenance.table.emptyHint")}</p>
           </div>
         ) : (
-          <div className="max-h-[520px] overflow-auto">
+          <div className="flex-1 overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className={cn(HEAD, "w-8")}>
+                    <Checkbox
+                      aria-label={t("maintenance.batch.selectAll")}
+                      checked={allSelected ? true : selected.size > 0 ? "indeterminate" : false}
+                      onCheckedChange={(value) => (value ? selectAll() : selectNone())}
+                    />
+                  </TableHead>
                   <TableHead className={HEAD}>{t("maintenance.table.status")}</TableHead>
                   <TableHead className={HEAD}>{t("maintenance.table.table")}</TableHead>
                   <TableHead className={cn(HEAD, "text-right")}>
@@ -698,7 +976,17 @@ export default function MaintenancePage() {
               </TableHeader>
               <TableBody>
                 {tables.map((row) => (
-                  <TableRow key={`${row.schema_name ?? ""}.${row.table_name}`}>
+                  <TableRow
+                    key={tableKey(row)}
+                    data-state={selected.has(tableKey(row)) ? "selected" : undefined}
+                  >
+                    <TableCell className={CELL}>
+                      <Checkbox
+                        aria-label={tableKey(row)}
+                        checked={selected.has(tableKey(row))}
+                        onCheckedChange={() => toggleRow(tableKey(row))}
+                      />
+                    </TableCell>
                     <TableCell className={CELL}>
                       <RiskBadge riskLevel={severityToRisk(row.status)} size="sm" />
                     </TableCell>
@@ -737,6 +1025,40 @@ export default function MaintenancePage() {
         )}
       </div>
     </div>
+  );
+}
+
+function BatchStatusBadge({ status }: { status: BatchStatus }) {
+  const t = useT();
+  if (status === "ok") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-success">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        {t("maintenance.batch.statusOk")}
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-destructive">
+        <XCircle className="h-3.5 w-3.5" />
+        {t("maintenance.batch.statusFailed")}
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-warning">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {t("maintenance.batch.statusRunning")}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <Loader2 className="h-3.5 w-3.5" />
+      {t("maintenance.batch.statusPending")}
+    </span>
   );
 }
 
