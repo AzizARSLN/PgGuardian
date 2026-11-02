@@ -71,6 +71,14 @@ def get_active_queries(limit: int = 20, client: DbClient = Depends(resolve_clien
         return queries_diag.collect_active_queries(client, limit=min(limit, 500))
 
 
+@router.get("/queries/sessions")
+def get_sessions(limit: int = 500, client: DbClient = Depends(resolve_client)) -> dict:
+    """Every backend grouped by the UI per state, with client host, IP and application."""
+    _preflight(client)
+    with mapped_errors(client.settings):
+        return queries_diag.collect_sessions(client, limit=min(limit, 2000))
+
+
 @router.get("/queries/long-running", response_model=QueryReport)
 def get_long_running_queries(
     min_seconds: int = 60, limit: int = 20, client: DbClient = Depends(resolve_client)

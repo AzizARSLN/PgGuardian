@@ -11,11 +11,12 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowDown, ArrowUp, Power, RefreshCw, Skull } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Power, RefreshCw, Search, Skull } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RiskBadge } from '@/components/ui/risk-badge';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { IfWriter } from '@/components/role-guard';
 import {
@@ -30,8 +31,7 @@ import {
   endpoints,
   type BackendActionResult,
   type DryRunResult,
-  type QueryInfo,
-  type QueryReport,
+  type SessionInfo,
 } from '@/lib/api/types';
 import { qk } from '@/lib/api/queryKeys';
 import { cn } from '@/lib/utils';
@@ -39,13 +39,29 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useI18n, useT, type TFunction } from '@/lib/i18n';
 import { useUIPrefsStore } from '@/store/useUIPrefsStore';
 
-interface EnrichedQuery extends QueryInfo {
-  from_long_running?: boolean;
+type StateGroup = 'active' | 'idleInTx' | 'idle' | 'none';
+
+// Most urgent first: this is also the order of the buttons and the table sections.
+const STATE_GROUPS: StateGroup[] = ['active', 'idleInTx', 'idle', 'none'];
+
+const GROUP_TONE: Record<StateGroup, string> = {
+  active: 'text-success',
+  idleInTx: 'text-warning',
+  idle: 'text-info',
+  none: 'text-muted-foreground',
+};
+
+function stateGroup(state: string | null): StateGroup {
+  if (state === 'active' || state === 'fastpath function call') return 'active';
+  if (state?.startsWith('idle in transaction')) return 'idleInTx';
+  if (state === 'idle') return 'idle';
+  return 'none';
 }
 
 const LONG_RUNNING_MIN_SECONDS = 60;
 const DANGEROUS_SECONDS = 300;
 const METRIC = 'font-mono tabular-nums';
+const NO_SESSIONS: SessionInfo[] = [];
 
 function formatSeconds(seconds: number, t: TFunction): string {
   if (!Number.isFinite(seconds) || seconds < 1) return t('liveQueries.units.second', { n: '<1' });
@@ -61,17 +77,6 @@ function formatSeconds(seconds: number, t: TFunction): string {
   return labels.slice(first, first + 2).join(' ');
 }
 
-function mergeQueries(active?: QueryReport, longRunning?: QueryReport): EnrichedQuery[] {
-  const map = new Map<number, EnrichedQuery>();
-  for (const q of active?.queries ?? []) {
-    if (q.pid) map.set(q.pid, { ...q });
-  }
-  for (const q of longRunning?.queries ?? []) {
-    if (q.pid) map.set(q.pid, { ...map.get(q.pid), ...q, from_long_running: true });
-  }
-  return Array.from(map.values());
-}
-
 function stateVariant(state: string): 'OK' | 'WARNING' | 'INFO' {
   const s = state.toLowerCase();
   if (s === 'idle in transaction' || s.includes('aborted')) return 'WARNING';
@@ -83,6 +88,13 @@ function isActionResult(data: DryRunResult | BackendActionResult): data is Backe
   return 'signal_sent' in data;
 }
 
+/** An idle connection sitting for hours is normal; only work in progress is a risk. */
+function isDangerous(row: SessionInfo): boolean {
+  return stateGroup(row.state) !== 'idle' && stateGroup(row.state) !== 'none'
+    ? (row.state_seconds ?? 0) >= DANGEROUS_SECONDS
+    : false;
+}
+
 export default function QueryManagementPage() {
   const t = useT();
   const { formatNumber } = useI18n();
@@ -92,37 +104,44 @@ export default function QueryManagementPage() {
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
   const refetchInterval = autoRefresh ? pollInterval : false;
   const [sorting, setSorting] = React.useState<SortingState>([
-    { id: 'duration_seconds', desc: true },
+    { id: 'state_seconds', desc: true },
   ]);
 
-  const activeQuery = useQuery({
-    queryKey: qk.diagnostics.queries.active(100),
-    queryFn: () => endpoints.getActiveQueries(100),
+  const [filter, setFilter] = React.useState<StateGroup | 'all'>('all');
+  const [search, setSearch] = React.useState('');
+
+  const sessionsQuery = useQuery({
+    queryKey: qk.diagnostics.queries.sessions(),
+    queryFn: () => endpoints.getSessions(),
     refetchInterval,
     refetchOnWindowFocus: true,
   });
 
-  const longRunningQuery = useQuery({
-    queryKey: qk.diagnostics.queries.longRunning(LONG_RUNNING_MIN_SECONDS, 100),
-    queryFn: () => endpoints.getLongRunningQueries(LONG_RUNNING_MIN_SECONDS, 100),
-    refetchInterval,
-    refetchOnWindowFocus: true,
-  });
+  const allRows = sessionsQuery.data?.sessions ?? NO_SESSIONS;
 
-  const rows = React.useMemo(
-    () => mergeQueries(activeQuery.data, longRunningQuery.data),
-    [activeQuery.data, longRunningQuery.data]
-  );
+  const counts = React.useMemo(() => {
+    const result: Record<StateGroup, number> = { active: 0, idleInTx: 0, idle: 0, none: 0 };
+    for (const row of allRows) result[stateGroup(row.state)] += 1;
+    return result;
+  }, [allRows]);
 
-  const counts = React.useMemo(
-    () => ({
-      total: rows.length,
-      active: rows.filter((r) => (r.state ?? '').toLowerCase() === 'active').length,
-      longRunning: rows.filter((r) => (r.duration_seconds ?? 0) >= LONG_RUNNING_MIN_SECONDS).length,
-      dangerous: rows.filter((r) => (r.duration_seconds ?? 0) >= DANGEROUS_SECONDS).length,
-    }),
-    [rows]
-  );
+  const rows = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return allRows.filter((row) => {
+      if (filter !== 'all' && stateGroup(row.state) !== filter) return false;
+      if (!term) return true;
+      return [
+        row.pid,
+        row.username,
+        row.database,
+        row.application_name,
+        row.client_addr,
+        row.client_hostname,
+        row.backend_type,
+        row.query,
+      ].some((value) => String(value ?? '').toLowerCase().includes(term));
+    });
+  }, [allRows, filter, search]);
 
   const notifyResult = (
     data: DryRunResult | BackendActionResult,
@@ -153,7 +172,7 @@ export default function QueryManagementPage() {
   });
 
   const handleCancel = React.useCallback(
-    async (row: EnrichedQuery) => {
+    async (row: SessionInfo) => {
       const sql = row.query ?? '';
       const ok = await confirm({
         title: t('liveQueries.confirm.cancelTitle', { pid: row.pid }),
@@ -171,7 +190,7 @@ export default function QueryManagementPage() {
   );
 
   const handleTerminate = React.useCallback(
-    async (row: EnrichedQuery) => {
+    async (row: SessionInfo) => {
       const ok = await confirm({
         title: t('liveQueries.confirm.terminateTitle', { pid: row.pid }),
         description: t('liveQueries.confirm.terminateDesc'),
@@ -188,7 +207,7 @@ export default function QueryManagementPage() {
     [confirm, terminateBackend, t]
   );
 
-  const columns = React.useMemo<ColumnDef<EnrichedQuery>[]>(
+  const columns = React.useMemo<ColumnDef<SessionInfo>[]>(
     () => [
       {
         accessorKey: 'pid',
@@ -199,76 +218,140 @@ export default function QueryManagementPage() {
         ),
       },
       {
-        accessorKey: 'query',
-        header: () => t('liveQueries.columns.query'),
+        accessorKey: 'state',
+        header: () => t('liveQueries.columns.state'),
+        size: 130,
         cell: ({ row }) => {
-          const dangerous = (row.original.duration_seconds ?? 0) >= DANGEROUS_SECONDS;
+          const state = row.original.state;
           return (
-            <div className="flex max-w-[560px] items-start gap-1.5">
-              {dangerous && (
-                <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false} className="mt-0.5 shrink-0">
-                  {t('liveQueries.dangerousBadge')}
-                </RiskBadge>
+            <div className="flex flex-col items-start gap-0.5">
+              <RiskBadge riskLevel={stateVariant(state ?? '')} size="sm" showIcon={false}>
+                {state ?? 'None'}
+              </RiskBadge>
+              {row.original.blocked_by?.length > 0 && (
+                <span className={`${METRIC} text-[10px] text-destructive`}>
+                  {t('liveQueries.blockedBy', { pids: row.original.blocked_by.join(', ') })}
+                </span>
               )}
-              <code className="line-clamp-2 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground hover:line-clamp-none">
-                {row.original.query || t('liveQueries.emptyQuery')}
-              </code>
             </div>
           );
         },
       },
       {
-        accessorKey: 'duration_seconds',
+        accessorKey: 'state_seconds',
         header: () => t('liveQueries.columns.duration'),
         size: 90,
-        sortingFn: (a, b) =>
-          (a.original.duration_seconds ?? 0) - (b.original.duration_seconds ?? 0),
+        sortingFn: (a, b) => (a.original.state_seconds ?? 0) - (b.original.state_seconds ?? 0),
         cell: ({ row }) => {
-          const s = row.original.duration_seconds ?? 0;
+          const seconds = row.original.state_seconds;
+          if (seconds === null) return <span className="text-muted-foreground">-</span>;
+          const group = stateGroup(row.original.state);
+          const watch = group === 'active' || group === 'idleInTx';
           return (
             <Badge
               variant="outline"
               className={cn(
                 `${METRIC} px-1.5 py-0 text-[11px]`,
-                s >= DANGEROUS_SECONDS
-                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                  : s >= LONG_RUNNING_MIN_SECONDS
-                    ? 'border-warning/40 bg-warning/10 text-warning'
-                    : 'border-success/30 bg-success/10 text-success'
+                !watch
+                  ? 'border-border text-muted-foreground'
+                  : seconds >= DANGEROUS_SECONDS
+                    ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                    : seconds >= LONG_RUNNING_MIN_SECONDS
+                      ? 'border-warning/40 bg-warning/10 text-warning'
+                      : 'border-success/30 bg-success/10 text-success'
               )}
             >
-              {formatSeconds(s, t)}
+              {formatSeconds(seconds, t)}
             </Badge>
           );
         },
       },
       {
-        accessorKey: 'state',
-        header: () => t('liveQueries.columns.state'),
-        size: 120,
+        accessorKey: 'xact_seconds',
+        header: () => t('liveQueries.columns.transaction'),
+        size: 80,
+        sortingFn: (a, b) => (a.original.xact_seconds ?? 0) - (b.original.xact_seconds ?? 0),
+        cell: ({ row }) => (
+          <span className={`${METRIC} whitespace-nowrap text-muted-foreground`}>
+            {row.original.xact_seconds === null ? '-' : formatSeconds(row.original.xact_seconds, t)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'query',
+        header: () => t('liveQueries.columns.query'),
         cell: ({ row }) => {
-          const state = row.original.state ?? 'unknown';
+          const { query, wait_event_type: waitType, wait_event: wait, backend_type: type } = row.original;
           return (
-            <RiskBadge riskLevel={stateVariant(state)} size="sm" showIcon={false}>
-              {state}
-            </RiskBadge>
+            <div className="max-w-[460px] space-y-0.5">
+              {isDangerous(row.original) && (
+                <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false}>
+                  {t('liveQueries.dangerousBadge')}
+                </RiskBadge>
+              )}
+              <code className="line-clamp-2 whitespace-pre-wrap break-words font-mono text-[11px] text-foreground hover:line-clamp-none">
+                {query || type || t('liveQueries.emptyQuery')}
+              </code>
+              {waitType && (
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  {waitType}: {wait}
+                </p>
+              )}
+            </div>
           );
         },
       },
       {
-        accessorKey: 'database',
-        header: () => t('liveQueries.columns.database'),
-        size: 110,
+        id: 'client',
+        accessorFn: (row) => row.client_hostname ?? row.client_addr ?? '',
+        header: () => t('liveQueries.columns.client'),
+        size: 170,
+        cell: ({ row }) => {
+          const { client_addr: ip, client_hostname: host, client_port: port } = row.original;
+          if (!ip && !host) {
+            return (
+              <span className="text-muted-foreground">
+                {port === -1 ? t('liveQueries.localSocket') : '-'}
+              </span>
+            );
+          }
+          return (
+            <div className="font-mono text-[11px]">
+              <p className="truncate text-foreground" title={host ?? t('liveQueries.noHostname')}>
+                {host ?? t('liveQueries.noHostnameShort')}
+              </p>
+              <p className="text-muted-foreground">
+                {ip}
+                {port ? `:${port}` : ''}
+              </p>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'application_name',
+        header: () => t('liveQueries.columns.application'),
+        size: 120,
         cell: ({ row }) => (
-          <span className="font-mono text-muted-foreground">{row.original.database ?? '-'}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {row.original.application_name || '-'}
+          </span>
         ),
       },
       {
-        accessorKey: 'user',
-        header: () => t('liveQueries.columns.user'),
-        size: 110,
+        accessorKey: 'database',
+        header: () => t('liveQueries.columns.database'),
+        size: 100,
         cell: ({ row }) => (
-          <span className="font-mono text-muted-foreground">{row.original.user ?? '-'}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">{row.original.database ?? '-'}</span>
+        ),
+      },
+      {
+        accessorKey: 'username',
+        header: () => t('liveQueries.columns.user'),
+        size: 100,
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px] text-muted-foreground">{row.original.username ?? '-'}</span>
         ),
       },
       {
@@ -276,9 +359,14 @@ export default function QueryManagementPage() {
         header: () => <IfWriter>{t('liveQueries.columns.actions')}</IfWriter>,
         size: 170,
         enableSorting: false,
-        cell: ({ row }) => (
+        cell: ({ row }) => {
+          const group = stateGroup(row.original.state);
+          // Background processes are not ours to signal, and an idle backend has nothing to cancel.
+          if (group === 'none') return null;
+          return (
           <IfWriter>
             <div className="flex items-center gap-1">
+              {group === 'active' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -289,6 +377,7 @@ export default function QueryManagementPage() {
                 <Power className="mr-1 h-3 w-3" />
                 {t('liveQueries.actions.cancel')}
               </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -301,7 +390,8 @@ export default function QueryManagementPage() {
               </Button>
             </div>
           </IfWriter>
-        ),
+          );
+        },
       },
     ],
     [handleCancel, handleTerminate, cancelling, terminating, t]
@@ -312,24 +402,28 @@ export default function QueryManagementPage() {
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getRowId: (row) => String(row.pid),
     onSortingChange: setSorting,
     state: { sorting },
   });
 
-  const isFetching = activeQuery.isFetching || longRunningQuery.isFetching;
-  const isLoading = activeQuery.isLoading || longRunningQuery.isLoading;
-  const failed = activeQuery.isError ? activeQuery : longRunningQuery.isError ? longRunningQuery : null;
-  const refetchAll = () => {
-    activeQuery.refetch();
-    longRunningQuery.refetch();
-  };
-  const failedMessage = failed?.error instanceof Error ? failed.error.message : '';
+  const isFetching = sessionsQuery.isFetching;
+  const isLoading = sessionsQuery.isLoading;
+  const failed = sessionsQuery.isError && !sessionsQuery.data;
+  const refetchAll = () => sessionsQuery.refetch();
+  const failedMessage = sessionsQuery.error instanceof Error ? sessionsQuery.error.message : '';
 
-  const tiles = [
-    { label: t('liveQueries.tiles.total'), value: counts.total, tone: 'text-foreground' },
-    { label: t('liveQueries.tiles.active'), value: counts.active, tone: 'text-success' },
-    { label: t('liveQueries.tiles.longRunning'), value: counts.longRunning, tone: 'text-warning' },
-    { label: t('liveQueries.tiles.dangerous'), value: counts.dangerous, tone: 'text-destructive' },
+  const sortedRows = table.getRowModel().rows;
+  const sections = (filter === 'all' ? STATE_GROUPS : [filter])
+    .map((group) => ({
+      group,
+      rows: sortedRows.filter((r) => stateGroup(r.original.state) === group),
+    }))
+    .filter((section) => section.rows.length > 0);
+
+  const filterButtons: { key: StateGroup | 'all'; count: number; tone: string }[] = [
+    { key: 'all', count: allRows.length, tone: 'text-foreground' },
+    ...STATE_GROUPS.map((key) => ({ key, count: counts[key], tone: GROUP_TONE[key] })),
   ];
 
   return (
@@ -359,20 +453,45 @@ export default function QueryManagementPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {tiles.map((tile) => (
-          <div key={tile.label} className="rounded-md border border-border bg-card px-3 py-2">
-            <p className="text-[11px] text-muted-foreground">{tile.label}</p>
-            {isLoading ? (
-              <Skeleton className="mt-1 h-5 w-12" />
-            ) : (
-              <p className={cn(METRIC, 'text-base font-semibold', failed ? 'text-muted-foreground' : tile.tone)}>
-                {failed ? '-' : formatNumber(tile.value)}
-              </p>
-            )}
-          </div>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label={t('liveQueries.columns.state')} className="flex flex-wrap gap-1">
+          {filterButtons.map(({ key, count, tone }) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={filter === key}
+              onClick={() => setFilter(key)}
+              className={cn(
+                'inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors',
+                filter === key
+                  ? 'border-primary bg-accent text-foreground'
+                  : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              {t(`liveQueries.groups.${key}`)}
+              <span className={cn(METRIC, 'font-semibold', tone)}>
+                {isLoading || failed ? '-' : formatNumber(count)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('liveQueries.searchPlaceholder')}
+            aria-label={t('liveQueries.searchPlaceholder')}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
       </div>
+
+      {sessionsQuery.data?.truncated && (
+        <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-1.5 text-xs">
+          {t('liveQueries.truncated', { limit: sessionsQuery.data.limit })}
+        </p>
+      )}
 
       <section className="overflow-hidden rounded-md border border-border bg-card">
         <header className="flex flex-wrap items-baseline gap-2 border-b border-border px-3 py-2">
@@ -438,24 +557,36 @@ export default function QueryManagementPage() {
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows.map((r) => (
-                  <TableRow
-                    key={r.id}
-                    className={cn(
-                      (r.original.duration_seconds ?? 0) >= DANGEROUS_SECONDS &&
-                        'border-l-2 border-l-destructive/60 bg-destructive/5'
+                {sections.map(({ group, rows: sectionRows }) => (
+                  <React.Fragment key={group}>
+                    {filter === 'all' && (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableCell colSpan={columns.length} className="px-2 py-1 text-[11px] font-semibold">
+                          <span className={GROUP_TONE[group]}>{t(`liveQueries.groups.${group}`)}</span>
+                          <span className={`${METRIC} ml-2 text-muted-foreground`}>{sectionRows.length}</span>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  >
-                    {r.getVisibleCells().map((c) => (
-                      <TableCell
-                        key={c.id}
-                        style={{ width: c.column.getSize() }}
-                        className="px-2 py-1.5 text-xs"
+                    {sectionRows.map((r) => (
+                      <TableRow
+                        key={r.id}
+                        className={cn(
+                          isDangerous(r.original) &&
+                            'border-l-2 border-l-destructive/60 bg-destructive/5'
+                        )}
                       >
-                        {flexRender(c.column.columnDef.cell, c.getContext())}
-                      </TableCell>
+                        {r.getVisibleCells().map((c) => (
+                          <TableCell
+                            key={c.id}
+                            style={{ width: c.column.getSize() }}
+                            className="px-2 py-1.5 align-top text-xs"
+                          >
+                            {flexRender(c.column.columnDef.cell, c.getContext())}
+                          </TableCell>
+                        ))}
+                      </TableRow>
                     ))}
-                  </TableRow>
+                  </React.Fragment>
                 ))}
               </TableBody>
             </UITable>

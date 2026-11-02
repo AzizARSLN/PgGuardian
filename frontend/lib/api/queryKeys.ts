@@ -7,6 +7,7 @@ export const qk = {
     connections: (limit?: number) =>
       ["diagnostics", "connections", limit] as const,
     queries: {
+      sessions: () => ["diagnostics", "queries", "sessions"] as const,
       active: (limit?: number) =>
         ["diagnostics", "queries", "active", limit] as const,
       longRunning: (minSeconds?: number, limit?: number) =>

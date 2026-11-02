@@ -5,9 +5,22 @@
     "refreshAll": "Refresh all",
     "refreshed": "Data refreshed",
     "percent": "{value}%",
-    "units": { "day": "{n}d", "hour": "{n}h", "minute": "{n}m", "second": "{n}s" },
-    "health": { "title": "Health score", "uptime": "Uptime: {value}" },
-    "connections": { "title": "Connection usage", "active": "Active", "idle": "Idle", "waiting": "Waiting" },
+    "units": {
+      "day": "{n}d",
+      "hour": "{n}h",
+      "minute": "{n}m",
+      "second": "{n}s"
+    },
+    "health": {
+      "title": "Health score",
+      "uptime": "Uptime: {value}"
+    },
+    "connections": {
+      "title": "Connection usage",
+      "active": "Active",
+      "idle": "Idle",
+      "waiting": "Waiting"
+    },
     "locks": {
       "title": "Locks",
       "blockingPairs": "blocking pairs",
@@ -29,7 +42,11 @@
       "emptyTitle": "All clear",
       "emptyDesc": "No diagnostic findings."
     },
-    "tables": { "title": "Top 5 tables", "subtitle": "Table + index size", "size": "Size" },
+    "tables": {
+      "title": "Top 5 tables",
+      "subtitle": "Table + index size",
+      "size": "Size"
+    },
     "slots": {
       "title": "Replication slots",
       "summary": "{slots} slots · {replicas} replicas",
@@ -44,7 +61,13 @@
     "title": "Diagnostics",
     "subtitle": "Findings, connections, queries, locks, storage, indexes, maintenance and performance",
     "percent": "{value}%",
-    "units": { "day": "{n}d", "hour": "{n}h", "minute": "{n}m", "second": "{n}s", "ms": "{n}ms" },
+    "units": {
+      "day": "{n}d",
+      "hour": "{n}h",
+      "minute": "{n}m",
+      "second": "{n}s",
+      "ms": "{n}ms"
+    },
     "tabs": {
       "findings": "Findings",
       "connections": "Connections",
@@ -68,7 +91,10 @@
       "terminated": "Terminate signal sent",
       "notSent": "No signal was sent to PID {pid}; the process may have already exited."
     },
-    "actions": { "cancel": "Cancel", "terminate": "Terminate" },
+    "actions": {
+      "cancel": "Cancel",
+      "terminate": "Terminate"
+    },
     "confirm": {
       "cancelTitle": "Cancel the query on PID {pid}?",
       "cancelDesc": "The running query is cancelled with pg_cancel_backend(). The connection stays open; only the active query stops.",
@@ -198,16 +224,15 @@
     "subtitle": "Watch running queries; cancel or terminate them when needed",
     "polling": "Refreshes every {seconds}s",
     "pollingOff": "Auto refresh off",
-    "tableHint": "Longest running first",
+    "tableHint": "Grouped by state, longest first in each group. Idle rows show the last query that ran.",
     "empty": "No active queries found",
     "emptyQuery": "<empty query>",
     "dangerousBadge": "5m+",
-    "units": { "day": "{n}d", "hour": "{n}h", "minute": "{n}m", "second": "{n}s" },
-    "tiles": {
-      "total": "Total",
-      "active": "Active",
-      "longRunning": "Long running (1m+)",
-      "dangerous": "Dangerous (5m+)"
+    "units": {
+      "day": "{n}d",
+      "hour": "{n}h",
+      "minute": "{n}m",
+      "second": "{n}s"
     },
     "columns": {
       "query": "Query",
@@ -215,9 +240,15 @@
       "state": "State",
       "database": "Database",
       "user": "User",
-      "actions": "Actions"
+      "actions": "Actions",
+      "transaction": "Transaction",
+      "client": "Host / IP",
+      "application": "Application"
     },
-    "actions": { "cancel": "Cancel", "terminate": "Terminate" },
+    "actions": {
+      "cancel": "Cancel",
+      "terminate": "Terminate"
+    },
     "confirm": {
       "cancelTitle": "Cancel the query on PID {pid}?",
       "cancelDesc": "SIGINT will be sent. Query: \"{query}\"",
@@ -230,7 +261,20 @@
       "terminateSent": "Terminate signal sent",
       "notSent": "No signal was sent to PID {pid}; the process may have already exited.",
       "dryRun": "Dry run: {risk}"
-    }
+    },
+    "groups": {
+      "all": "All",
+      "active": "active",
+      "idleInTx": "idle in transaction",
+      "idle": "idle",
+      "none": "None (background)"
+    },
+    "searchPlaceholder": "Search PID, IP, host, application, user or SQL...",
+    "blockedBy": "waiting on: {pids}",
+    "localSocket": "Local socket",
+    "noHostname": "The host name needs log_hostname=on on the server",
+    "noHostnameShort": "(no host name)",
+    "truncated": "Showing only the first {limit} sessions."
   },
   "replication": {
     "title": "Replication",

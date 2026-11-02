@@ -36,6 +36,12 @@ def collect_active_queries(client: DbClient, limit: int = 20) -> QueryReport:
     return QueryReport(kind="active", limit=limit, count=len(queries), queries=queries)
 
 
+def collect_sessions(client: DbClient, limit: int = 500) -> dict:
+    """All backends in any state, with their client address. Errors reach the caller."""
+    rows = client.fetch_all(load_sql("queries", "sessions"), (limit + 1,))
+    return {"sessions": rows[:limit], "limit": limit, "truncated": len(rows) > limit}
+
+
 def collect_long_running_queries(
     client: DbClient, min_seconds: int = 60, limit: int = 20
 ) -> QueryReport:

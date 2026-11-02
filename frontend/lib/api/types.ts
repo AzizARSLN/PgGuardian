@@ -605,6 +605,31 @@ export interface ReloadConfigResult {
   reloaded: boolean;
 }
 
+export interface SessionInfo {
+  pid: number;
+  username: string | null;
+  database: string | null;
+  state: string | null;
+  backend_type: string | null;
+  application_name: string | null;
+  client_addr: string | null;
+  client_hostname: string | null;
+  client_port: number | null;
+  wait_event_type: string | null;
+  wait_event: string | null;
+  state_seconds: number | null;
+  xact_seconds: number | null;
+  backend_seconds: number | null;
+  blocked_by: number[];
+  query: string | null;
+}
+
+export interface SessionReport {
+  sessions: SessionInfo[];
+  limit: number;
+  truncated: boolean;
+}
+
 export const endpoints = {
   getHealth: (): Promise<HealthReport> =>
     api.get<HealthReport>("/health"),
@@ -614,6 +639,9 @@ export const endpoints = {
 
   getConnections: (limit = 20): Promise<ConnectionReport> =>
     api.get<ConnectionReport>("/connections", { params: { limit } }),
+
+  getSessions: (limit = 500): Promise<SessionReport> =>
+    api.get<SessionReport>(`/queries/sessions?limit=${limit}`),
 
   getActiveQueries: (limit = 20): Promise<QueryReport> =>
     api.get<QueryReport>("/queries/active", { params: { limit } }),

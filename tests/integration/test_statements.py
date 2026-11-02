@@ -13,6 +13,7 @@ import pytest
 
 from pgguardian.config.settings import PgGuardianSettings
 from pgguardian.database.connection import DbClient
+from pgguardian.diagnostics.queries import collect_sessions
 from pgguardian.statements import advisor, collector
 from pgguardian.statements.explain import explain
 from pgguardian.statements.plan import flatten
@@ -121,3 +122,18 @@ def test_full_advice_for_unindexed_filter(client: DbClient, table: str) -> None:
     suggested, applied = advisor.suggested_sql(item["query"], found)
     assert applied == ["SELECT_STAR"]
     assert explain(client, str(suggested), version=int(info["server_version_num"])).status == "ok"
+
+
+def test_sessions_cover_every_state_with_client_details(client: DbClient) -> None:
+    with psycopg.connect(DSN, application_name="billing-api") as busy:
+        busy.execute("SELECT 1")  # leaves an open transaction
+        report = collect_sessions(client)
+    by_app = {s["application_name"]: s for s in report["sessions"]}
+    held = by_app["billing-api"]
+    assert held["state"] == "idle in transaction"
+    assert held["client_addr"] == "127.0.0.1"
+    assert held["client_port"]
+    assert held["xact_seconds"] is not None
+    assert any(s["state"] is None for s in report["sessions"]), "background processes included"
+    assert report["truncated"] is False
+    assert collect_sessions(client, limit=1)["truncated"] is True
