@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import {
 import { tGlobal } from "@/lib/i18n";
+import {
   AlertTriangle,
   ShieldAlert,
   Skull,
