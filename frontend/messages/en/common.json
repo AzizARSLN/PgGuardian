@@ -56,7 +56,8 @@
       "roles": "Roles",
       "users": "Users",
       "report": "Report",
-      "settings": "Settings"
+      "settings": "Settings",
+      "pgbadger": "pgBadger Analysis"
     }
   },
   "header": {

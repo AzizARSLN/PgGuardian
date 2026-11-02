@@ -1,0 +1,107 @@
+{
+  "pgbadger": {
+    "title": "pgBadger Analizi",
+    "subtitle": "Sahadan gelen pgBadger raporunu yükleyin, sorunun nerede olduğunu ve her ekibin ne yapacağını görün.",
+    "privacy": "Yüklenen HTML saklanmaz. Örnek sorgular okunmaz, SQL ve hata mesajlarındaki değerler maskelenir; yalnızca bu sunucuda tutulur ve dışarı gönderilmez.",
+    "upload": "Rapor yükle",
+    "uploading": "Yükleniyor...",
+    "uploaded": "Rapor yüklendi",
+    "empty": "Bu profil için henüz rapor yok.",
+    "columns": {
+      "file": "Dosya",
+      "period": "Dönem",
+      "uploaded": "Yükleyen",
+      "status": "Durum",
+      "actions": "İşlemler"
+    },
+    "status": {
+      "waiting": "İnceleme bekliyor",
+      "done": "İncelendi"
+    },
+    "open": "Aç",
+    "delete": "Sil",
+    "deleted": "Rapor silindi",
+    "confirmDelete": "\"{name}\" raporu ve iş takibi silinsin mi?",
+    "start": "İncelemeyi başlat",
+    "again": "Yeniden incele",
+    "analyzing": "İnceleniyor...",
+    "analyzed": "İnceleme tamamlandı",
+    "notAnalyzed": "Rapor yüklendi. İncelemeyi başlatınca sorunlar ve ekip iş listeleri çıkarılacak.",
+    "back": "Raporlar",
+    "tabs": {
+      "summary": "Özet",
+      "findings": "Sorunlar",
+      "backend": "Backend",
+      "ui": "UI",
+      "db": "DBA",
+      "activity": "Geçmiş"
+    },
+    "summary": {
+      "queries": "Sorgu",
+      "duration": "Toplam sorgu süresi",
+      "locks": "Kilit beklemesi",
+      "events": "Olay",
+      "topShare": "En pahalı 10 sorgunun payı",
+      "peak": "Tepe",
+      "whereTitle": "Süre nereye gidiyor?",
+      "topTitle": "Öncelikli sorunlar",
+      "scope": "Yalnızca log eşiğini aşan sorgular rapora girer; hızlı ama sık çalışan sorgular için SQL Analizi ekranını kullanın."
+    },
+    "kinds": {
+      "application": "Uygulama",
+      "backup": "Yedekleme",
+      "test": "Test uygulaması",
+      "job": "Zamanlanmış iş",
+      "tool": "Elle sorgu araçları",
+      "unknown": "Adı bilinmeyen"
+    },
+    "severity": {
+      "critical": "Kritik",
+      "high": "Yüksek",
+      "medium": "Orta",
+      "low": "Düşük"
+    },
+    "filterAll": "Tümü",
+    "progress": "{done} / {total} tamamlandı",
+    "noTasks": "Bu ekip için iş yok.",
+    "task": {
+      "todo": "Yapılacak",
+      "doing": "Devam ediyor",
+      "done": "Tamamlandı"
+    },
+    "roleDesc": {
+      "backend": "Servis, sorgu ve transaction tarafında yapılacaklar.",
+      "ui": "Ekran ve kullanıcı akışı tarafında yapılacaklar.",
+      "db": "Sunucu, index ve bakım tarafında yapılacaklar."
+    },
+    "showSql": "SQL",
+    "messages": "Hata mesajları",
+    "tasks": "Yapılacaklar",
+    "activity": {
+      "at": "Zaman",
+      "actor": "Kişi",
+      "action": "İşlem",
+      "detail": "Detay",
+      "uploaded": "Yüklendi",
+      "analyzed": "İncelendi",
+      "task": "İş güncellendi",
+      "exported": "Dışa aktarıldı",
+      "deleted": "Silindi"
+    },
+    "export": {
+      "button": "Paylaş",
+      "html": "HTML indir",
+      "md": "Markdown indir",
+      "sections": {
+        "all": "Tam rapor",
+        "summary": "Özet",
+        "findings": "Sorunlar",
+        "backend": "Backend iş listesi",
+        "ui": "UI iş listesi",
+        "db": "DBA iş listesi"
+      }
+    },
+    "exported": "Rapor indirildi",
+    "invalid": "Bu dosya bir pgBadger HTML raporu değil."
+  }
+}

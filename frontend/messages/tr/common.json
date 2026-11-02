@@ -56,7 +56,8 @@
       "roles": "Roller",
       "users": "Kullanıcılar",
       "report": "Rapor",
-      "settings": "Ayarlar"
+      "settings": "Ayarlar",
+      "pgbadger": "pgBadger Analizi"
     }
   },
   "header": {

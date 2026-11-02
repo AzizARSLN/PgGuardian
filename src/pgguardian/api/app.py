@@ -17,6 +17,7 @@ from pgguardian.api.routers import databases as databases_router
 from pgguardian.api.routers import diagnostics as diagnostics_router
 from pgguardian.api.routers import events as events_router
 from pgguardian.api.routers import maintenance_ops as maintenance_ops_router
+from pgguardian.api.routers import pgbadger as pgbadger_router
 from pgguardian.api.routers import profiles as profiles_router
 from pgguardian.api.routers import querymgmt as querymgmt_router
 from pgguardian.api.routers import replication as replication_router
@@ -122,6 +123,8 @@ def create_app() -> FastAPI:
     app.include_router(snapshots_router.router, dependencies=writer_allowed)
     app.include_router(backups_router.router, dependencies=writer_allowed)
     app.include_router(sql_router.router, dependencies=writer_allowed)
+    app.include_router(pgbadger_router.read_router, dependencies=viewer_allowed)
+    app.include_router(pgbadger_router.router, dependencies=writer_allowed)
     app.include_router(profiles_router.read_router, dependencies=viewer_allowed)
     app.include_router(profiles_router.router, dependencies=writer_allowed)
     app.include_router(roles_router.router, dependencies=writer_allowed)

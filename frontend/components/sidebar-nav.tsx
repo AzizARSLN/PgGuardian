@@ -18,6 +18,7 @@ import {
   FileBarChart2,
   Settings,
   LogOut,
+  FileSearch,
   Gauge,
   Database,
   Users,
@@ -45,6 +46,7 @@ const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
     items: [
       { href: "/dashboard", key: "dashboard", icon: LayoutDashboard },
       { href: "/statements", key: "statements", icon: Gauge },
+      { href: "/pgbadger", key: "pgbadger", icon: FileSearch },
       { href: "/query-management", key: "queryManagement", icon: ListFilter },
       { href: "/diagnostics", key: "diagnostics", icon: Activity },
       { href: "/replication", key: "replication", icon: GitBranch },

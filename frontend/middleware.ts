@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const PROTECTED_PATHS = [
   "/dashboard",
   "/statements",
+  "/pgbadger",
   "/databases",
   "/connections",
   "/diagnostics",
@@ -29,6 +30,7 @@ export const config = {
     "/users/:path*",
     "/dashboard/:path*",
     "/statements/:path*",
+    "/pgbadger/:path*",
     "/databases/:path*",
     "/connections/:path*",
     "/diagnostics/:path*",
