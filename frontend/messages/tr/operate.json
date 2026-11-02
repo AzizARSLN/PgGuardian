@@ -10,6 +10,7 @@
     "scopeHint": "Şema ve tabloyu birlikte girin; ikisini de boş bırakırsanız {command} tüm veritabanında çalışır.",
     "reindexHint": "Şema zorunludur. Tablo veya indeksten yalnızca birini girin.",
     "never": "Hiç",
+    "result": "Sonuç",
     "fields": {
       "schema": "Şema",
       "table": "Tablo",
@@ -72,6 +73,29 @@
       "lastAnalyze": "Son ANALYZE",
       "emptyTitle": "Tablo bulunamadı",
       "emptyHint": "Bu veritabanında henüz tablo yok."
+    },
+    "batch": {
+      "selected": "Seçili: {count}",
+      "selectAll": "Tümünü seç",
+      "selectNone": "Temizle",
+      "selectRisky": "Riskli olanları seç",
+      "targetsTitle": "Hedef tablolar ({count})",
+      "targetsHint": "VACUUM seçili tablolara uygulanır. FULL / ANALYZE / FREEZE seçenekleri VACUUM sekmesinden alınır.",
+      "andMore": "+{count} tablo daha",
+      "apply": "Seçilenlere VACUUM uygula",
+      "running": "Uygulanıyor · {done}/{total}",
+      "noSelection": "Önce listeden en az bir tablo seçin.",
+      "confirmTitle": "{count} tabloda VACUUM çalıştırılsın mı?",
+      "confirmDesc": "Seçilen tablolara tanımlı sırayla VACUUM uygulanacak.",
+      "confirmDescFull": "Seçilen tablolara VACUUM FULL uygulanacak. Her tablo ACCESS EXCLUSIVE LOCK alır; düşük trafikte çalıştırın.",
+      "resultsTitle": "Son VACUUM işlemi",
+      "resultsHint": "İşlem uygulanan tablolar ve komut sonuçları",
+      "statusPending": "Bekliyor",
+      "statusRunning": "Çalışıyor",
+      "statusOk": "Tamamlandı",
+      "statusFailed": "Hatalı",
+      "summary": "{ok} tamamlandı · {failed} hatalı",
+      "clearResults": "Kapat"
     }
   },
   "backups": {
