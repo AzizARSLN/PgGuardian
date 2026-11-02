@@ -176,7 +176,32 @@
     "resetParams": "Reset to defaults",
     "renderedSql": "Statement to run",
     "selectHint": "Click a row to select it",
-    "dropIndexConfirm": "This action cannot be undone; the index is removed permanently. Indexes that back a constraint (PK/UNIQUE) cannot be dropped this way."
+    "dropIndexConfirm": "This action cannot be undone; the index is removed permanently. Indexes that back a constraint (PK/UNIQUE) cannot be dropped this way.",
+    "batch": {
+      "selected": "Selected: {count}",
+      "selectPage": "Select this page",
+      "selectNone": "Clear",
+      "drop": "Drop selected",
+      "dropping": "Dropping · {done}/{total}",
+      "noSelection": "Select at least one index to drop first.",
+      "hint": "Only the indexes you tick are removed; other copies sharing the same definition stay in place.",
+      "confirmTitle": "Drop {count} indexes?",
+      "confirmDesc": "The selected indexes are dropped one at a time, CONCURRENTLY. Of the copies sharing a definition, only the ones you ticked are removed.",
+      "confirmNameDesc": "Type the number of indexes to confirm.",
+      "andMore": "+{count} more indexes",
+      "doneTitle": "Batch DROP INDEX finished",
+      "resultsTitle": "Last DROP INDEX run",
+      "resultsHint": "Per-index command results",
+      "status": "Status",
+      "index": "Index",
+      "result": "Result",
+      "statusPending": "Pending",
+      "statusRunning": "Running",
+      "statusOk": "Done",
+      "statusFailed": "Failed",
+      "summary": "{ok} done · {failed} failed",
+      "clearResults": "Close"
+    }
   },
   "table": {
     "search": "Search...",

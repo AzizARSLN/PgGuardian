@@ -18,6 +18,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChartColumn,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -27,7 +28,9 @@ import {
   Download,
   HardDrive,
   Info,
+  ListChecks,
   ListOrdered,
+  Loader2,
   Lock,
   Play,
   Puzzle,
@@ -39,10 +42,14 @@ import {
   Settings2,
   SlidersHorizontal,
   Table2,
+  Trash2,
   Users,
+  X,
+  XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/types";
 import type {
   AnalyzeRequest,
@@ -62,6 +69,7 @@ import type {
 import { qk } from "@/lib/api/queryKeys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
@@ -253,6 +261,29 @@ function describeTarget(body: Record<string, unknown>): string {
   return "";
 }
 
+type BatchStatus = "pending" | "running" | "ok" | "failed";
+
+interface BatchRow {
+  key: string;
+  label: string;
+  status: BatchStatus;
+  detail: string;
+}
+
+/** One DROP resolved from a result row, ready to send. */
+interface DropPlanItem {
+  key: string;
+  label: string;
+  row: ResultRow;
+  body: DropIndexRequest;
+}
+
+/** How many statements the batch confirmation spells out before summarising. */
+const PREVIEW_LIMIT = 10;
+
+/** DROP INDEX CONCURRENTLY on a large index outlives the default client timeout. */
+const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
+
 function toCsv(columns: string[], rows: ToolkitCell[][]): string {
   const escape = (value: ToolkitCell) => {
     if (value === null || value === undefined) return "";
@@ -281,11 +312,18 @@ function ResultTable({
   loading,
   selectedIndex,
   onSelect,
+  batch,
 }: {
   result: ToolkitRunResult | null;
   loading: boolean;
   selectedIndex: number | null;
   onSelect: (index: number | null) => void;
+  /** Ticking rows feeds a batch action; row clicks still pick the advice target. */
+  batch?: {
+    keys: Set<number>;
+    onToggle: (index: number) => void;
+    onTogglePage: (indexes: number[]) => void;
+  };
 }) {
   const t = useT();
   const { formatNumber } = useI18n();
@@ -327,6 +365,19 @@ function ResultTable({
   const pageCount = table.getPageCount();
   const filteredCount = table.getFilteredRowModel().rows.length;
 
+  // The header box covers the page in view only, so "select all" can never
+  // reach rows the operator cannot see.
+  const pageRowIndexes = table.getRowModel().rows.map((row) => row.original.index);
+  const pageSelectedCount = batch
+    ? pageRowIndexes.filter((index) => batch.keys.has(index)).length
+    : 0;
+  const pageChecked: boolean | "indeterminate" =
+    pageRowIndexes.length > 0 && pageSelectedCount === pageRowIndexes.length
+      ? true
+      : pageSelectedCount > 0
+        ? "indeterminate"
+        : false;
+
   if (loading) {
     return (
       <div className="space-y-1.5 rounded-md border border-border p-2">
@@ -367,6 +418,17 @@ function ResultTable({
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="hover:bg-transparent">
+                {batch && (
+                  <TableHead className="h-8 w-8 px-2 py-1.5">
+                    <Checkbox
+                      aria-label={t("toolkit.batch.selectPage")}
+                      checked={pageChecked}
+                      onCheckedChange={(value) =>
+                        batch.onTogglePage(value === true ? pageRowIndexes : [])
+                      }
+                    />
+                  </TableHead>
+                )}
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
                   return (
@@ -399,16 +461,30 @@ function ResultTable({
           <TableBody>
             {table.getRowModel().rows.map((row) => {
               const isSelected = selectedIndex === row.original.index;
+              const isTicked = batch?.keys.has(row.original.index) ?? false;
               return (
                 <TableRow
                   key={row.id}
                   onClick={() => onSelect(isSelected ? null : row.original.index)}
                   title={t("toolkit.selectHint")}
+                  data-state={isTicked ? "selected" : undefined}
                   className={cn(
                     "cursor-pointer",
                     isSelected && "bg-guardian-lime/10 hover:bg-guardian-lime/15"
                   )}
                 >
+                  {batch && (
+                    <TableCell
+                      className="w-8 px-2 py-1.5"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <Checkbox
+                        aria-label={row.original.values[0] ? String(row.original.values[0]) : undefined}
+                        checked={isTicked}
+                        onCheckedChange={() => batch.onToggle(row.original.index)}
+                      />
+                    </TableCell>
+                  )}
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-2 py-1.5 text-xs">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -541,6 +617,40 @@ function AdviceCard({
   );
 }
 
+function BatchStatusBadge({ status }: { status: BatchStatus }) {
+  const t = useT();
+  if (status === "ok") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-success">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        {t("toolkit.batch.statusOk")}
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-destructive">
+        <XCircle className="h-3.5 w-3.5" />
+        {t("toolkit.batch.statusFailed")}
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-warning">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {t("toolkit.batch.statusRunning")}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+      <Loader2 className="h-3.5 w-3.5" />
+      {t("toolkit.batch.statusPending")}
+    </span>
+  );
+}
+
 export default function ToolkitPage() {
   const t = useT();
   const { formatNumber } = useI18n();
@@ -555,6 +665,8 @@ export default function ToolkitPage() {
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [result, setResult] = useState<ToolkitRunResult | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<number>>(new Set());
+  const [batchRows, setBatchRows] = useState<BatchRow[] | null>(null);
 
   const catalogQ = useQuery({
     queryKey: qk.toolkit.catalog(),
@@ -596,12 +708,119 @@ export default function ToolkitPage() {
     return values ? { index: selectedIndex, values } : null;
   }, [currentResult, selectedIndex]);
 
+  // A batch DROP is offered when the query recommends removing an index, so a
+  // duplicate group can be pruned without opening each row on its own.
+  const dropAdvice = useMemo(
+    () => activeQuery?.advice.find((advice) => advice.action === "drop_index") ?? null,
+    [activeQuery]
+  );
+
+  const dropPlan = useMemo<DropPlanItem[]>(() => {
+    if (!dropAdvice || !currentResult) return [];
+    const items: DropPlanItem[] = [];
+    for (const index of Array.from(selectedKeys).sort((a, b) => a - b)) {
+      const values = currentResult.rows[index];
+      if (!values) continue;
+      const row: ResultRow = { index, values };
+      const { body } = resolveAdviceBody(dropAdvice, row, currentResult.columns);
+      if (!body) continue;
+      items.push({
+        key: String(index),
+        label: `${body.schema_name}.${body.index_name}`,
+        row,
+        body: {
+          ...(body as unknown as DropIndexRequest),
+          confirm_name: String(body.index_name),
+        },
+      });
+    }
+    return items;
+  }, [dropAdvice, currentResult, selectedKeys]);
+
+  const batchEnabled = Boolean(dropAdvice && currentResult);
+  const batchOkCount = batchRows?.filter((row) => row.status === "ok").length ?? 0;
+  const batchFailedCount = batchRows?.filter((row) => row.status === "failed").length ?? 0;
+  const batchDoneCount = batchOkCount + batchFailedCount;
+
+  const toggleKey = (index: number) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+
+  const togglePage = (indexes: number[]) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      const allTicked = indexes.length > 0 && indexes.every((index) => next.has(index));
+      for (const index of indexes) {
+        if (allTicked) next.delete(index);
+        else next.add(index);
+      }
+      return next;
+    });
+
+  // One DROP per ticked row: only the copies the operator marked are removed, so
+  // the other indexes sharing a definition stay in place.
+  const batchDrop = useMutation({
+    mutationFn: async (items: DropPlanItem[]) => {
+      const patch = (key: string, update: Partial<BatchRow>) =>
+        setBatchRows((prev) =>
+          prev ? prev.map((row) => (row.key === key ? { ...row, ...update } : row)) : prev
+        );
+
+      setBatchRows(
+        items.map((item) => ({
+          key: item.key,
+          label: item.label,
+          status: "pending" as BatchStatus,
+          detail: "",
+        }))
+      );
+
+      let ok = 0;
+      let failed = 0;
+      for (const item of items) {
+        patch(item.key, { status: "running" });
+        try {
+          const result = await api.post<DryRunResult | MaintenanceActionResult>(
+            "/maintenance/drop-index",
+            item.body,
+            { timeout: LONG_ACTION_TIMEOUT_MS, skipToast: true }
+          );
+          ok += 1;
+          patch(item.key, {
+            status: "ok",
+            detail: "command_status" in result ? result.command_status : "",
+          });
+        } catch (error) {
+          failed += 1;
+          patch(item.key, {
+            status: "failed",
+            detail: error instanceof Error ? error.message : "",
+          });
+        }
+      }
+      return { ok, failed };
+    },
+    onSuccess: ({ ok, failed }) => {
+      toast.success(t("toolkit.batch.doneTitle"), {
+        description: t("toolkit.batch.summary", { ok, failed }),
+      });
+      setSelectedKeys(new Set());
+      queryClient.invalidateQueries({ queryKey: qk.toolkit.all() });
+      if (activeQuery) runQuery({ query: activeQuery, params: paramValues });
+    },
+  });
+
   const { mutate: runQuery, isPending: running } = useMutation({
     mutationFn: ({ query, params }: { query: ToolkitQuery; params: Record<string, string> }) =>
       endpoints.runToolkitQuery(query.id, query.max_rows, params),
     onSuccess: (data) => {
       setResult(data);
       setSelectedIndex(null);
+      setSelectedKeys(new Set());
     },
   });
 
@@ -654,6 +873,8 @@ export default function ToolkitPage() {
     setParamValues(next ? defaultParamValues(next) : {});
     setResult(null);
     setSelectedIndex(null);
+    setSelectedKeys(new Set());
+    setBatchRows(null);
     setShowSql(false);
     setShowDetails(true);
   };
@@ -689,6 +910,36 @@ export default function ToolkitPage() {
     if (await confirm(options)) {
       applyAdvice({ advice, body });
     }
+  };
+
+  const handleBatchDrop = async () => {
+    const items = dropPlan;
+    if (!dropAdvice || items.length === 0) {
+      toast.error(t("toolkit.batch.noSelection"));
+      return;
+    }
+
+    const previews = items
+      .slice(0, PREVIEW_LIMIT)
+      .map((item) => fillAdviceSql(dropAdvice, item.row, resultColumns));
+    const extra =
+      items.length > PREVIEW_LIMIT
+        ? `\n${t("toolkit.batch.andMore", { count: items.length - PREVIEW_LIMIT })}`
+        : "";
+
+    const ok = await confirm({
+      title: t("toolkit.batch.confirmTitle", { count: items.length }),
+      description: `${t("toolkit.batch.confirmDesc")}${extra}`,
+      sql_preview: previews,
+      risk_level: "DANGEROUS",
+      confirm_label: t("toolkit.batch.drop"),
+      cancel_label: t("common.cancel"),
+      confirm_name_required: true,
+      confirm_name_value: String(items.length),
+      confirm_name_placeholder: String(items.length),
+      confirm_name_description: t("toolkit.batch.confirmNameDesc"),
+    });
+    if (ok) batchDrop.mutate(items);
   };
 
   const copySql = async () => {
@@ -1061,14 +1312,131 @@ export default function ToolkitPage() {
 
               {(currentResult || running) && (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold text-foreground">{t("toolkit.results")}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-foreground">{t("toolkit.results")}</p>
+                    {batchEnabled && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {t("toolkit.batch.selected", { count: selectedKeys.size })}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setSelectedKeys(new Set())}
+                          disabled={selectedKeys.size === 0 || batchDrop.isPending}
+                        >
+                          {t("toolkit.batch.selectNone")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          className="h-7 px-2 text-xs"
+                          onClick={handleBatchDrop}
+                          disabled={selectedKeys.size === 0 || batchDrop.isPending}
+                        >
+                          {batchDrop.isPending ? (
+                            <>
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              {t("toolkit.batch.dropping", {
+                                done: batchDoneCount,
+                                total: batchRows?.length ?? 0,
+                              })}
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="mr-1 h-3.5 w-3.5" />
+                              {t("toolkit.batch.drop")}
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {batchEnabled && (
+                    <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                      <Info className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>{t("toolkit.batch.hint")}</span>
+                    </p>
+                  )}
+
                   <ResultTable
                     key={currentResult?.id ?? activeQuery.id}
                     result={currentResult}
                     loading={running}
                     selectedIndex={selectedIndex}
                     onSelect={setSelectedIndex}
+                    batch={
+                      batchEnabled
+                        ? { keys: selectedKeys, onToggle: toggleKey, onTogglePage: togglePage }
+                        : undefined
+                    }
                   />
+                </div>
+              )}
+
+              {batchRows && batchRows.length > 0 && (
+                <div className="overflow-hidden rounded-md border border-border bg-card">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+                    <div>
+                      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                        <ListChecks className="h-3.5 w-3.5 text-success" />
+                        {t("toolkit.batch.resultsTitle")}
+                      </h2>
+                      <p className="text-[11px] text-muted-foreground">
+                        {t("toolkit.batch.resultsHint")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" size="sm" className="font-mono">
+                        {t("toolkit.batch.summary", { ok: batchOkCount, failed: batchFailedCount })}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setBatchRows(null)}
+                      >
+                        <X className="mr-1 h-3 w-3" />
+                        {t("toolkit.batch.clearResults")}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="max-h-56 overflow-auto">
+                    <Table className="text-xs">
+                      <TableHeader className="sticky top-0 z-10 bg-card">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="h-8 px-2 py-1.5 text-xs font-semibold">
+                            {t("toolkit.batch.status")}
+                          </TableHead>
+                          <TableHead className="h-8 px-2 py-1.5 text-xs font-semibold">
+                            {t("toolkit.batch.index")}
+                          </TableHead>
+                          <TableHead className="h-8 px-2 py-1.5 text-xs font-semibold">
+                            {t("toolkit.batch.result")}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {batchRows.map((row) => (
+                          <TableRow key={row.key}>
+                            <TableCell className="px-2 py-1.5">
+                              <BatchStatusBadge status={row.status} />
+                            </TableCell>
+                            <TableCell className="px-2 py-1.5 font-mono text-[11px]">
+                              {row.label}
+                            </TableCell>
+                            <TableCell className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                              {row.detail || "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               )}
 

@@ -176,7 +176,32 @@
     "resetParams": "Varsayılana dön",
     "renderedSql": "Uygulanacak SQL",
     "selectHint": "Satır seçmek için tıklayın",
-    "dropIndexConfirm": "Bu işlem geri alınamaz; index kalıcı olarak kaldırılır. Kısıtı (PK/UNIQUE) destekleyen indexler bu yöntemle silinemez."
+    "dropIndexConfirm": "Bu işlem geri alınamaz; index kalıcı olarak kaldırılır. Kısıtı (PK/UNIQUE) destekleyen indexler bu yöntemle silinemez.",
+    "batch": {
+      "selected": "Seçili: {count}",
+      "selectPage": "Bu sayfadakileri seç",
+      "selectNone": "Temizle",
+      "drop": "Seçilenleri sil",
+      "dropping": "Siliniyor · {done}/{total}",
+      "noSelection": "Önce silinecek en az bir index seçin.",
+      "hint": "Yalnızca işaretlediğiniz indexler kaldırılır; aynı tanımı paylaşan diğer kopyalar yerinde kalır.",
+      "confirmTitle": "{count} index silinsin mi?",
+      "confirmDesc": "Seçilen indexler tek tek, CONCURRENTLY olarak kaldırılır. Aynı tanımı paylaşan kopyaların yalnızca işaretledikleriniz silinir.",
+      "confirmNameDesc": "Onaylamak için silinecek index sayısını yazın.",
+      "andMore": "+{count} index daha",
+      "doneTitle": "Toplu DROP INDEX tamamlandı",
+      "resultsTitle": "Son DROP INDEX işlemi",
+      "resultsHint": "Index bazında komut sonuçları",
+      "status": "Durum",
+      "index": "Index",
+      "result": "Sonuç",
+      "statusPending": "Bekliyor",
+      "statusRunning": "Çalışıyor",
+      "statusOk": "Tamamlandı",
+      "statusFailed": "Hatalı",
+      "summary": "{ok} tamamlandı · {failed} hatalı",
+      "clearResults": "Kapat"
+    }
   },
   "table": {
     "search": "Ara...",
