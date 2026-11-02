@@ -2,15 +2,31 @@
 
 import { usePathname } from "next/navigation";
 import Header from "@/components/header";
+import ProfileGate from "@/components/profile-gate";
 import SidebarNav from "@/components/sidebar-nav";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useProfileStore } from "@/store/useProfileStore";
 
 export const PUBLIC_PATHS = ["/login"];
 
+// Profile management stays reachable without a chosen database: it is where the
+// first profile gets created when the list is still empty.
+const PROFILE_GATE_BYPASS = ["/connections"];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const selectedProfileName = useProfileStore((s) => s.selectedProfileName);
 
   if (PUBLIC_PATHS.includes(pathname)) {
     return <main className="min-h-screen">{children}</main>;
+  }
+
+  const bypassesGate = PROFILE_GATE_BYPASS.some((path) => pathname?.startsWith(path));
+
+  // Nothing runs before a connection profile exists: no queries, no pages.
+  if (isAuthenticated && !selectedProfileName && !bypassesGate) {
+    return <ProfileGate />;
   }
 
   return (

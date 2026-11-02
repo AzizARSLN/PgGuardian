@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { api, setApiTokenInMemory, clearApiTokenInMemory } from "@/lib/api/client";
 import { tGlobal } from "@/lib/i18n";
+import { useProfileStore } from "@/store/useProfileStore";
 
 export type UserRole = "Admin" | "DBA" | "Viewer";
 
@@ -76,6 +77,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = data.user as User;
       const access_token = data.access_token as string;
 
+      useProfileStore.getState().setSelectedProfileName(null);
       set({
         isAuthenticated: true,
         access_token,
@@ -138,6 +140,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         apiToken: null,
       });
       clearApiTokenInMemory();
+      // Signing out forgets the server too, so the next session starts at the
+      // profile gate instead of silently reusing the old database.
+      useProfileStore.getState().setSelectedProfileName(null);
     }
   },
 

@@ -87,3 +87,17 @@ def test_password_env_cannot_reference_other_secrets(client: TestClient, name: s
         json={"name": "evil", "host": "evil.example", "password_env": name},
     )
     assert response.status_code == 422
+
+
+def test_no_profile_is_chosen_implicitly(client: TestClient) -> None:
+    headers = _auth(_token("Admin"))
+    created = client.post(
+        "/api/v1/profiles",
+        headers=headers,
+        json={"name": "prod", "host": "127.0.0.1", "port": 55999, "is_default": True},
+    )
+    assert created.status_code == 200
+    assert client.get("/api/v1/health", headers=headers).status_code == 409
+    selected = client.get("/api/v1/health", headers={**headers, "X-Profile-Name": "prod"})
+    assert selected.status_code == 503
+    assert client.get("/api/v1/profiles", headers=headers).status_code == 200

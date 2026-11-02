@@ -110,5 +110,35 @@
       "failed": "Giriş başarısız",
       "changeFailed": "Şifre değiştirilemedi"
     }
+  },
+  "profileGate": {
+    "title": "Bağlantı profili seçin",
+    "subtitle": "Devam etmek için hangi veritabanına bağlanacağınızı seçin. Siz seçim yapmadan hiçbir ekran veri yüklemez.",
+    "loading": "Profiller yükleniyor...",
+    "error": "Profiller yüklenemedi.",
+    "retry": "Tekrar dene",
+    "empty": "Henüz bağlantı profili yok",
+    "emptyHint": "Devam etmek için önce bir bağlantı profili oluşturun.",
+    "createProfile": "Profil oluştur",
+    "manageProfiles": "Profilleri yönet",
+    "default": "Varsayılan",
+    "connect": "Bağlan",
+    "logout": "Çıkış yap"
+  },
+  "table": {
+    "search": "Ara...",
+    "emptyTitle": "Veri yok",
+    "emptyDesc": "Görüntülenecek kayıt bulunamadı.",
+    "summary": "Sayfa {page} / {pages} · Toplam {total} kayıt",
+    "perPage": "Sayfa başına:",
+    "previous": "Önceki",
+    "next": "Sonraki"
+  },
+  "risk": {
+    "ok": "OK",
+    "info": "Bilgi",
+    "warning": "Uyarı",
+    "maintenance": "Bakım",
+    "dangerous": "Tehlikeli"
   }
 }

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Activity, ArrowRight, Eye, EyeOff, Gauge, Loader2, ShieldCheck, Wrench } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import PggBackdrop from "@/components/pgg-backdrop";
 import { useT, type TFunction } from "@/lib/i18n";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -58,12 +59,6 @@ type ChangeValues = z.infer<ReturnType<typeof changePasswordSchema>>;
 function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
 }
-
-const FEATURES = [
-  { icon: Gauge, key: "statements" },
-  { icon: Activity, key: "diagnostics" },
-  { icon: Wrench, key: "operations" },
-] as const;
 
 export default function LoginPage() {
   const t = useT();
@@ -132,53 +127,23 @@ export default function LoginPage() {
   const busy = form.formState.isSubmitting || lockedSeconds > 0;
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <aside className="relative hidden flex-col justify-between overflow-hidden bg-guardian-indigo p-10 text-guardian-lavender-soft lg:flex">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-guardian-lime text-guardian-indigo">
-            <ShieldCheck className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-bold text-guardian-white">PgGuardian</span>
-        </div>
+    <div className="pgg-stage flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+      <PggBackdrop />
 
-        <div className="max-w-md space-y-6">
-          <h1 className="text-3xl font-bold leading-tight text-guardian-white">
-            {t("login.headline")}
-          </h1>
-          <ul className="space-y-4">
-            {FEATURES.map(({ icon: Icon, key }) => (
-              <li key={key} className="flex gap-3">
-                <Icon className="mt-0.5 h-5 w-5 shrink-0 text-guardian-lime" />
-                <div>
-                  <p className="text-sm font-semibold text-guardian-white">
-                    {t(`login.features.${key}.title`)}
-                  </p>
-                  <p className="text-[13px] leading-relaxed text-guardian-lavender-soft/80">
-                    {t(`login.features.${key}.desc`)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <div className="dark absolute right-4 top-4 z-20">
+        <LanguageSwitcher />
+      </div>
 
-        <p className="text-xs text-guardian-lavender-soft/60">{t("nav.tagline")}</p>
-      </aside>
-
-      <section className="relative flex items-center justify-center p-6">
-        <LanguageSwitcher className="absolute right-4 top-4" />
-
-        <div className="w-full max-w-sm space-y-6">
-          <div className="flex items-center gap-2 lg:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-accent">
-              <ShieldCheck className="h-4 w-4" />
+      <div className="dark relative z-10 w-full max-w-[420px]">
+        <div className="pgg-card p-7 sm:p-9">
+          <div className="mb-7 flex flex-col items-center gap-3 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-accent shadow-lg">
+              <ShieldCheck className="h-6 w-6" />
             </span>
-            <span className="font-bold">PgGuardian</span>
-          </div>
-
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold">{t("login.title")}</h2>
-            <p className="text-[13px] text-muted-foreground">{t("login.subtitle")}</p>
+            <div className="space-y-1">
+              <h1 className="text-xl font-bold tracking-tight text-guardian-white">PgGuardian</h1>
+              <p className="text-[13px] text-muted-foreground">{t("login.subtitle")}</p>
+            </div>
           </div>
 
           <Form {...form}>
@@ -190,7 +155,13 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>{t("login.email")}</FormLabel>
                     <FormControl>
-                      <Input {...field} autoComplete="username" autoFocus disabled={busy} />
+                      <Input
+                        {...field}
+                        autoComplete="username"
+                        autoFocus
+                        disabled={busy}
+                        className="border-white/15 bg-white/5"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -209,7 +180,7 @@ export default function LoginPage() {
                           type={showPassword ? "text" : "password"}
                           autoComplete="current-password"
                           disabled={busy}
-                          className="pr-9"
+                          className="border-white/15 bg-white/5 pr-9"
                         />
                         <button
                           type="button"
@@ -247,7 +218,11 @@ export default function LoginPage() {
             </form>
           </Form>
         </div>
-      </section>
+
+        <p className="mt-5 text-center text-[11px] text-guardian-lavender-soft/45">
+          {t("nav.tagline")}
+        </p>
+      </div>
 
       {/* No way to dismiss: the API refuses everything until the password changes. */}
       <Dialog open={mustChange}>

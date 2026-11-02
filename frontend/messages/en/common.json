@@ -110,5 +110,35 @@
       "failed": "Sign in failed",
       "changeFailed": "Could not change the password"
     }
+  },
+  "profileGate": {
+    "title": "Choose a connection profile",
+    "subtitle": "Pick the database to connect to before continuing. No screen loads any data until a profile is selected.",
+    "loading": "Loading profiles...",
+    "error": "Could not load the profiles.",
+    "retry": "Try again",
+    "empty": "No connection profiles yet",
+    "emptyHint": "Create a connection profile first to continue.",
+    "createProfile": "Create profile",
+    "manageProfiles": "Manage profiles",
+    "default": "Default",
+    "connect": "Connect",
+    "logout": "Sign out"
+  },
+  "table": {
+    "search": "Search...",
+    "emptyTitle": "No data",
+    "emptyDesc": "There are no records to show.",
+    "summary": "Page {page} / {pages} · {total} records",
+    "perPage": "Per page:",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "risk": {
+    "ok": "OK",
+    "info": "Info",
+    "warning": "Warning",
+    "maintenance": "Maintenance",
+    "dangerous": "Dangerous"
   }
 }

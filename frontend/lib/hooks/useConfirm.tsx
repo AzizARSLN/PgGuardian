@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+import { tGlobal } from "@/lib/i18n";
   AlertTriangle,
   ShieldAlert,
   Skull,
@@ -234,7 +235,7 @@ export function useConfirm() {
               onClick={handleCancel}
               className="h-12 rounded-md"
             >
-              {opts.cancel_label ?? "Iptal"}
+              {opts.cancel_label ?? tGlobal("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction asChild>
               <Button
@@ -247,7 +248,7 @@ export function useConfirm() {
                     "bg-destructive hover:bg-destructive text-destructive-foreground font-bold"
                 )}
               >
-                {opts.confirm_label ?? (isDangerous ? "SIL" : "Onayla")}
+                {opts.confirm_label ?? tGlobal(isDangerous ? "common.delete" : "common.confirm")}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>

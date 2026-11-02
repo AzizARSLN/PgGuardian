@@ -228,3 +228,160 @@
     }
   }
 }
+
+/* ---------------------------------------------------------------------------
+   PgGuardian 3D stage: gradient base + neon perspective grid + floating blobs.
+   Used by the sign-in screen and the connection-profile gate.
+   --------------------------------------------------------------------------- */
+@keyframes pgg-grid-scroll {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 64px;
+  }
+}
+
+@keyframes pgg-blob-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(52px, -38px, 0) scale(1.14);
+  }
+  66% {
+    transform: translate3d(-44px, 30px, 0) scale(0.9);
+  }
+}
+
+@keyframes pgg-aurora-shift {
+  0%,
+  100% {
+    transform: translate3d(-4%, -3%, 0) scale(1.04) rotate(0deg);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate3d(4%, 4%, 0) scale(1.2) rotate(9deg);
+    opacity: 1;
+  }
+}
+
+.pgg-stage {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(1100px 620px at 12% -12%, rgba(139, 133, 193, 0.42), transparent 62%),
+    radial-gradient(900px 560px at 92% 6%, rgba(179, 249, 104, 0.16), transparent 60%),
+    radial-gradient(1000px 720px at 50% 122%, rgba(65, 44, 112, 0.6), transparent 66%),
+    linear-gradient(160deg, #0a0714 0%, #150e2b 46%, #090613 100%);
+}
+
+.pgg-aurora {
+  position: absolute;
+  inset: -22%;
+  background:
+    conic-gradient(from 200deg at 28% 28%, rgba(139, 133, 193, 0.5), transparent 34%),
+    conic-gradient(from 20deg at 74% 62%, rgba(179, 249, 104, 0.28), transparent 38%),
+    conic-gradient(from 300deg at 55% 96%, rgba(255, 179, 71, 0.24), transparent 42%);
+  filter: blur(72px);
+  animation: pgg-aurora-shift 18s ease-in-out infinite;
+}
+
+.pgg-grid {
+  position: absolute;
+  left: -40%;
+  right: -40%;
+  bottom: -4%;
+  height: 88%;
+  background-image:
+    linear-gradient(to right, rgba(139, 133, 193, 0.36) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(139, 133, 193, 0.36) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(640px) rotateX(67deg);
+  transform-origin: center bottom;
+  animation: pgg-grid-scroll 6s linear infinite;
+  mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.45) 46%, transparent 84%);
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.45) 46%, transparent 84%);
+}
+
+.pgg-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 13%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(179, 249, 104, 0.65),
+    rgba(139, 133, 193, 0.65),
+    transparent
+  );
+}
+
+.pgg-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(56px);
+  opacity: 0.42;
+  will-change: transform;
+  animation: pgg-blob-drift 24s ease-in-out infinite;
+}
+
+.pgg-card {
+  position: relative;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.035));
+  box-shadow:
+    0 34px 90px -26px rgba(4, 2, 14, 0.9),
+    0 0 60px -18px rgba(139, 133, 193, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+.pgg-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    140deg,
+    rgba(179, 249, 104, 0.5),
+    rgba(255, 255, 255, 0) 42%,
+    rgba(139, 133, 193, 0.5)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.pgg-tile {
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.pgg-tile:hover {
+  transform: translateY(-3px);
+  border-color: rgba(179, 249, 104, 0.5);
+  box-shadow: 0 18px 40px -18px rgba(139, 133, 193, 0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pgg-aurora,
+  .pgg-grid,
+  .pgg-blob {
+    animation: none;
+  }
+}

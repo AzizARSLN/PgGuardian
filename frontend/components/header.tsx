@@ -56,11 +56,12 @@ export default function Header() {
     enabled: isAuthenticated,
   });
 
+  // The profile gate owns the first choice. Here we only drop a stored name
+  // that no longer exists, which sends the user back to the gate.
   useEffect(() => {
-    if (!profiles || profiles.length === 0) return;
-    const fallback = profiles.find((p) => p.is_default) ?? profiles[0];
-    if (!selectedProfileName || !profiles.some((p) => p.name === selectedProfileName)) {
-      setSelectedProfileName(fallback?.name ?? null);
+    if (!profiles) return;
+    if (selectedProfileName && !profiles.some((p) => p.name === selectedProfileName)) {
+      setSelectedProfileName(null);
     }
   }, [profiles, selectedProfileName, setSelectedProfileName]);
 

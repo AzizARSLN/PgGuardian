@@ -149,19 +149,11 @@ def require_role_OR_open(allowed_roles: set[str]) -> Callable[..., dict[str, Any
     return _check
 
 
-def _resolve_profile_from_store() -> str | None:
-    """Return default (or first saved) profile name if any exist; else None."""
+def _has_saved_profiles() -> bool:
     try:
-        store = ProfileStore()
+        return bool(ProfileStore().list())
     except Exception:
-        return None
-    profiles = store.list()
-    if not profiles:
-        return None
-    for p in profiles:
-        if p.is_default:
-            return p.name
-    return profiles[0].name
+        return False
 
 
 def resolve_client(
@@ -176,10 +168,8 @@ def resolve_client(
       1. Explicit ``profile`` kwarg when called directly (rare).
       2. ``X-Profile-Name`` HTTP header.
       3. ``?profile=`` query string.
-      4. Saved profile with ``is_default=True``.
-      5. First saved profile (any order).
-      6. Environment-based fallback (``PGGUARDIAN_*`` vars), which is the
-         original behavior when zero profiles are saved.
+      4. Environment-based fallback (``PGGUARDIAN_*`` vars), only when zero
+         profiles are saved. With saved profiles and no choice: 409.
     """
     # Header names and values are restricted to latin-1 by the HTTP/1.1 spec.
     # Non-ASCII profile names (e.g. Turkish) are URL-encoded by the client;
@@ -195,8 +185,10 @@ def resolve_client(
         or _decode(x_profile_name)
         or _decode(profile_query)
     )
-    if not chosen_profile_raw:
-        chosen_profile_raw = _resolve_profile_from_store()
+    # A database is never picked on the caller's behalf. Falling back to the
+    # default profile would run queries on a server nobody selected.
+    if not chosen_profile_raw and _has_saved_profiles():
+        raise HTTPException(status_code=409, detail="Select a connection profile first.")
     chosen_profile = chosen_profile_raw
     has_explicit_profile = bool(chosen_profile)
     # When a profile name is actually selected, prefer it over the fallback

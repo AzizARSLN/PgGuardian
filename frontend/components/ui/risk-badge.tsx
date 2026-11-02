@@ -3,6 +3,7 @@
 import * as React from "react";
 import { CheckCircle2, AlertTriangle, Skull, Wrench, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 export type RiskLevel = "OK" | "WARNING" | "MAINTENANCE" | "DANGEROUS" | "INFO";
@@ -22,31 +23,31 @@ const riskConfig: Record<
   }
 > = {
   OK: {
-    label: "OK",
+    label: "ok",
     icon: CheckCircle2,
     className:
       "bg-success/15 text-success border-success/30 hover:bg-success/25",
   },
   INFO: {
-    label: "Bilgi",
+    label: "info",
     icon: Info,
     className:
       "bg-info/15 text-info border-info/30 hover:bg-info/25",
   },
   WARNING: {
-    label: "Uyarı",
+    label: "warning",
     icon: AlertTriangle,
     className:
       "bg-warning/15 text-warning border-warning/30 hover:bg-warning/25",
   },
   MAINTENANCE: {
-    label: "Bakım",
+    label: "maintenance",
     icon: Wrench,
     className:
       "bg-warning/15 text-warning border-warning/30 hover:bg-warning/25",
   },
   DANGEROUS: {
-    label: "Tehlikeli",
+    label: "dangerous",
     icon: Skull,
     className:
       "bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/25",
@@ -70,6 +71,7 @@ export function RiskBadge({
   const config = riskConfig[riskLevel];
   const Icon = config.icon;
 
+  const t = useT();
   return (
     <Badge
       variant="outline"
@@ -82,7 +84,7 @@ export function RiskBadge({
       {...props}
     >
       {showIcon && <Icon className={cn(size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5")} />}
-      {children ?? config.label}
+      {children ?? t(`risk.${config.label}`)}
     </Badge>
   );
 }

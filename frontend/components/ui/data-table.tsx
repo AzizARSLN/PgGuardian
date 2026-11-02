@@ -15,6 +15,7 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp, ChevronRight, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,16 +57,17 @@ export function DataTable<TData, TValue>({
   columns,
   data,
   isLoading = false,
-  emptyTitle = "Veri yok",
-  emptyDesc = "Görüntülenecek kayıt bulunamadı.",
+  emptyTitle,
+  emptyDesc,
   defaultPageSize = 25,
   globalFilter: externalGlobalFilter,
   setGlobalFilter: externalSetGlobalFilter,
-  searchPlaceholder = "Ara...",
+  searchPlaceholder,
   mobilePrimaryColumnIds,
   mobileSecondaryColumnIds,
   className,
 }: DataTableProps<TData, TValue>) {
+  const t = useT();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
@@ -135,7 +137,7 @@ export function DataTable<TData, TValue>({
             setGlobalFilter(String(e.target.value));
             table.setGlobalFilter(String(e.target.value));
           }}
-          placeholder={searchPlaceholder}
+          placeholder={searchPlaceholder ?? t("table.search")}
           className="pl-12 h-11"
         />
       </div>
@@ -155,8 +157,8 @@ export function DataTable<TData, TValue>({
           ) : table.getRowModel().rows.length === 0 ? (
             <Card className="overflow-hidden">
               <CardContent className="p-12 text-center">
-                <p className="font-semibold">{emptyTitle}</p>
-                <p className="text-sm text-muted-foreground mt-1">{emptyDesc}</p>
+                <p className="font-semibold">{emptyTitle ?? t("table.emptyTitle")}</p>
+                <p className="text-sm text-muted-foreground mt-1">{emptyDesc ?? t("table.emptyDesc")}</p>
               </CardContent>
             </Card>
           ) : (
@@ -272,7 +274,7 @@ export function DataTable<TData, TValue>({
                   <TableCell colSpan={desktopCols.length} className="p-6">
                     <div className="space-y-3">
                       {Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="h-14 w-full bg-card rounded animate-pulse" />
+                        <div key={i} className="h-8 w-full bg-card rounded animate-pulse" />
                       ))}
                     </div>
                   </TableCell>
@@ -280,8 +282,8 @@ export function DataTable<TData, TValue>({
               ) : table.getRowModel().rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={desktopCols.length} className="p-16 text-center">
-                    <p className="font-semibold">{emptyTitle}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{emptyDesc}</p>
+                    <p className="font-semibold">{emptyTitle ?? t("table.emptyTitle")}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{emptyDesc ?? t("table.emptyDesc")}</p>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -307,17 +309,15 @@ export function DataTable<TData, TValue>({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3 text-sm flex-wrap">
             <p className="text-muted-foreground">
-              Sayfa{" "}
-              <span className="font-semibold text-foreground">
-                {currentPage + 1}
-              </span>{" "}
-              / {Math.max(1, pageCount)} · Toplam{" "}
-              <span className="font-semibold text-foreground">{data.length}</span>{" "}
-              kayıt
+              {t("table.summary", {
+                page: currentPage + 1,
+                pages: Math.max(1, pageCount),
+                total: data.length,
+              })}
             </p>
             <div className="h-6 w-px bg-muted" />
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Sayfa başına:</span>
+              <span className="text-xs text-muted-foreground">{t("table.perPage")}</span>
               <Select
                 value={String(pageSize)}
                 onValueChange={(v) => {
@@ -347,7 +347,7 @@ export function DataTable<TData, TValue>({
               disabled={!canPrev}
               className="h-9 rounded-md"
             >
-              Önceki
+              {t("table.previous")}
             </Button>
             <Button
               variant="outline"
@@ -356,7 +356,7 @@ export function DataTable<TData, TValue>({
               disabled={!canNext}
               className="h-9 rounded-md"
             >
-              Sonraki
+              {t("table.next")}
             </Button>
           </div>
         </div>
