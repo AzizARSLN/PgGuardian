@@ -1,1 +1,292 @@
-{}
+{
+  "statements": {
+    "title": "Tekrar Eden SQL Analizi",
+    "since": "{date} tarihinden beri",
+    "totals": "{statements} sorgu · {calls} çağrı · {time} toplam süre",
+    "noRate": "PG13'te istatistik başlangıç zamanı bilinmediği için hesaplanamaz",
+    "perMin": "{value} / dk",
+    "searchPlaceholder": "SQL metninde ara...",
+    "minCalls": "En az çağrı",
+    "empty": "Filtreye uyan sorgu yok. Uygulama çalıştıkça burada görünürler.",
+    "previous": "Önceki",
+    "next": "Sonraki",
+    "presets": {
+      "repeated": "En çok tekrar eden",
+      "load": "En çok yük",
+      "slowest": "En yavaş",
+      "io": "Disk okuması",
+      "temp": "Geçici dosya",
+      "wal": "WAL üretimi"
+    },
+    "columns": {
+      "statement": "Sorgu",
+      "calls": "Çağrı",
+      "callsPerMin": "Çağrı/dk",
+      "total": "Toplam",
+      "mean": "Ortalama",
+      "load": "Yük",
+      "rowsPerCall": "Satır/çağrı",
+      "cache": "Cache",
+      "temp": "Temp",
+      "wal": "WAL"
+    },
+    "warnings": {
+      "evictions": "pg_stat_statements kapasitesi doldu ve eski kayıtlar silindi; çağrı sayıları eksik olabilir. pg_stat_statements.max değerini artırmayı düşünün.",
+      "limited_privilege": "Bu rol başka kullanıcıların SQL metnini göremez. pg_read_all_stats yetkisi verin.",
+      "no_reset_time": "Bu sürümde istatistik başlangıç zamanı yok; çağrı/dk hesaplanamıyor."
+    },
+    "setup": {
+      "not_installed": {
+        "title": "pg_stat_statements \"{database}\" veritabanında kurulu değil",
+        "desc": "Tekrar eden sorguları görmek için eklentiyi etkinleştirin. shared_preload_libraries değişikliği sunucu yeniden başlatması gerektirir."
+      },
+      "not_preloaded": {
+        "title": "pg_stat_statements önyüklenmemiş",
+        "desc": "Eklenti oluşturulmuş fakat shared_preload_libraries içinde değil. Ayarı ekleyip sunucuyu yeniden başlatın."
+      }
+    },
+    "tabs": {
+      "overview": "Özet",
+      "recommendations": "Öneriler",
+      "plan": "Plan",
+      "application": "Uygulamada düzeltme"
+    },
+    "detail": {
+      "title": "Sorgu detayı",
+      "stddev": "Standart sapma",
+      "blocksRead": "Diskten okunan",
+      "timeBreakdown": "Süre dağılımı",
+      "runBy": "Çalıştıran roller",
+      "variants": "Aynı sorgunun {count} farklı IN listesi varyantı",
+      "parts": {
+        "execution": "Yürütme",
+        "ioRead": "Disk okuma",
+        "jit": "JIT",
+        "planning": "Planlama"
+      }
+    },
+    "plan": {
+      "nodeStats": "maliyet {cost} · {rows} satır",
+      "paramValues": "Parametre değerleri (her satıra bir tane: $1, $2...)",
+      "generic": "Genel plan",
+      "custom": "Bu değerlerle planla",
+      "analyzeNote": "Plan salt okunur bir işlemde alınır ve geri alınır. EXPLAIN ANALYZE sorguyu gerçekten çalıştırır ve yalnızca okuma sorgularında kullanılabilir.",
+      "genericNote": "Tahmindir; gerçek değerlerin dağılımını hesaba katmaz.",
+      "showJson": "JSON göster",
+      "showTree": "Ağaç göster",
+      "mode": {
+        "generic": "Genel plan",
+        "custom": "Değerlere özel plan"
+      },
+      "reasons": {
+        "no_text": "SQL metni görülemiyor; rolün yetkisi yetersiz.",
+        "not_single_statement": "Birden fazla ifade içeriyor.",
+        "not_read": "Yalnızca okuma sorguları planlanır; yazma sorguları için plan alınmadı.",
+        "search_path": "Tablo bulunamadı. Uygulamanın search_path değerini girip tekrar deneyin.",
+        "parameter_type": "Parametre sayısı veya türü belirlenemedi.",
+        "privilege": "Profilin rolünün bu tablolara erişimi yok.",
+        "lock_timeout": "Tablo kilitli olduğu için planlanamadı.",
+        "timeout": "Planlama zaman aşımına uğradı.",
+        "planner_error": "PostgreSQL bu normalize edilmiş metni planlayamadı."
+      }
+    },
+    "severity": {
+      "high": "Yüksek",
+      "medium": "Orta",
+      "low": "Düşük"
+    },
+    "safety": {
+      "safe": {
+        "label": "Sonuç değişmez",
+        "desc": "Aynı sonucu döndürür, önerilen SQL'e uygulanır."
+      },
+      "conditional": {
+        "label": "Koşullu",
+        "desc": "Belirtilen koşul sağlanıyorsa aynı sonucu döndürür; kontrol edin."
+      },
+      "advisory": {
+        "label": "Tavsiye",
+        "desc": "Davranışı değiştirebilir veya değerlendirme ister; otomatik uygulanmaz."
+      }
+    },
+    "advice": {
+      "noPlan": "Plan alınamadı, plana dayalı öneriler eksik: {reason}",
+      "notParsed": "SQL ayrıştırılamadı; yalnızca metriklere ve plana dayalı öneriler gösteriliyor.",
+      "suggestedTitle": "Önerilen SQL",
+      "suggestedDesc": "Uygulanan değişiklikler: {applied}. Kullanmadan önce uygulamanızla doğrulayın.",
+      "cost": "plan maliyeti {before} → {after}",
+      "current": "Mevcut",
+      "suggested": "Önerilen",
+      "template": "Şablon, kendi sorgunuza uyarlayın",
+      "none": "Bu sorgu için kural tabanlı bir bulgu yok."
+    },
+    "app": {
+      "findTitle": "Sorguyu kodda bulun",
+      "findDesc": "PgGuardian uygulama kaynak kodunuzu göremez; aşağıdaki ipuçları sorguyu çalıştıran yeri bulmanıza yardım eder.",
+      "applications": "Şu an çalıştıran uygulamalar",
+      "notRunning": "Şu anda çalışan oturum yok",
+      "clients": "İstemci adresleri",
+      "ormHint": "ORM ipucu",
+      "tables": "Tablolar",
+      "searchCode": "Kod tabanında arayın",
+      "tagHint": "Sorguların kaynağını doğrudan görmek için uygulamanıza sqlcommenter ekleyin ve application_name ayarlayın.",
+      "nothing": "Uygulamada değiştirilmesi gereken bir bulgu yok."
+    },
+    "rules": {
+      "N_PLUS_1": {
+        "title": "N+1 sorgu şüphesi",
+        "problem": "Çok sık çağrılıyor ve her seferinde yaklaşık tek satır dönüyor. Genellikle bir döngü içinde tek tek okuma anlamına gelir; yalnızca istatistikten kesin olarak kanıtlanamaz.",
+        "fix": "Döngüdeki okumaları tek bir toplu sorguda birleştirin.",
+        "app": "Bu sorguyu çağıran döngüyü bulun, kimlikleri toplayıp tek sorguda okuyun. ORM kullanıyorsanız ilişkiyi eager load edin."
+      },
+      "POLLING": {
+        "title": "Sık yoklama",
+        "problem": "Sorgu dakikada onlarca kez çalışıp toplam yükte yer tutuyor.",
+        "fix": "Yoklama aralığını artırın, sonucu önbelleğe alın veya LISTEN/NOTIFY kullanın.",
+        "app": "Zamanlayıcı veya worker döngüsünü bulun; değişiklik olduğunda tetiklenen bir yapıya geçin ya da sonucu kısa süreli önbelleğe alın."
+      },
+      "MISSING_INDEX": {
+        "title": "Eksik index",
+        "problem": "Büyük bir tablo baştan sona taranıyor, oysa filtre satırların küçük bir bölümünü seçiyor.",
+        "fix": "Aşağıdaki index'i yoğun olmayan bir zamanda oluşturun. Yazma maliyetini ve disk kullanımını hesaba katın.",
+        "app": "Index'i uygulama kodu yerine bir migration ile ekleyin. CONCURRENTLY işlem içinde çalışmaz; migration'ı transaction dışında çalıştırın."
+      },
+      "NON_SARGABLE": {
+        "title": "Kolon üzerinde fonksiyon veya cast",
+        "problem": "WHERE içinde kolona fonksiyon uygulanması, kolonun normal index'inin kullanılmasını engeller.",
+        "fix": "Koşulu aralığa çevirin ya da aynı ifadeyle bir ifade index'i oluşturun. Tarih dönüşümlerinde saat dilimini kontrol edin.",
+        "app": "Sorguyu oluşturan koddan fonksiyonu kaldırın; parametreyi önceden normalize edip kolonu olduğu gibi karşılaştırın."
+      },
+      "LEADING_WILDCARD": {
+        "title": "Baştan joker karakterli LIKE",
+        "problem": "'%metin' deseni normal B-tree index kullanamaz, tablo taranır.",
+        "fix": "pg_trgm ile GIN index oluşturun veya tam metin arama kullanın.",
+        "app": "Arama alanının bu deseni gerçekten gerektirip gerektirmediğini kontrol edin; önek aramasına geçmek sorunu çözebilir."
+      },
+      "LARGE_IN": {
+        "title": "Değişken uzunlukta IN listesi",
+        "problem": "Liste uzunluğu değiştikçe PostgreSQL her uzunluğu ayrı sorgu sayar; plan önbelleği ve istatistikler parçalanır.",
+        "fix": "= ANY($1) ile tek bir dizi parametresi kullanın.",
+        "app": "Listeyi tek tek parametre yerine dizi olarak bağlayın; sorgu metni sabit kalır."
+      },
+      "IMPLICIT_CAST": {
+        "title": "Parametre türü kolonla uyuşmuyor",
+        "problem": "PostgreSQL kolonu dönüştürmek zorunda kaldığı için kolonun index'i kullanılamıyor.",
+        "fix": "Parametreyi kolonun türünde gönderin. Parametre metninin bu türe dönüşebildiğinden emin olun.",
+        "app": "Sürücünüzde veya ORM'deki parametre türünü düzeltin; örneğin sayısal kolon için metin göndermeyin."
+      },
+      "OFFSET_PAGING": {
+        "title": "OFFSET ile sayfalama",
+        "problem": "OFFSET atlanan tüm satırları yine de okur; sayfa ilerledikçe sorgu yavaşlar.",
+        "fix": "Keyset sayfalamaya geçin. Bu değişiklik API davranışını etkiler; sayfa numarasına atlama kalkar.",
+        "app": "API'de sayfa numarası yerine son görülen satırın anahtarını cursor olarak döndürün ve kabul edin."
+      },
+      "SELECT_STAR": {
+        "title": "SELECT *",
+        "problem": "Gerekmeyen kolonlar da okunup ağ üzerinden taşınır; index-only scan kullanılamaz.",
+        "fix": "Yalnızca kullanılan kolonları yazın. Önerilen SQL tüm kolonları listeler; kullanılmayanları siz çıkarın. Uygulama kolonları adıyla okumalıdır.",
+        "app": "Sorgu sonucunda gerçekten kullanılan alanları belirleyin; ORM'de projeksiyon veya DTO kullanın."
+      },
+      "TEMP_SPILL": {
+        "title": "Geçici dosyaya taşma",
+        "problem": "Sıralama veya hash işlemi work_mem'e sığmadığı için diske yazıyor.",
+        "fix": "Sıralamayı karşılayan bir index ekleyin ya da bu işlem için work_mem değerini artırın.",
+        "app": "work_mem'i genel olarak değil, gerekiyorsa yalnızca bu işlemin transaction'ında SET LOCAL ile artırın."
+      },
+      "NO_LIMIT": {
+        "title": "Limitsiz büyük sonuç",
+        "problem": "Her çağrıda binlerce satır dönüyor ve LIMIT yok.",
+        "fix": "Uygulamanın tüm satırlara ihtiyacı yoksa LIMIT veya sayfalama ekleyin.",
+        "app": "Sonucu bellekte filtrelemek yerine filtreyi SQL'e taşıyın; toplu işlerde akış veya batch kullanın."
+      },
+      "RANDOM_SORT": {
+        "title": "ORDER BY random()",
+        "problem": "Tüm satırları okuyup sıralar; büyük tablolarda çok pahalıdır.",
+        "fix": "TABLESAMPLE veya rastgele kimlik seçimi kullanın. Dağılım birebir aynı olmaz.",
+        "app": "Rastgele seçimi gerektiren özelliğin tam eşit dağılıma ihtiyacı olup olmadığını kontrol edin."
+      },
+      "CORRELATED_SUBQUERY": {
+        "title": "İlişkili alt sorgu",
+        "problem": "Alt sorgu dış sorgunun her satırı için tekrar çalışabilir.",
+        "fix": "JOIN veya LATERAL ile yeniden yazmayı değerlendirin; sonucun aynı kaldığını doğrulayın.",
+        "app": "ORM'de bu alanı hesaplayan ilişkiyi veya özelliği bulup toplu şekilde yükleyin."
+      },
+      "NOT_IN_SUBQUERY": {
+        "title": "NOT IN (alt sorgu)",
+        "problem": "Alt sorguda NULL varsa hiç satır dönmez ve planlayıcı bunu iyi optimize edemez.",
+        "fix": "NOT EXISTS kullanın. Kolonlarda NULL olabiliyorsa sonuç değişir; kontrol edin.",
+        "app": "Sorgu oluşturucudaki NOT IN koşulunu NOT EXISTS'e çevirin."
+      },
+      "COUNT_FOR_EXISTS": {
+        "title": "Varlık kontrolü için COUNT",
+        "problem": "Yalnızca kayıt var mı diye bakmak için tüm eşleşmeler sayılıyor.",
+        "fix": "SELECT EXISTS(...) kullanın.",
+        "app": "count() > 0 kontrollerini ORM'in exists yöntemiyle değiştirin."
+      },
+      "OR_COLUMNS": {
+        "title": "Farklı kolonlarda OR",
+        "problem": "OR koşulu tek bir index ile karşılanamaz; tablo taramasına yol açabilir.",
+        "fix": "Planda tarama görüyorsanız UNION ile iki sorguya ayırmayı değerlendirin.",
+        "app": "Dinamik filtre üreten kodda koşulları ayrı sorgulara bölmeyi değerlendirin."
+      },
+      "CTE_MATERIALIZED": {
+        "title": "Materialize edilen CTE",
+        "problem": "Materialize edilen CTE'ye dış filtreler aktarılamaz.",
+        "fix": "CTE volatile fonksiyon veya yazma içermiyorsa NOT MATERIALIZED deneyin.",
+        "app": "Sorguyu üreten yerde CTE tanımını güncelleyin ve planı karşılaştırın."
+      },
+      "HIGH_VARIANCE": {
+        "title": "Süre çok değişken",
+        "problem": "Bazı çağrılar ortalamanın çok üzerinde; değer dağılımı veya plan değişikliği olabilir.",
+        "fix": "Plan sekmesinde yavaş olduğunu bildiğiniz değerlerle özel plan alın.",
+        "app": "Yavaş çağrıların hangi parametrelerle yapıldığını uygulama loglarında veya auto_explain ile bulun."
+      },
+      "LOW_CACHE": {
+        "title": "Düşük cache oranı",
+        "problem": "Sorgu verilerinin önemli kısmını diskten okuyor.",
+        "fix": "Taranan veri miktarını index ile azaltın; gerekirse shared_buffers değerini gözden geçirin.",
+        "app": "Sorgunun okuduğu tarih aralığını veya satır sayısını daraltmanın mümkün olup olmadığını kontrol edin."
+      },
+      "WAL_HEAVY": {
+        "title": "Yüksek WAL üretimi",
+        "problem": "Çağrı başına çok miktarda WAL üretiliyor; replikasyon ve disk üzerinde baskı oluşturur.",
+        "fix": "Büyük yazmaları küçük parçalara bölün; gereksiz index'leri ve kolon güncellemelerini azaltın.",
+        "app": "Toplu güncellemeleri batch'lere ayırın ve değişmeyen kolonları UPDATE dışında bırakın."
+      },
+      "JIT_OVERHEAD": {
+        "title": "JIT maliyeti yüksek",
+        "problem": "Sürenin önemli kısmı JIT derlemeye harcanıyor.",
+        "fix": "jit_above_cost değerini artırmayı veya bu sorgu için JIT'i kapatmayı değerlendirin.",
+        "app": "Gerekirse bu sorgudan önce SET LOCAL jit = off kullanın."
+      },
+      "PLAN_HEAVY": {
+        "title": "Planlama süresi yüksek",
+        "problem": "Sürenin önemli kısmı planlamaya gidiyor.",
+        "fix": "Prepared statement kullanın; bölüm sayısını ve join sayısını gözden geçirin.",
+        "app": "Sürücünüzde prepared statement'ları etkinleştirin; PgBouncer kullanıyorsanız mod uyumluluğunu kontrol edin."
+      }
+    }
+  },
+  "databases": {
+    "title": "Veritabanları",
+    "subtitle": "Seçili profilin sunucusundaki veritabanları",
+    "name": "Ad",
+    "owner": "Sahip",
+    "size": "Boyut",
+    "connections": "Bağlantı",
+    "connectionLimit": "Limit",
+    "unlimited": "Sınırsız",
+    "system": "Sistem",
+    "create": "Veritabanı oluştur",
+    "createTitle": "Yeni veritabanı",
+    "encoding": "Kodlama",
+    "ownerOptional": "Sahip (isteğe bağlı)",
+    "preview": "Çalıştırılacak SQL",
+    "created": "\"{name}\" oluşturuldu",
+    "dropTitle": "\"{name}\" veritabanını sil",
+    "dropDesc": "Bu işlem geri alınamaz. Devam etmek için veritabanının adını yazın.",
+    "dropped": "\"{name}\" silindi",
+    "drop": "Sil",
+    "writesDisabled": "Sunucuda yazma işlemleri kapalıysa bu işlem reddedilir (PGGUARDIAN_ALLOW_WRITES)."
+  }
+}

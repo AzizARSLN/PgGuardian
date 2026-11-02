@@ -33,6 +33,15 @@ export const qk = {
       ["diagnostics", "sequences", limit] as const,
   },
 
+  statements: {
+    list: (profile: string | null, filters: object) =>
+      ["statements", profile, "list", filters] as const,
+    detail: (profile: string | null, queryid: string) =>
+      ["statements", profile, queryid] as const,
+    advice: (profile: string | null, queryid: string) =>
+      ["statements", profile, queryid, "advice"] as const,
+  },
+
   sql: {
     format: () => ["sql", "format"] as const,
     explain: () => ["sql", "explain"] as const,

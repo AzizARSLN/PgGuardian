@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client, verify_token_OR_jwt
 from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
+from pgguardian.sqlexec.formatter import format_sql
 from pgguardian.statements import advisor, collector
 from pgguardian.statements.explain import explain as explain_statement
 from pgguardian.statements.plan import flatten, total_cost
@@ -44,6 +45,7 @@ def _statement_or_404(client: DbClient, info: dict[str, Any], queryid: str) -> d
     statement = collector.get_statement(client, info, queryid)
     if statement is None:
         raise HTTPException(status_code=404, detail="Statement not found.")
+    statement["formatted"] = format_sql(str(statement["query"]), keyword_case="upper")
     return statement
 
 
