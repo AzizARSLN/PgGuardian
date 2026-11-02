@@ -236,10 +236,6 @@
   background-size: 22px 22px;
 }
 
-.pgg-panel {
-  background-image: radial-gradient(70% 55% at 75% 12%, rgb(65 44 112 / 0.55), transparent 75%);
-}
-
 @keyframes pgg-rise {
   from {
     opacity: 0;

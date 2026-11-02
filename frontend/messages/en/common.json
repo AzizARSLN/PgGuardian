@@ -70,21 +70,6 @@
     "account": "Account"
   },
   "login": {
-    "headline": "See what is slowing your database down and what to change.",
-    "features": {
-      "statements": {
-        "title": "Repeated SQL analysis",
-        "desc": "The most frequent statements per profile, with their cost, plans and suggested fixes."
-      },
-      "diagnostics": {
-        "title": "Live diagnostics",
-        "desc": "Locks, long-running queries, bloat, replication lag and a health score."
-      },
-      "operations": {
-        "title": "Guarded operations",
-        "desc": "VACUUM, backups and role management, with a preview and explicit confirmation."
-      }
-    },
     "title": "Sign in",
     "subtitle": "Sign in with your account to continue.",
     "email": "Email",
@@ -111,8 +96,7 @@
       "changeFailed": "Could not change the password",
       "invalid": "Incorrect email or password.",
       "disabled": "This account has been disabled."
-    },
-    "previewLabel": "Sample view"
+    }
   },
   "profileGate": {
     "title": "Choose a connection profile",

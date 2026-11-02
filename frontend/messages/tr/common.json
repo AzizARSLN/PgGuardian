@@ -70,21 +70,6 @@
     "account": "Hesap"
   },
   "login": {
-    "headline": "Veritabanınızda neyin yavaşladığını ve neyi değiştirmeniz gerektiğini görün.",
-    "features": {
-      "statements": {
-        "title": "Tekrar eden SQL analizi",
-        "desc": "Her profil için en sık çalışan sorgular, maliyetleri, planları ve önerilen düzeltmeler."
-      },
-      "diagnostics": {
-        "title": "Canlı teşhis",
-        "desc": "Kilitler, uzun süren sorgular, şişkinlik, replikasyon gecikmesi ve sağlık puanı."
-      },
-      "operations": {
-        "title": "Korumalı operasyonlar",
-        "desc": "VACUUM, yedekleme ve rol yönetimi; önizleme ve açık onay ile."
-      }
-    },
     "title": "Giriş yap",
     "subtitle": "Devam etmek için hesabınızla oturum açın.",
     "email": "E-posta",
@@ -111,8 +96,7 @@
       "changeFailed": "Şifre değiştirilemedi",
       "invalid": "E-posta veya şifre hatalı.",
       "disabled": "Bu hesap devre dışı bırakılmış."
-    },
-    "previewLabel": "Örnek görünüm"
+    }
   },
   "profileGate": {
     "title": "Bağlantı profili seçin",
