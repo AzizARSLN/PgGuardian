@@ -1,0 +1,273 @@
+{
+  "dashboard": {
+    "title": "Overview",
+    "subtitle": "Server health, connections, diagnostic findings and storage at a glance",
+    "refreshAll": "Refresh all",
+    "refreshed": "Data refreshed",
+    "percent": "{value}%",
+    "units": { "day": "{n}d", "hour": "{n}h", "minute": "{n}m", "second": "{n}s" },
+    "health": { "title": "Health score", "uptime": "Uptime: {value}" },
+    "connections": { "title": "Connection usage", "active": "Active", "idle": "Idle", "waiting": "Waiting" },
+    "locks": {
+      "title": "Locks",
+      "blockingPairs": "blocking pairs",
+      "blocked": "Blocking",
+      "waitingBadge": "Waiting",
+      "clear": "Clear",
+      "total": "Total",
+      "waiting": "Waiting"
+    },
+    "replication": {
+      "title": "Replication lag",
+      "replicaCount": "{count} replicas",
+      "totalLag": "Total replay lag",
+      "slotsActive": "Slots: {active} / {total} active"
+    },
+    "findings": {
+      "title": "Diagnostic findings",
+      "count": "{count} findings",
+      "emptyTitle": "All clear",
+      "emptyDesc": "No diagnostic findings."
+    },
+    "tables": { "title": "Top 5 tables", "subtitle": "Table + index size", "size": "Size" },
+    "slots": {
+      "title": "Replication slots",
+      "summary": "{slots} slots · {replicas} replicas",
+      "emptyTitle": "No replication",
+      "emptyDesc": "No replicas or slots are visible on this server.",
+      "active": "Active",
+      "inactive": "Inactive",
+      "replicaFallback": "Replica {n}"
+    }
+  },
+  "diagnostics": {
+    "title": "Diagnostics",
+    "subtitle": "Findings, connections, queries, locks, storage, indexes, maintenance and performance",
+    "percent": "{value}%",
+    "units": { "day": "{n}d", "hour": "{n}h", "minute": "{n}m", "second": "{n}s", "ms": "{n}ms" },
+    "tabs": {
+      "findings": "Findings",
+      "connections": "Connections",
+      "active": "Active queries",
+      "long": "Long running",
+      "locks": "Locks",
+      "storage": "Storage",
+      "indexes": "Indexes",
+      "maintenance": "Maintenance",
+      "pgss": "pg_stat_statements",
+      "sequences": "Sequences"
+    },
+    "table": {
+      "pageInfo": "Page {page} / {pages} · {total} rows",
+      "perPage": "Per page",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "toast": {
+      "cancelled": "Cancel signal sent",
+      "terminated": "Terminate signal sent",
+      "notSent": "No signal was sent to PID {pid}; the process may have already exited."
+    },
+    "actions": { "cancel": "Cancel", "terminate": "Terminate" },
+    "confirm": {
+      "cancelTitle": "Cancel the query on PID {pid}?",
+      "cancelDesc": "The running query is cancelled with pg_cancel_backend(). The connection stays open; only the active query stops.",
+      "terminateTitle": "Terminate the connection on PID {pid}?",
+      "terminateDesc": "Runs pg_terminate_backend(): the connection closes and the active transaction rolls back. This cannot be undone.",
+      "typePid": "Type {pid} to confirm"
+    },
+    "columns": {
+      "user": "User",
+      "database": "Database",
+      "client": "Client",
+      "state": "State",
+      "duration": "Duration",
+      "application": "Application",
+      "actions": "Actions",
+      "wait": "Wait event",
+      "query": "Query",
+      "schema": "Schema",
+      "table": "Table"
+    },
+    "findings": {
+      "severity": "Severity",
+      "code": "Code",
+      "heading": "Title",
+      "value": "Value",
+      "recommendation": "Recommendation",
+      "emptyTitle": "No diagnostic findings",
+      "emptyDesc": "Health checks found no problems.",
+      "search": "Search title, code or recommendation..."
+    },
+    "connections": {
+      "active": "Active",
+      "idle": "Idle",
+      "idleInTx": "Idle in transaction",
+      "waiting": "Waiting",
+      "usage": "Usage",
+      "emptyTitle": "No connections",
+      "emptyDesc": "No PostgreSQL connections found.",
+      "search": "Search PID, user, database or client..."
+    },
+    "active": {
+      "emptyTitle": "No active queries",
+      "emptyDesc": "Nothing is running right now.",
+      "search": "Search PID, user or query..."
+    },
+    "long": {
+      "title": "Queries running longer than {minutes} minutes",
+      "desc": "{count} queries exceed this threshold.",
+      "emptyTitle": "No long-running queries",
+      "emptyDesc": "No query has exceeded the {minutes} minute threshold."
+    },
+    "locks": {
+      "blockingPid": "Blocking PID",
+      "blockedPid": "Blocked PID",
+      "relation": "Relation",
+      "type": "Lock type",
+      "mode": "Mode",
+      "blockingDuration": "Blocking duration",
+      "blockingQuery": "Blocking query",
+      "total": "Total locks",
+      "waiting": "Waiting",
+      "blockingPairs": "Blocking pairs",
+      "emptyTitle": "No lock problems",
+      "emptyDesc": "No waiting or blocking locks found.",
+      "search": "Search PID, relation or lock type..."
+    },
+    "storage": {
+      "total": "Total size",
+      "tableSize": "Table size",
+      "indexes": "Indexes",
+      "indexRatio": "Index ratio",
+      "emptyTitle": "No tables found",
+      "emptyDesc": "The storage report has no tables.",
+      "search": "Search table or schema..."
+    },
+    "indexes": {
+      "index": "Index",
+      "size": "Size",
+      "scans": "Scans",
+      "tuples": "Tuples",
+      "tuplesValue": "Read: {read} · Fetch: {fetched}",
+      "maybeUnused": "Possibly unused",
+      "inUse": "In use",
+      "noticeTitle": "Index status",
+      "noticeDesc": "{unused} of {total} indexes may be unused. Observe usage for long enough before deciding on DROP INDEX.",
+      "emptyTitle": "No indexes",
+      "emptyDesc": "The index report is empty.",
+      "search": "Search index or table..."
+    },
+    "maintenance": {
+      "deadPercent": "Dead tuple %",
+      "liveDead": "Live / dead tuples",
+      "lastVacuum": "Last VACUUM",
+      "vacuumCounts": "autovacuum: {auto} · VACUUM: {manual}",
+      "liveTuples": "Live tuples",
+      "deadTuples": "Dead tuples",
+      "neverVacuumed": "Tables never vacuumed",
+      "emptyTitle": "No maintenance records",
+      "emptyDesc": "The maintenance report has no tables.",
+      "search": "Search table..."
+    },
+    "pgss": {
+      "calls": "Calls",
+      "totalTime": "Total time",
+      "meanTime": "Mean time",
+      "rows": "Rows",
+      "noticeTitle": "Most expensive queries",
+      "noticeDesc": "Top 100 queries by total execution time. Click a row for details.",
+      "emptyTitle": "No records",
+      "emptyDesc": "Check that the pg_stat_statements extension is installed and enabled.",
+      "search": "Search QueryID or query..."
+    },
+    "sequences": {
+      "sequence": "Sequence",
+      "lastValue": "Last value",
+      "maxValue": "Max value",
+      "usage": "Usage",
+      "noticeTitle": "Sequence exhaustion risk",
+      "noticeDesc": "90% and above is critical. Raise MAXVALUE with ALTER SEQUENCE or widen the column type before nextval starts failing.",
+      "emptyTitle": "No sequences found",
+      "emptyDesc": "The sequence list is empty.",
+      "search": "Search sequence..."
+    }
+  },
+  "liveQueries": {
+    "title": "Live Queries",
+    "subtitle": "Watch running queries; cancel or terminate them when needed",
+    "polling": "Refreshes every {seconds}s",
+    "pollingOff": "Auto refresh off",
+    "tableHint": "Longest running first",
+    "empty": "No active queries found",
+    "emptyQuery": "<empty query>",
+    "dangerousBadge": "5m+",
+    "units": { "day": "{n}d", "hour": "{n}h", "minute": "{n}m", "second": "{n}s" },
+    "tiles": {
+      "total": "Total",
+      "active": "Active",
+      "longRunning": "Long running (1m+)",
+      "dangerous": "Dangerous (5m+)"
+    },
+    "columns": {
+      "query": "Query",
+      "duration": "Duration",
+      "state": "State",
+      "database": "Database",
+      "user": "User",
+      "actions": "Actions"
+    },
+    "actions": { "cancel": "Cancel", "terminate": "Terminate" },
+    "confirm": {
+      "cancelTitle": "Cancel the query on PID {pid}?",
+      "cancelDesc": "SIGINT will be sent. Query: \"{query}\"",
+      "terminateTitle": "Terminate PID {pid}?",
+      "terminateDesc": "SIGTERM will be sent: the connection closes and the active transaction rolls back. This cannot be undone.",
+      "typePid": "Type {pid} to confirm"
+    },
+    "toast": {
+      "cancelSent": "Cancel signal sent",
+      "terminateSent": "Terminate signal sent",
+      "notSent": "No signal was sent to PID {pid}; the process may have already exited.",
+      "dryRun": "Dry run: {risk}"
+    }
+  },
+  "replication": {
+    "title": "Replication",
+    "subtitle": "WAL senders, replay lag and replication slots",
+    "systemLag": "Highest lag",
+    "tiles": {
+      "replicas": "Replicas",
+      "streaming": "Streaming",
+      "maxLag": "Highest replay lag",
+      "slots": "Active slots"
+    },
+    "replicas": {
+      "title": "Replicas",
+      "subtitle": "pg_stat_replication",
+      "application": "Application",
+      "client": "Client",
+      "user": "User",
+      "state": "State",
+      "replayLag": "Replay lag",
+      "risk": "Risk",
+      "fallbackName": "Replica {n}",
+      "emptyTitle": "No replicas visible",
+      "emptyDesc": "pg_stat_replication is empty. It stays empty when no standby is attached or this server is not a primary."
+    },
+    "slots": {
+      "title": "Replication slots",
+      "subtitle": "pg_replication_slots",
+      "name": "Slot name",
+      "type": "Type",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "range": "{from}-{to} of {total}",
+      "previous": "Previous",
+      "next": "Next",
+      "emptyTitle": "No slots defined",
+      "emptyDesc": "Physical or logical replication slots appear here once created."
+    }
+  }
+}

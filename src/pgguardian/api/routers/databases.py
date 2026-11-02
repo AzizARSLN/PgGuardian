@@ -21,6 +21,7 @@ from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
 from pgguardian.utils.formatting import to_int
 
+read_router = APIRouter(prefix="/api/v1/databases", tags=["databases"])
 router = APIRouter(prefix="/api/v1/databases", tags=["databases"])
 
 SYSTEM_DATABASES = frozenset({"postgres", "template0", "template1"})
@@ -59,7 +60,7 @@ class DatabaseDrop(MutationRequest):
 _ALLOWED_ENCODINGS = frozenset({"UTF8", "LATIN1", "LATIN9", "WIN1252", "SQL_ASCII"})
 
 
-@router.get("", response_model=list[DatabaseInfo])
+@read_router.get("", response_model=list[DatabaseInfo])
 def list_databases(client: DbClient = Depends(resolve_client)) -> list[DatabaseInfo]:
     """All databases with sizes (read-only)."""
     with mapped_errors(client.settings):

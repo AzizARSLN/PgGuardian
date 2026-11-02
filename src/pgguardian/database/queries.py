@@ -22,6 +22,13 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _strip_comment_lines(sql: str) -> str:
+    # psycopg counts %s inside comments as placeholders, so the "-- %s = LIMIT"
+    # headers in sql/ would otherwise break every parameterized query.
+    lines = [line for line in sql.splitlines() if not line.lstrip().startswith("--")]
+    return "\n".join(lines).strip() + "\n"
+
+
 def load_sql(area: str, name: str) -> str:
     """Load a diagnostic query by area and name (without the ``.sql`` suffix)."""
     filename = f"{name}.sql"
@@ -30,7 +37,7 @@ def load_sql(area: str, name: str) -> str:
     try:
         packaged = resources.files("pgguardian").joinpath(f"sql/{area}/{filename}")
         if packaged.is_file():
-            return packaged.read_text(encoding="utf-8")
+            return _strip_comment_lines(packaged.read_text(encoding="utf-8"))
     except (FileNotFoundError, ModuleNotFoundError, TypeError, ValueError):
         pass
 
@@ -38,6 +45,6 @@ def load_sql(area: str, name: str) -> str:
     for base in (_repo_root(), Path.cwd()):
         candidate = base / "sql" / area / filename
         if candidate.is_file():
-            return candidate.read_text(encoding="utf-8")
+            return _strip_comment_lines(candidate.read_text(encoding="utf-8"))
 
     raise SqlNotFoundError(f"Diagnostic SQL not found: sql/{area}/{filename}")

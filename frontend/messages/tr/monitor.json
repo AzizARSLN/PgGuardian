@@ -1,0 +1,273 @@
+{
+  "dashboard": {
+    "title": "Genel Bakış",
+    "subtitle": "Sunucu sağlığı, bağlantılar, teşhis bulguları ve depolama özeti",
+    "refreshAll": "Tümünü yenile",
+    "refreshed": "Veriler yenilendi",
+    "percent": "%{value}",
+    "units": { "day": "{n}g", "hour": "{n}sa", "minute": "{n}dk", "second": "{n}sn" },
+    "health": { "title": "Sağlık puanı", "uptime": "Çalışma süresi: {value}" },
+    "connections": { "title": "Bağlantı kullanımı", "active": "Aktif", "idle": "Boşta", "waiting": "Bekleyen" },
+    "locks": {
+      "title": "Kilitler",
+      "blockingPairs": "bloklayan çift",
+      "blocked": "Blokaj var",
+      "waitingBadge": "Bekleyen var",
+      "clear": "Temiz",
+      "total": "Toplam",
+      "waiting": "Bekleyen"
+    },
+    "replication": {
+      "title": "Replikasyon gecikmesi",
+      "replicaCount": "{count} replika",
+      "totalLag": "Toplam replay lag",
+      "slotsActive": "Slotlar: {active} / {total} aktif"
+    },
+    "findings": {
+      "title": "Teşhis bulguları",
+      "count": "{count} bulgu",
+      "emptyTitle": "Her şey yolunda",
+      "emptyDesc": "Teşhis bulgusu yok."
+    },
+    "tables": { "title": "En büyük 5 tablo", "subtitle": "Tablo + indeks boyutu", "size": "Boyut" },
+    "slots": {
+      "title": "Replikasyon slotları",
+      "summary": "{slots} slot · {replicas} replika",
+      "emptyTitle": "Replikasyon yok",
+      "emptyDesc": "Bu sunucuda replika veya slot görünmüyor.",
+      "active": "Aktif",
+      "inactive": "Pasif",
+      "replicaFallback": "Replika {n}"
+    }
+  },
+  "diagnostics": {
+    "title": "Teşhis",
+    "subtitle": "Bulgular, bağlantılar, sorgular, kilitler, depolama, indeksler, bakım ve performans özeti",
+    "percent": "%{value}",
+    "units": { "day": "{n}g", "hour": "{n}sa", "minute": "{n}dk", "second": "{n}sn", "ms": "{n}ms" },
+    "tabs": {
+      "findings": "Bulgular",
+      "connections": "Bağlantılar",
+      "active": "Aktif sorgular",
+      "long": "Uzun süren",
+      "locks": "Kilitler",
+      "storage": "Depolama",
+      "indexes": "İndeksler",
+      "maintenance": "Bakım",
+      "pgss": "pg_stat_statements",
+      "sequences": "Sequence'ler"
+    },
+    "table": {
+      "pageInfo": "Sayfa {page} / {pages} · {total} kayıt",
+      "perPage": "Sayfa başına",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    },
+    "toast": {
+      "cancelled": "Sorgu iptal sinyali gönderildi",
+      "terminated": "Bağlantı sonlandırma sinyali gönderildi",
+      "notSent": "PID {pid} için sinyal gönderilemedi; süreç artık çalışmıyor olabilir."
+    },
+    "actions": { "cancel": "İptal et", "terminate": "Sonlandır" },
+    "confirm": {
+      "cancelTitle": "PID {pid} sorgusu iptal edilsin mi?",
+      "cancelDesc": "Çalışan sorgu pg_cancel_backend() ile iptal edilir. Bağlantı açık kalır, yalnızca aktif sorgu kesilir.",
+      "terminateTitle": "PID {pid} bağlantısı sonlandırılsın mı?",
+      "terminateDesc": "pg_terminate_backend() çalıştırılır: bağlantı kapanır ve aktif transaction rollback edilir. Geri alınamaz.",
+      "typePid": "Onaylamak için {pid} yazın"
+    },
+    "columns": {
+      "user": "Kullanıcı",
+      "database": "Veritabanı",
+      "client": "İstemci",
+      "state": "Durum",
+      "duration": "Süre",
+      "application": "Uygulama",
+      "actions": "İşlemler",
+      "wait": "Wait event",
+      "query": "Sorgu",
+      "schema": "Şema",
+      "table": "Tablo"
+    },
+    "findings": {
+      "severity": "Seviye",
+      "code": "Kod",
+      "heading": "Başlık",
+      "value": "Değer",
+      "recommendation": "Öneri",
+      "emptyTitle": "Teşhis bulgusu yok",
+      "emptyDesc": "Sağlık denetimlerinde sorun bulunmadı.",
+      "search": "Başlık, kod veya öneri ara..."
+    },
+    "connections": {
+      "active": "Aktif",
+      "idle": "Boşta",
+      "idleInTx": "Idle in transaction",
+      "waiting": "Bekleyen",
+      "usage": "Kullanım",
+      "emptyTitle": "Bağlantı yok",
+      "emptyDesc": "PostgreSQL bağlantısı bulunamadı.",
+      "search": "PID, kullanıcı, veritabanı veya istemci ara..."
+    },
+    "active": {
+      "emptyTitle": "Aktif sorgu yok",
+      "emptyDesc": "Şu anda çalışan sorgu bulunmuyor.",
+      "search": "PID, kullanıcı veya sorgu ara..."
+    },
+    "long": {
+      "title": "{minutes} dakikadan uzun süren sorgular",
+      "desc": "{count} sorgu bu eşiği aşıyor.",
+      "emptyTitle": "Uzun süren sorgu yok",
+      "emptyDesc": "{minutes} dakika eşiğini aşan sorgu yok."
+    },
+    "locks": {
+      "blockingPid": "Bloklayan PID",
+      "blockedPid": "Bloklanan PID",
+      "relation": "Nesne",
+      "type": "Kilit türü",
+      "mode": "Mod",
+      "blockingDuration": "Bloklama süresi",
+      "blockingQuery": "Bloklayan sorgu",
+      "total": "Toplam kilit",
+      "waiting": "Bekleyen",
+      "blockingPairs": "Bloklayan çift",
+      "emptyTitle": "Kilit sorunu yok",
+      "emptyDesc": "Bekleyen veya bloklayan kilit bulunmadı.",
+      "search": "PID, nesne veya kilit türü ara..."
+    },
+    "storage": {
+      "total": "Toplam boyut",
+      "tableSize": "Tablo boyutu",
+      "indexes": "İndeksler",
+      "indexRatio": "İndeks oranı",
+      "emptyTitle": "Tablo bulunamadı",
+      "emptyDesc": "Depolama raporunda tablo yok.",
+      "search": "Tablo veya şema ara..."
+    },
+    "indexes": {
+      "index": "İndeks",
+      "size": "Boyut",
+      "scans": "Scan",
+      "tuples": "Tuple",
+      "tuplesValue": "Read: {read} · Fetch: {fetched}",
+      "maybeUnused": "Kullanılmıyor olabilir",
+      "inUse": "Kullanımda",
+      "noticeTitle": "İndeks durumu",
+      "noticeDesc": "{total} indeksten {unused} tanesi kullanılmıyor olabilir. DROP INDEX kararından önce kullanımı yeterince uzun süre gözlemleyin.",
+      "emptyTitle": "İndeks yok",
+      "emptyDesc": "İndeks raporu boş.",
+      "search": "İndeks veya tablo ara..."
+    },
+    "maintenance": {
+      "deadPercent": "Dead tuple %",
+      "liveDead": "Live / dead tuple",
+      "lastVacuum": "Son VACUUM",
+      "vacuumCounts": "autovacuum: {auto} · VACUUM: {manual}",
+      "liveTuples": "Live tuple",
+      "deadTuples": "Dead tuple",
+      "neverVacuumed": "Hiç VACUUM görmemiş tablo",
+      "emptyTitle": "Bakım kaydı yok",
+      "emptyDesc": "Bakım raporunda tablo yok.",
+      "search": "Tablo ara..."
+    },
+    "pgss": {
+      "calls": "Çağrı",
+      "totalTime": "Toplam süre",
+      "meanTime": "Ortalama süre",
+      "rows": "Satır",
+      "noticeTitle": "En maliyetli sorgular",
+      "noticeDesc": "Toplam çalışma süresine göre ilk 100 sorgu. Ayrıntı için satıra tıklayın.",
+      "emptyTitle": "Kayıt yok",
+      "emptyDesc": "pg_stat_statements eklentisinin kurulu ve etkin olduğunu kontrol edin.",
+      "search": "QueryID veya sorgu ara..."
+    },
+    "sequences": {
+      "sequence": "Sequence",
+      "lastValue": "Son değer",
+      "maxValue": "En büyük değer",
+      "usage": "Kullanım",
+      "noticeTitle": "Sequence tükenme riski",
+      "noticeDesc": "%90 ve üzeri kritik kabul edilir. nextval hata vermeden önce ALTER SEQUENCE ile MAXVALUE değerini artırın veya kolon tipini büyütün.",
+      "emptyTitle": "Sequence bulunamadı",
+      "emptyDesc": "Sequence listesi boş.",
+      "search": "Sequence ara..."
+    }
+  },
+  "liveQueries": {
+    "title": "Canlı Sorgular",
+    "subtitle": "Çalışan sorguları izleyin; gerekirse iptal edin veya sonlandırın",
+    "polling": "{seconds} sn'de bir yenilenir",
+    "pollingOff": "Otomatik yenileme kapalı",
+    "tableHint": "En uzun süren sorgu üstte",
+    "empty": "Aktif sorgu bulunamadı",
+    "emptyQuery": "<boş sorgu>",
+    "dangerousBadge": "5dk+",
+    "units": { "day": "{n}g", "hour": "{n}sa", "minute": "{n}dk", "second": "{n}sn" },
+    "tiles": {
+      "total": "Toplam",
+      "active": "Aktif",
+      "longRunning": "Uzun süren (1dk+)",
+      "dangerous": "Tehlikeli (5dk+)"
+    },
+    "columns": {
+      "query": "Sorgu",
+      "duration": "Süre",
+      "state": "Durum",
+      "database": "Veritabanı",
+      "user": "Kullanıcı",
+      "actions": "İşlemler"
+    },
+    "actions": { "cancel": "İptal et", "terminate": "Sonlandır" },
+    "confirm": {
+      "cancelTitle": "PID {pid} sorgusu iptal edilsin mi?",
+      "cancelDesc": "SIGINT gönderilecek. Sorgu: \"{query}\"",
+      "terminateTitle": "PID {pid} sonlandırılsın mı?",
+      "terminateDesc": "SIGTERM gönderilecek: bağlantı kapanır ve aktif transaction rollback edilir. Geri alınamaz.",
+      "typePid": "Onaylamak için {pid} yazın"
+    },
+    "toast": {
+      "cancelSent": "İptal sinyali gönderildi",
+      "terminateSent": "Sonlandırma sinyali gönderildi",
+      "notSent": "PID {pid} için sinyal gönderilemedi; süreç artık çalışmıyor olabilir.",
+      "dryRun": "Dry run: {risk}"
+    }
+  },
+  "replication": {
+    "title": "Replikasyon",
+    "subtitle": "WAL göndericileri, replay lag ve replikasyon slotları",
+    "systemLag": "En yüksek lag",
+    "tiles": {
+      "replicas": "Replika",
+      "streaming": "Streaming",
+      "maxLag": "En yüksek replay lag",
+      "slots": "Aktif slot"
+    },
+    "replicas": {
+      "title": "Replikalar",
+      "subtitle": "pg_stat_replication",
+      "application": "Uygulama",
+      "client": "İstemci",
+      "user": "Kullanıcı",
+      "state": "Durum",
+      "replayLag": "Replay lag",
+      "risk": "Risk",
+      "fallbackName": "Replika {n}",
+      "emptyTitle": "Replika görünmüyor",
+      "emptyDesc": "pg_stat_replication boş. Standby bağlı değilse veya bu sunucu primary değilse liste boş kalır."
+    },
+    "slots": {
+      "title": "Replikasyon slotları",
+      "subtitle": "pg_replication_slots",
+      "name": "Slot adı",
+      "type": "Tür",
+      "status": "Durum",
+      "active": "Aktif",
+      "inactive": "Pasif",
+      "range": "{total} kayıttan {from}-{to}",
+      "previous": "Önceki",
+      "next": "Sonraki",
+      "emptyTitle": "Slot tanımlı değil",
+      "emptyDesc": "Oluşturulan fiziksel veya mantıksal replikasyon slotları burada listelenir."
+    }
+  }
+}

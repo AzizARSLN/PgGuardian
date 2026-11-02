@@ -10,50 +10,41 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type Header,
   type SortingState,
 } from '@tanstack/react-table';
 import Papa from 'papaparse';
 import { toast } from 'sonner';
-import { useForm } from 'react-hook-form';
 import {
-  ArrowLeft,
-  Columns3,
-  KeyRound,
-  GitBranch,
-  Eye,
-  BarChart3,
-  Download,
-  Upload,
-  FileSpreadsheet,
-  Database,
-  HardDrive,
-  Layers,
-  CheckCircle2,
+  Activity,
   AlertTriangle as AlertIcon,
-  Hash,
-  Type,
-  ToggleLeft,
-  Sparkles,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  BarChart3,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Columns3,
+  Download,
+  Eye,
   FileJson,
+  FileSpreadsheet,
+  GitBranch,
+  Hash,
+  KeyRound,
+  RotateCcw,
+  Sparkles,
+  Upload,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RiskBadge } from '@/components/ui/risk-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
 import {
   Table as UITable,
   TableBody,
@@ -62,21 +53,56 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { IfWriter } from '@/components/role-guard';
 import {
   endpoints,
-  type TableDetail,
   type SqlResult,
   type TableColumnProfile,
   type DryRunResult,
   type TableImportResult,
 } from '@/lib/api/types';
 import { qk } from '@/lib/api/queryKeys';
-import { cn, formatBytes, formatNumber, formatPercent } from '@/lib/utils';
+import { useI18n, useT } from '@/lib/i18n';
+import { cn, formatBytes } from '@/lib/utils';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 
-function downloadCSVFromRecords(records: Record<string, unknown>[], filename: string) {
-  const csv = Papa.unparse(records);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+/** Hard cap enforced by GET /tables/{schema}/{table}/export. */
+const EXPORT_LIMIT = 10000;
+const PREVIEW_LIMIT = 100;
+
+type ResultRow = unknown[];
+
+/** What /profile really returns; the shared type lists names the backend does not send. */
+interface ProfileRow {
+  column: string;
+  dataType: string;
+  nullable: boolean;
+  total: number | null;
+  nulls: number | null;
+  distinct: number | null;
+  avgWidth: number | null;
+  unavailable: boolean;
+}
+
+function toNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeProfile(row: TableColumnProfile): ProfileRow {
+  return {
+    column: String(row.column ?? row.column_name ?? ''),
+    dataType: String(row.data_type ?? ''),
+    nullable: row.nullable === true,
+    total: toNumber(row.total),
+    nulls: toNumber(row.nulls ?? row.null_count),
+    distinct: toNumber(row.distinct ?? row.distinct_count),
+    avgWidth: toNumber(row.avg_width ?? row.avg_width_bytes),
+    unavailable: row.error !== undefined,
+  };
+}
+
+function downloadText(text: string, filename: string) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -87,21 +113,63 @@ function downloadCSVFromRecords(records: Record<string, unknown>[], filename: st
   URL.revokeObjectURL(url);
 }
 
-type PreviewRow = Record<string, unknown> & { __id: number };
+function csvValue(value: unknown): unknown {
+  return value !== null && typeof value === 'object' ? JSON.stringify(value) : value;
+}
+
+/** Always quoted: mixed case and reserved words break when left bare. */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function isSqlResult(data: SqlResult | DryRunResult | undefined): data is SqlResult {
+  return !!data && 'row_count' in data;
+}
+
+function isDryRun(data: unknown): data is DryRunResult {
+  return !!data && typeof data === 'object' && 'risk' in data;
+}
+
+function parseCsvPreview(file: File): Promise<Record<string, unknown>[]> {
+  return new Promise((resolve) => {
+    Papa.parse<Record<string, unknown>>(file, {
+      preview: 10,
+      header: true,
+      skipEmptyLines: true,
+      complete: (res) => resolve(res.data.slice(0, 10)),
+      error: () => resolve([]),
+    });
+  });
+}
 
 export default function SchemaTableDetailPage() {
+  const t = useT();
+  const { formatNumber } = useI18n();
   const params = useParams<{ schema: string; table: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
 
-  const schema = React.useMemo(() => decodeURIComponent(params.schema ?? ''), [params.schema]);
-  const tableName = React.useMemo(() => decodeURIComponent(params.table ?? ''), [params.table]);
+  const schema = React.useMemo(() => safeDecode(params.schema ?? ''), [params.schema]);
+  const tableName = React.useMemo(() => safeDecode(params.table ?? ''), [params.table]);
   const identifier = `${schema}.${tableName}`;
+  const schemaPath = encodeURIComponent(schema);
+  const tablePath = encodeURIComponent(tableName);
+  const previewPrefix = ['table_io', 'export', schema, tableName];
 
+  const [activeTab, setActiveTab] = React.useState('columns');
   const [previewSorting, setPreviewSorting] = React.useState<SortingState>([]);
   const [profileSorting, setProfileSorting] = React.useState<SortingState>([]);
   const [importFile, setImportFile] = React.useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = React.useState(0);
   const [dryRunData, setDryRunData] = React.useState<{
     result: DryRunResult;
     previewRecords: Record<string, unknown>[];
@@ -109,124 +177,126 @@ export default function SchemaTableDetailPage() {
 
   const describeQuery = useQuery({
     queryKey: qk.schemas.table(schema, tableName),
-    queryFn: () => endpoints.describeTable(schema, tableName),
+    queryFn: () => endpoints.describeTable(schemaPath, tablePath),
     enabled: !!schema && !!tableName,
   });
 
   const previewQuery = useQuery({
-    queryKey: [...qk.table_io.export(schema, tableName, 100), 'preview'],
+    queryKey: [...previewPrefix, PREVIEW_LIMIT, 'preview'],
     queryFn: () =>
       endpoints.executeSql({
-        sql: `SELECT * FROM ${safeIdent(schema)}.${safeIdent(tableName)} LIMIT 100`,
-        confirm: true,
+        sql: `SELECT * FROM ${quoteIdent(schema)}.${quoteIdent(tableName)} LIMIT ${PREVIEW_LIMIT}`,
         readonly: true,
       }),
     enabled: !!schema && !!tableName,
   });
 
+  // Profiling scans up to the row cap per column, so it waits until the tab is opened.
   const profileQuery = useQuery({
     queryKey: qk.table_io.profile(schema, tableName),
-    queryFn: () => endpoints.profileTable(schema, tableName),
-    enabled: !!schema && !!tableName,
+    queryFn: () => endpoints.profileTable(schemaPath, tablePath),
+    enabled: !!schema && !!tableName && activeTab === 'profile',
   });
 
+  function resetImport() {
+    setImportFile(null);
+    setDryRunData(null);
+    // A file input cannot be cleared through state, so it is remounted.
+    setFileInputKey((k) => k + 1);
+  }
+
+  function invalidateTable() {
+    queryClient.invalidateQueries({ queryKey: qk.schemas.all() });
+    queryClient.invalidateQueries({ queryKey: previewPrefix });
+    queryClient.invalidateQueries({ queryKey: qk.table_io.profile(schema, tableName) });
+  }
+
   const dryRunMutation = useMutation({
-    mutationFn: (file: File) =>
-      endpoints.importTable(schema, tableName, file, false, true),
-    onSuccess: (data, file) => {
-      if (data && 'risk' in data) {
-        const dr = data as DryRunResult;
-        let records: Record<string, unknown>[] = [];
-        try {
-          Papa.parse(file, {
-            preview: 10,
-            header: true,
-            skipEmptyLines: true,
-            complete: (res: Papa.ParseResult<Record<string, unknown>>) => {
-              records = (res.data as Record<string, unknown>[]).slice(0, 10);
-            },
-          });
-        } catch {
-        }
-        setDryRunData({ result: dr, previewRecords: records });
-        toast.info('Dry Run tamamlandı', { description: dr.note });
+    mutationFn: async (file: File) => {
+      const result = await endpoints.importTable(schemaPath, tablePath, file, false, true);
+      // Papa parses File objects asynchronously, so this has to be awaited.
+      const previewRecords = await parseCsvPreview(file);
+      return { result, previewRecords };
+    },
+    onSuccess: ({ result, previewRecords }) => {
+      if (isDryRun(result)) {
+        setDryRunData({ result, previewRecords });
+        toast.info(t('tableDetail.import.dryRunDone'), { description: result.note });
       }
     },
   });
 
   const importMutation = useMutation({
-    mutationFn: (file: File) =>
-      endpoints.importTable(schema, tableName, file, true, false),
+    mutationFn: (file: File) => endpoints.importTable(schemaPath, tablePath, file, true, false),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: qk.schemas.table(schema, tableName) });
-      queryClient.invalidateQueries({ queryKey: qk.table_io.export(schema, tableName) });
+      invalidateTable();
       if (data && 'imported' in data) {
         const r = data as TableImportResult;
-        toast.success('İçe aktarım başarılı', {
+        toast.success(t('tableDetail.import.success'), {
           description: `${r.imported} · ${formatBytes(r.bytes)}`,
         });
       }
-      setImportFile(null);
-      setDryRunData(null);
-      form.reset();
+      resetImport();
     },
   });
 
-  const form = useForm<{ file?: File }>({
-    defaultValues: {},
+  const exportMutation = useMutation({
+    mutationFn: () => endpoints.exportTable(schemaPath, tablePath, EXPORT_LIMIT, 'csv'),
+    onSuccess: (csv) => {
+      downloadText(csv, `${schema}_${tableName}_${Date.now()}.csv`);
+      const capped = (describeQuery.data?.live_tuples ?? 0) > EXPORT_LIMIT;
+      const description = t('tableDetail.export.capped', { limit: formatNumber(EXPORT_LIMIT) });
+      if (capped) {
+        toast.warning(t('tableDetail.export.done'), { description });
+      } else {
+        toast.success(t('tableDetail.export.done'));
+      }
+    },
   });
 
-  function safeIdent(s: string): string {
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(s)) return s;
-    return `"${s.replace(/"/g, '""')}"`;
-  }
+  const analyzeMutation = useMutation({
+    mutationFn: async () => {
+      const plan = await endpoints.analyzeTable(schemaPath, tablePath, false, true);
+      const ok = await confirm({
+        title: t('tableDetail.analyze.confirmTitle', { table: identifier }),
+        description: t('tableDetail.analyze.confirmDescription'),
+        risk_level: 'MAINTENANCE',
+        sql_preview: isDryRun(plan) ? plan.sql : [`ANALYZE ${identifier}`],
+        confirm_label: 'ANALYZE',
+        cancel_label: t('common.cancel'),
+      });
+      if (!ok) return false;
+      await endpoints.analyzeTable(schemaPath, tablePath, true, false);
+      return true;
+    },
+    onSuccess: (ran) => {
+      if (!ran) return;
+      invalidateTable();
+      toast.success(t('tableDetail.analyze.done', { table: identifier }));
+    },
+  });
 
-  function handleExportCSV() {
-    const result = previewQuery.data as SqlResult | undefined;
-    if (!result || result.row_count === 0) {
-      toast.warning('Dışa aktarılacak veri yok');
+  function handlePreviewExport() {
+    const result = previewQuery.data;
+    if (!isSqlResult(result) || result.rows.length === 0) {
+      toast.warning(t('tableDetail.export.noData'));
       return;
     }
-    const records = result.rows.map((row) => {
-      const obj: Record<string, unknown> = {};
-      result.columns.forEach((col, i) => (obj[col] = row[i]));
-      return obj;
+    // Fields plus row arrays, so duplicate column names keep their own values.
+    const csv = Papa.unparse({
+      fields: result.columns,
+      data: result.rows.map((row) => row.map(csvValue)),
     });
-    downloadCSVFromRecords(records, `${schema}_${tableName}_preview_${Date.now()}.csv`);
-    toast.success('CSV dışa aktarıldı', {
-      description: `${records.length} satır`,
+    downloadText(csv, `${schema}_${tableName}_preview_${Date.now()}.csv`);
+    toast.success(t('tableDetail.export.done'), {
+      description: t('tableDetail.rowCount', { count: formatNumber(result.rows.length) }),
     });
   }
 
-  async function handleFullExport() {
-    try {
-      const result = await endpoints.executeSql({
-        sql: `SELECT * FROM ${safeIdent(schema)}.${safeIdent(tableName)}`,
-        confirm: true,
-        readonly: true,
-      });
-      if (result && 'row_count' in result) {
-        const r = result as SqlResult;
-        const records = r.rows.map((row) => {
-          const obj: Record<string, unknown> = {};
-          r.columns.forEach((col, i) => (obj[col] = row[i]));
-          return obj;
-        });
-        downloadCSVFromRecords(records, `${schema}_${tableName}_full_${Date.now()}.csv`);
-        toast.success('Tam CSV dışa aktarıldı', {
-          description: `${records.length} satır`,
-        });
-      }
-    } catch (e: any) {
-      toast.error('Dışa aktarım başarısız', {
-        description: e?.message ?? 'Bilinmeyen hata',
-      });
-    }
-  }
-
-  function onFileSubmit(values: { file?: File }) {
+  function handleDryRun(e: React.FormEvent) {
+    e.preventDefault();
     if (!importFile) {
-      toast.warning('Lütfen bir CSV dosyası seçin');
+      toast.warning(t('tableDetail.import.selectFile'));
       return;
     }
     setDryRunData(null);
@@ -237,44 +307,41 @@ export default function SchemaTableDetailPage() {
     if (!importFile || !dryRunData) return;
     const dr = dryRunData.result;
     const ok = await confirm({
-      title: `${identifier} tablosuna içe aktarılsın mı?`,
-      description: `Risk: ${dr.risk}. ${dr.note}. Veritabanına yazma işlemi geri alınamaz.`,
-      risk_level: (dr.risk === 'DANGEROUS' ? 'DANGEROUS' : 'MAINTENANCE') as any,
+      title: t('tableDetail.import.confirmTitle', { table: identifier }),
+      description: t('tableDetail.import.confirmDescription', { risk: dr.risk, note: dr.note }),
+      risk_level: dr.risk === 'DANGEROUS' ? 'DANGEROUS' : 'MAINTENANCE',
       sql_preview: dr.sql ?? [],
-      confirm_label: 'İçe Aktar',
-      cancel_label: 'Vazgeç',
+      confirm_label: t('tableDetail.import.confirmLabel'),
+      cancel_label: t('common.cancel'),
     });
     if (ok) importMutation.mutate(importFile);
   }
 
-  const previewResult = previewQuery.data as SqlResult | undefined;
-  const previewRecords: PreviewRow[] = React.useMemo(() => {
-    if (!previewResult) return [];
-    return previewResult.rows.map((row, i) => {
-      const obj: PreviewRow = { __id: i };
-      previewResult.columns.forEach((col, ci) => (obj[col] = row[ci]));
-      return obj;
-    });
-  }, [previewResult]);
+  const previewResult = isSqlResult(previewQuery.data) ? previewQuery.data : undefined;
 
-  const previewColumns = React.useMemo<ColumnDef<PreviewRow>[]>(() => {
+  // Columns are addressed by position because names can repeat, and a name
+  // containing a dot would be read as a nested path by accessorKey.
+  const previewColumns = React.useMemo<ColumnDef<ResultRow>[]>(() => {
     if (!previewResult) return [];
-    return previewResult.columns.map<ColumnDef<PreviewRow>>((col) => ({
-      accessorKey: col,
+    return previewResult.columns.map<ColumnDef<ResultRow>>((col, index) => ({
+      id: `col_${index}`,
+      accessorFn: (row) => row[index],
       header: col,
       cell: ({ getValue }) => {
         const v = getValue();
-        if (v === null || v === undefined)
-          return <span className="text-muted-foreground italic">NULL</span>;
-        if (typeof v === 'object')
-          return <code className="text-xs text-zinc-300">{JSON.stringify(v)}</code>;
-        return <span className="text-xs">{String(v)}</span>;
+        if (v === null || v === undefined) {
+          return <span className="italic text-muted-foreground">NULL</span>;
+        }
+        if (typeof v === 'object') {
+          return <code className="text-muted-foreground">{JSON.stringify(v)}</code>;
+        }
+        return String(v);
       },
     }));
   }, [previewResult]);
 
   const previewTable = useReactTable({
-    data: previewRecords,
+    data: previewResult?.rows ?? [],
     columns: previewColumns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -284,61 +351,54 @@ export default function SchemaTableDetailPage() {
     initialState: { pagination: { pageSize: 25 } },
   });
 
-  const profileColumns = React.useMemo<ColumnDef<TableColumnProfile>[]>(
-    () => [
+  const profileRows = React.useMemo(
+    () => (profileQuery.data ?? []).map(normalizeProfile),
+    [profileQuery.data]
+  );
+
+  const profileColumns = React.useMemo<ColumnDef<ProfileRow>[]>(() => {
+    const numberCell = (value: number | null) => (
+      <span className="font-mono text-muted-foreground">
+        {value === null ? '-' : formatNumber(value)}
+      </span>
+    );
+    return [
       {
-        accessorKey: 'column_name',
-        header: 'Kolon',
+        accessorKey: 'column',
+        header: t('tableDetail.profile.column'),
         cell: ({ getValue }) => (
-          <div className="flex items-center gap-2">
-            <Columns3 className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="font-mono font-medium text-white text-sm">
-              {getValue<string>()}
-            </span>
-          </div>
+          <span className="font-mono font-medium text-foreground">{getValue<string>()}</span>
         ),
       },
       {
-        accessorKey: 'null_count',
-        header: 'NULL',
-        size: 110,
-        sortingFn: (a, b) =>
-          (a.original.null_count ?? 0) - (b.original.null_count ?? 0),
-        cell: ({ getValue, row }) => {
-          const nc = getValue<number | undefined>() ?? 0;
-          const distinct = row.original.distinct_count ?? 0;
-          const total = nc + distinct;
-          return (
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-xs text-zinc-300">{formatNumber(nc)}</span>
-              {total > 0 && (
-                <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-red-500 to-amber-500"
-                    style={{ width: `${Math.min(100, (nc / total) * 100)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        },
+        accessorKey: 'dataType',
+        header: t('tableDetail.profile.type'),
+        cell: ({ getValue }) => (
+          <span className="font-mono text-muted-foreground">{getValue<string>()}</span>
+        ),
       },
       {
-        accessorKey: 'distinct_count',
-        header: 'Distinct',
-        size: 120,
-        sortingFn: (a, b) =>
-          (a.original.distinct_count ?? 0) - (b.original.distinct_count ?? 0),
-        cell: ({ getValue, row }) => {
-          const dc = getValue<number | undefined>() ?? 0;
-          const nc = row.original.null_count ?? 0;
-          const total = nc + dc;
+        accessorKey: 'total',
+        header: t('tableDetail.profile.sampled'),
+        cell: ({ row }) =>
+          row.original.unavailable ? (
+            <span className="text-warning">{t('tableDetail.profile.unavailable')}</span>
+          ) : (
+            numberCell(row.original.total)
+          ),
+      },
+      {
+        accessorKey: 'nulls',
+        header: 'NULL',
+        // Share of the sampled rows; nulls + distinct is not a row count.
+        cell: ({ row }) => {
+          const { nulls, total } = row.original;
           return (
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-xs text-zinc-300">{formatNumber(dc)}</span>
-              {total > 0 && (
-                <span className="text-[10px] text-muted-foreground">
-                  {formatPercent(dc, total)} benzersiz
+            <div className="flex items-center gap-2">
+              {numberCell(nulls)}
+              {nulls !== null && !!total && (
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {formatNumber(nulls / total, { style: 'percent', maximumFractionDigits: 1 })}
                 </span>
               )}
             </div>
@@ -346,49 +406,20 @@ export default function SchemaTableDetailPage() {
         },
       },
       {
-        accessorKey: 'avg_width_bytes',
-        header: 'Ort. Boyut',
-        size: 110,
-        sortingFn: (a, b) =>
-          (a.original.avg_width_bytes ?? 0) - (b.original.avg_width_bytes ?? 0),
-        cell: ({ getValue }) => (
-          <span className="font-mono text-xs text-zinc-300">
-            {formatBytes(getValue<number | undefined>() ?? 0)}
-          </span>
-        ),
+        accessorKey: 'distinct',
+        header: 'Distinct',
+        cell: ({ row }) => numberCell(row.original.distinct),
       },
       {
-        accessorKey: 'min_value',
-        header: 'Min',
-        cell: ({ getValue }) => {
-          const v = getValue();
-          if (v === null || v === undefined) return null;
-          return (
-            <code className="text-[11px] font-mono text-zinc-400 truncate max-w-[140px] block">
-              {String(v)}
-            </code>
-          );
-        },
+        accessorKey: 'avgWidth',
+        header: t('tableDetail.profile.avgWidth'),
+        cell: ({ row }) => numberCell(row.original.avgWidth),
       },
-      {
-        accessorKey: 'max_value',
-        header: 'Max',
-        cell: ({ getValue }) => {
-          const v = getValue();
-          if (v === null || v === undefined) return null;
-          return (
-            <code className="text-[11px] font-mono text-zinc-400 truncate max-w-[140px] block">
-              {String(v)}
-            </code>
-          );
-        },
-      },
-    ],
-    []
-  );
+    ];
+  }, [t, formatNumber]);
 
   const profileTable = useReactTable({
-    data: profileQuery.data ?? [],
+    data: profileRows,
     columns: profileColumns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -397,584 +428,444 @@ export default function SchemaTableDetailPage() {
   });
 
   const detail = describeQuery.data;
+  const describeError = describeQuery.isError ? (
+    <InlineError error={describeQuery.error} onRetry={() => describeQuery.refetch()} />
+  ) : null;
+  const dryRisk = dryRunData?.result.risk;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => router.push('/schema-browser')}
-            className="mb-2 -ml-2"
+            className="-ml-2 h-6 px-2 text-xs"
           >
-            <ArrowLeft className="h-4 w-4 mr-1.5" />
-            Şema Tarayıcıya Dön
+            <ArrowLeft className="h-3 w-3" />
+            {t('tableDetail.back')}
           </Button>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Database className="h-8 w-8 text-gradient" />
-            {identifier}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Kolonlar · İndeksler · Kısıtlar · Önizleme · Profil · CSV
-          </p>
+          <h1 className="break-all font-mono text-lg font-semibold text-foreground">{identifier}</h1>
+          <p className="text-xs text-muted-foreground">{t('tableDetail.subtitle')}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
             variant="outline"
-            className="px-4 py-2 text-sm bg-black/30 gap-2"
+            size="sm"
+            onClick={handlePreviewExport}
+            disabled={!previewResult || previewResult.rows.length === 0}
           >
-            <HardDrive className="h-3.5 w-3.5 text-amber-400" />
-            {detail ? formatBytes(detail.total_size_bytes) : '...'}
-          </Badge>
-          <Badge
-            variant="outline"
-            className="px-4 py-2 text-sm bg-black/30 gap-2"
-          >
-            <Layers className="h-3.5 w-3.5 text-emerald-400" />
-            {detail ? formatNumber(detail.live_tuples) : '...'} satır
-          </Badge>
-          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!previewResult || previewResult.row_count === 0}>
-            <Download className="h-4 w-4 mr-1.5" />
-            Önizleme CSV
+            <Download className="h-3.5 w-3.5" />
+            {t('tableDetail.export.preview')}
           </Button>
           <Button
-            onClick={handleFullExport}
-            className="bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold"
+            variant="outline"
             size="sm"
+            onClick={() => exportMutation.mutate()}
+            disabled={exportMutation.isPending}
           >
-            <FileSpreadsheet className="h-4 w-4 mr-1.5" />
-            Tam CSV İndir
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            {exportMutation.isPending ? t('common.loading') : t('tableDetail.export.action')}
           </Button>
+          <IfWriter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => analyzeMutation.mutate()}
+              disabled={analyzeMutation.isPending}
+            >
+              <Activity className="h-3.5 w-3.5" />
+              ANALYZE
+            </Button>
+          </IfWriter>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label={t('tableDetail.stats.size')} value={detail ? formatBytes(detail.total_size_bytes) : '-'} />
+        <Stat label={t('tableDetail.stats.liveRows')} value={detail ? formatNumber(detail.live_tuples) : '-'} />
+        <Stat label={t('tableDetail.stats.deadRows')} value={detail ? formatNumber(detail.dead_tuples) : '-'} />
+        <Stat label={t('tableDetail.tabs.columns')} value={detail ? formatNumber(detail.columns.length) : '-'} />
+        <Stat label={t('tableDetail.tabs.indexes')} value={detail ? formatNumber(detail.indexes.length) : '-'} />
+        <Stat label={t('tableDetail.stats.owner')} value={detail?.owner ?? '-'} />
       </div>
 
       <Card className="overflow-hidden">
         <CardContent className="!p-0">
-          <Tabs defaultValue="columns" className="p-6 pt-5">
-            <TabsList className="mb-4 flex-wrap h-auto !py-2 gap-1">
-              <TabsTrigger value="columns" className="h-9">
-                <Columns3 className="h-3.5 w-3.5 mr-1.5" />
-                Kolonlar
-                <Badge variant="outline" className="ml-2 !py-0 !px-2.5 text-[10px] h-auto">
-                  {detail?.columns.length ?? 0}
-                </Badge>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="p-3">
+            <TabsList className="mb-2 h-auto flex-wrap gap-0.5 !py-1">
+              <TabsTrigger value="columns" className="h-6 text-xs">
+                <Columns3 className="mr-1 h-3 w-3" />
+                {t('tableDetail.tabs.columns')}
+                <span className="ml-1.5 font-mono opacity-75">{formatNumber(detail?.columns.length ?? 0)}</span>
               </TabsTrigger>
-              <TabsTrigger value="indexes" className="h-9">
-                <KeyRound className="h-3.5 w-3.5 mr-1.5" />
-                İndeksler
-                <Badge variant="outline" className="ml-2 !py-0 !px-2.5 text-[10px] h-auto">
-                  {detail?.indexes.length ?? 0}
-                </Badge>
+              <TabsTrigger value="indexes" className="h-6 text-xs">
+                <KeyRound className="mr-1 h-3 w-3" />
+                {t('tableDetail.tabs.indexes')}
+                <span className="ml-1.5 font-mono opacity-75">{formatNumber(detail?.indexes.length ?? 0)}</span>
               </TabsTrigger>
-              <TabsTrigger value="constraints" className="h-9">
-                <GitBranch className="h-3.5 w-3.5 mr-1.5" />
-                Kısıtlar
-                <Badge variant="outline" className="ml-2 !py-0 !px-2.5 text-[10px] h-auto">
-                  {detail?.constraints.length ?? 0}
-                </Badge>
+              <TabsTrigger value="constraints" className="h-6 text-xs">
+                <GitBranch className="mr-1 h-3 w-3" />
+                {t('tableDetail.tabs.constraints')}
+                <span className="ml-1.5 font-mono opacity-75">{formatNumber(detail?.constraints.length ?? 0)}</span>
               </TabsTrigger>
-              <TabsTrigger value="preview" className="h-9">
-                <Eye className="h-3.5 w-3.5 mr-1.5" />
-                Önizleme (100)
+              <TabsTrigger value="preview" className="h-6 text-xs">
+                <Eye className="mr-1 h-3 w-3" />
+                {t('tableDetail.tabs.preview', { limit: PREVIEW_LIMIT })}
               </TabsTrigger>
-              <TabsTrigger value="profile" className="h-9">
-                <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
-                Profil
+              <TabsTrigger value="profile" className="h-6 text-xs">
+                <BarChart3 className="mr-1 h-3 w-3" />
+                {t('tableDetail.tabs.profile')}
               </TabsTrigger>
-              <TabsTrigger value="import" className="h-9">
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                CSV Import
-              </TabsTrigger>
+              <IfWriter>
+                <TabsTrigger value="import" className="h-6 text-xs">
+                  <Upload className="mr-1 h-3 w-3" />
+                  {t('tableDetail.tabs.import')}
+                </TabsTrigger>
+              </IfWriter>
             </TabsList>
 
-            <TabsContent value="columns">
-              <Section title="Kolon Tanımı">
-                {describeQuery.isLoading && <LoadingRow />}
-                {!describeQuery.isLoading && !detail && (
-                  <EmptyRow text="Tablo bilgisi yüklenemedi" />
-                )}
-                {detail && detail.columns.length === 0 && <EmptyRow text="Kolon bulunamadı" />}
-                {detail && detail.columns.length > 0 && (
-                  <div className="divide-y divide-white/5">
-                    {detail.columns.map((c, i) => (
-                      <div
-                        key={i}
-                        className="p-5 flex items-start gap-4 hover:bg-white/5 transition-colors"
-                      >
-                        <div className="flex flex-col items-center pt-1 gap-1.5 w-10 shrink-0">
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            #{i + 1}
-                          </span>
-                          <div className="h-8 w-8 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
-                            <Type className="h-3.5 w-3.5 text-indigo-400" />
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="font-mono font-semibold text-white text-base">
-                              {c.name}
-                            </span>
-                            <Badge
-                              variant="outline"
-                              className="bg-black/30 font-mono text-[11px]"
-                            >
-                              {c.data_type}
-                            </Badge>
-                            {!c.nullable && (
-                              <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
-                                NOT NULL
-                              </RiskBadge>
-                            )}
-                            {c.nullable && (
-                              <RiskBadge riskLevel="INFO" size="sm" showIcon={false}>
-                                NULLABLE
-                              </RiskBadge>
-                            )}
-                          </div>
-                          {c.default && (
-                            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 inline-block max-w-full overflow-hidden">
-                              <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
-                                <Sparkles className="h-3 w-3" /> Default
-                              </div>
-                              <code className="text-xs font-mono text-zinc-300 block truncate">
-                                {c.default}
-                              </code>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
+            <TabsContent value="columns" className="space-y-2">
+              {describeQuery.isLoading && <Placeholder text={t('common.loading')} />}
+              {describeError}
+              {detail && detail.columns.length === 0 && <Placeholder text={t('tableDetail.columns.empty')} />}
+              {detail && detail.columns.length > 0 && (
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <UITable>
+                    <TableHeader className="bg-card">
+                      <TableRow>
+                        <TableHead className="h-7 w-10 px-2 text-xs font-semibold">#</TableHead>
+                        <TableHead className="h-7 px-2 text-xs font-semibold">{t('tableDetail.columns.name')}</TableHead>
+                        <TableHead className="h-7 px-2 text-xs font-semibold">{t('tableDetail.columns.type')}</TableHead>
+                        <TableHead className="h-7 px-2 text-xs font-semibold">{t('tableDetail.columns.nullable')}</TableHead>
+                        <TableHead className="h-7 px-2 text-xs font-semibold">{t('tableDetail.columns.default')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detail.columns.map((c, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="px-2 py-1.5 font-mono text-xs text-muted-foreground">
+                            {formatNumber(i + 1)}
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 font-mono text-xs font-medium text-foreground">
+                            {c.name}
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 font-mono text-xs text-muted-foreground">
+                            {c.data_type}
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs">
+                            <RiskBadge riskLevel={c.nullable ? 'INFO' : 'WARNING'} size="sm" showIcon={false}>
+                              {c.nullable ? 'NULLABLE' : 'NOT NULL'}
+                            </RiskBadge>
+                          </TableCell>
+                          <TableCell className="max-w-[320px] truncate px-2 py-1.5 font-mono text-xs text-muted-foreground">
+                            {c.default ?? '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </UITable>
+                </div>
+              )}
             </TabsContent>
 
-            <TabsContent value="indexes">
-              <Section title="İndeksler">
-                {describeQuery.isLoading && <LoadingRow />}
-                {!describeQuery.isLoading && !detail && <EmptyRow text="Tablo bilgisi yüklenemedi" />}
-                {detail && detail.indexes.length === 0 && <EmptyRow text="İndeks tanımı yok" />}
-                {detail && detail.indexes.length > 0 && (
-                  <div className="space-y-2">
-                    {detail.indexes.map((idx, i) => (
-                      <div
-                        key={i}
-                        className="rounded-2xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                            <KeyRound className="h-5 w-5 text-emerald-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-mono font-semibold text-white truncate">
-                              {idx}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground mt-1">
-                              {i + 1}. indeks
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
-            </TabsContent>
-
-            <TabsContent value="constraints">
-              <Section title="Kısıtlar (Constraints)">
-                {describeQuery.isLoading && <LoadingRow />}
-                {!describeQuery.isLoading && !detail && <EmptyRow text="Tablo bilgisi yüklenemedi" />}
-                {detail && detail.constraints.length === 0 && <EmptyRow text="Kısıt tanımı yok" />}
-                {detail && detail.constraints.length > 0 && (
-                  <div className="space-y-2">
-                    {detail.constraints.map((cst, i) => (
-                      <div
-                        key={i}
-                        className="rounded-2xl border border-white/10 bg-white/5 p-5"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center shrink-0">
-                            <GitBranch className="h-5 w-5 text-violet-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <pre className="font-mono text-sm text-zinc-300 whitespace-pre-wrap break-all">
-                              {cst}
-                            </pre>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
-            </TabsContent>
-
-            <TabsContent value="preview">
-              <Section title="SELECT * LIMIT 100">
-                {previewQuery.isLoading && <LoadingRow />}
-                {previewQuery.error && (
-                  <EmptyRow
-                    text={
-                      "Önizleme yüklenemedi: " +
-                      (((previewQuery.error as unknown) as { message?: string })
-                        ?.message ?? "")
-                    }
-                  />
-                )}
-                {!previewQuery.isLoading && previewResult && (
-                  <>
-                    <div className="flex items-center justify-between mb-3 text-xs text-muted-foreground px-2">
-                      <span>
-                        {previewResult.row_count} satır · {previewResult.columns.length} kolon
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <FileJson className="h-3 w-3" />
-                        {previewResult.command} ·{' '}
-                        <code className="font-mono">{previewResult.kind}</code>
-                      </span>
+            <TabsContent value="indexes" className="space-y-2">
+              {describeQuery.isLoading && <Placeholder text={t('common.loading')} />}
+              {describeError}
+              {detail && detail.indexes.length === 0 && <Placeholder text={t('tableDetail.indexes.empty')} />}
+              {detail && detail.indexes.length > 0 && (
+                <div className="divide-y divide-border rounded-md border border-border">
+                  {detail.indexes.map((idx, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted">
+                      <KeyRound className="h-3.5 w-3.5 shrink-0 text-success" />
+                      <pre className="whitespace-pre-wrap break-all font-mono text-xs text-foreground">{idx}</pre>
                     </div>
-                    <div className="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-2xl border border-white/10 bg-black/20">
-                      <UITable>
-                        <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
-                          {previewTable.getHeaderGroups().map((hg) => (
-                            <TableRow key={hg.id}>
-                              {hg.headers.map((h) => (
-                                <TableHead
-                                  key={h.id}
-                                  className="text-[11px] font-semibold whitespace-nowrap px-4 py-3"
-                                >
-                                  {h.isPlaceholder
-                                    ? null
-                                    : flexRender(
-                                        h.column.columnDef.header,
-                                        h.getContext()
-                                      )}
-                                </TableHead>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableHeader>
-                        <TableBody>
-                          {previewTable.getRowModel().rows.map((r) => (
-                            <TableRow key={r.id}>
-                              {r.getVisibleCells().map((c) => (
-                                <TableCell key={c.id} className="px-4 py-2.5">
-                                  {flexRender(
-                                    c.column.columnDef.cell,
-                                    c.getContext()
-                                  )}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                          {previewTable.getRowModel().rows.length === 0 && (
-                            <TableRow>
-                              <TableCell
-                                colSpan={previewColumns.length}
-                                className="text-center py-16 text-muted-foreground"
-                              >
-                                0 satır
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </UITable>
-                    </div>
-                    {previewTable.getPageCount() > 1 && (
-                      <div className="flex items-center justify-between px-2 pt-3">
-                        <div className="text-xs text-muted-foreground">
-                          Sayfa {previewTable.getState().pagination.pageIndex + 1} /{' '}
-                          {previewTable.getPageCount()}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => previewTable.previousPage()}
-                            disabled={!previewTable.getCanPreviousPage()}
-                          >
-                            <ChevronUp className="h-3.5 w-3.5 mr-1" />
-                            Önceki
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => previewTable.nextPage()}
-                            disabled={!previewTable.getCanNextPage()}
-                          >
-                            Sonraki
-                            <ChevronDown className="h-3.5 w-3.5 ml-1" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </Section>
+                  ))}
+                </div>
+              )}
             </TabsContent>
 
-            <TabsContent value="profile">
-              <Section title="Kolon Profili (NULL / Distinct / Boyut)">
-                {profileQuery.isLoading && <LoadingRow />}
-                {profileQuery.error && (
-                  <EmptyRow text="Profil yüklenemedi" />
-                )}
-                {!profileQuery.isLoading && profileQuery.data && profileQuery.data.length > 0 && (
-                  <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
+            <TabsContent value="constraints" className="space-y-2">
+              {describeQuery.isLoading && <Placeholder text={t('common.loading')} />}
+              {describeError}
+              {detail && detail.constraints.length === 0 && <Placeholder text={t('tableDetail.constraints.empty')} />}
+              {detail && detail.constraints.length > 0 && (
+                <div className="divide-y divide-border rounded-md border border-border">
+                  {detail.constraints.map((cst, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                      <GitBranch className="h-3.5 w-3.5 shrink-0 text-info" />
+                      <pre className="whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">{cst}</pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="preview" className="space-y-2">
+              {previewQuery.isLoading && <Placeholder text={t('common.loading')} />}
+              {previewQuery.isError && (
+                <InlineError error={previewQuery.error} onRetry={() => previewQuery.refetch()} />
+              )}
+              {previewResult && (
+                <>
+                  <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
+                    <span>
+                      {t('tableDetail.preview.summary', {
+                        rows: formatNumber(previewResult.row_count),
+                        columns: formatNumber(previewResult.columns.length),
+                      })}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <FileJson className="h-3 w-3" />
+                      {previewResult.command} · {previewResult.kind}
+                    </span>
+                  </div>
+                  <div className="max-h-[55vh] overflow-auto rounded-md border border-border">
                     <UITable>
-                      <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
-                        {profileTable.getHeaderGroups().map((hg) => (
+                      <TableHeader className="sticky top-0 z-10 bg-card">
+                        {previewTable.getHeaderGroups().map((hg) => (
                           <TableRow key={hg.id}>
                             {hg.headers.map((h) => (
-                              <TableHead
-                                key={h.id}
-                                style={{ width: h.getSize() }}
-                                className="text-[11px] font-semibold whitespace-nowrap px-4 py-3"
-                              >
-                                {h.isPlaceholder
-                                  ? null
-                                  : flexRender(
-                                      h.column.columnDef.header,
-                                      h.getContext()
-                                    )}
-                              </TableHead>
+                              <SortableHead key={h.id} header={h} mono />
                             ))}
                           </TableRow>
                         ))}
                       </TableHeader>
                       <TableBody>
-                        {profileTable.getRowModel().rows.map((r) => (
+                        {previewTable.getRowModel().rows.map((r) => (
                           <TableRow key={r.id}>
                             {r.getVisibleCells().map((c) => (
-                              <TableCell
-                                key={c.id}
-                                style={{ width: c.column.getSize() }}
-                                className="px-4 py-3"
-                              >
-                                {flexRender(
-                                  c.column.columnDef.cell,
-                                  c.getContext()
-                                )}
+                              <TableCell key={c.id} className="px-2 py-1.5 font-mono text-xs">
+                                {flexRender(c.column.columnDef.cell, c.getContext())}
                               </TableCell>
                             ))}
                           </TableRow>
                         ))}
+                        {previewTable.getRowModel().rows.length === 0 && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={Math.max(previewColumns.length, 1)}
+                              className="py-6 text-center text-xs text-muted-foreground"
+                            >
+                              {t('common.noData')}
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </UITable>
                   </div>
-                )}
-              </Section>
-            </TabsContent>
-
-            <TabsContent value="import">
-              <div className="space-y-6">
-                <Section title="CSV İçe Aktarımı">
-                  <form
-                      onSubmit={form.handleSubmit(onFileSubmit)}
-                      className="space-y-5"
-                    >
-                      <FormField
-                        control={form.control}
-                        name="file"
-                        render={() => (
-                          <FormItem>
-                            <FormLabel className="text-sm font-semibold">
-                              CSV Dosyası
-                            </FormLabel>
-                            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
-                              <FormControl>
-                                <div className="relative">
-                                  <Input
-                                    type="file"
-                                    accept=".csv,text/csv"
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0] ?? null;
-                                      setImportFile(f);
-                                      setDryRunData(null);
-                                      form.setValue('file', f ?? undefined);
-                                    }}
-                                    className="file:h-10 file:mr-4 file:rounded-full file:border-0 file:bg-gradient-to-r file:from-indigo-500 file:to-emerald-500 file:text-white file:px-4 file:text-sm file:font-semibold hover:file:opacity-90 cursor-pointer"
-                                  />
-                                </div>
-                              </FormControl>
-                              <Button
-                                type="submit"
-                                variant="outline"
-                                disabled={!importFile || dryRunMutation.isPending}
-                              >
-                                <Sparkles className="h-4 w-4 mr-1.5" />
-                                Dry Run Önizle
-                              </Button>
-                            </div>
-                            <FormDescription>
-                              Başlık satırı olan standart CSV. İlk önce Dry Run ile SQL önizlemesi alınır, sonra onay ile yazılır.
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      {dryRunMutation.isPending && (
-                        <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-center text-sm text-muted-foreground">
-                          Dry Run çalıştırılıyor...
-                        </div>
-                      )}
-                    </form>
-
-                  {dryRunData && (
-                    <div className="space-y-5 mt-6">
-                      <div
-                        className={cn(
-                          'rounded-2xl border p-5 space-y-3',
-                          dryRunData.result.risk === 'DANGEROUS'
-                            ? 'border-red-500/40 bg-red-500/5'
-                            : dryRunData.result.risk === 'MAINTENANCE'
-                              ? 'border-amber-500/40 bg-amber-500/5'
-                              : 'border-emerald-500/40 bg-emerald-500/5'
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={cn(
-                              'h-10 w-10 rounded-full flex items-center justify-center shrink-0',
-                              dryRunData.result.risk === 'DANGEROUS'
-                                ? 'bg-red-500/15 text-red-400'
-                                : dryRunData.result.risk === 'MAINTENANCE'
-                                  ? 'bg-amber-500/15 text-amber-400'
-                                  : 'bg-emerald-500/15 text-emerald-400'
-                            )}
-                          >
-                            {dryRunData.result.risk === 'DANGEROUS' ? (
-                              <AlertIcon className="h-5 w-5" />
-                            ) : (
-                              <CheckCircle2 className="h-5 w-5" />
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-white">
-                                Dry Run Sonucu
-                              </span>
-                              <RiskBadge
-                                riskLevel={
-                                  dryRunData.result.risk === 'DANGEROUS'
-                                    ? 'DANGEROUS'
-                                    : dryRunData.result.risk === 'MAINTENANCE'
-                                      ? 'MAINTENANCE'
-                                      : 'OK'
-                                }
-                                size="sm"
-                              >
-                                {dryRunData.result.risk}
-                              </RiskBadge>
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {dryRunData.result.note}
-                            </p>
-                            {dryRunData.result.target && (
-                              <p className="text-xs text-zinc-400 mt-0.5 font-mono">
-                                Hedef: {dryRunData.result.target}
-                              </p>
-                            )}
-                          </div>
-                        </div>
+                  {previewTable.getPageCount() > 1 && (
+                    <div className="flex items-center justify-between">
+                      <div className="font-mono text-xs text-muted-foreground">
+                        {t('tableDetail.pagination.page', {
+                          page: formatNumber(previewTable.getState().pagination.pageIndex + 1),
+                          total: formatNumber(previewTable.getPageCount()),
+                        })}
                       </div>
-
-                      {dryRunData.result.sql && dryRunData.result.sql.length > 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-black/30 p-5 space-y-3">
-                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                            <Hash className="h-3.5 w-3.5" />
-                            SQL Önizlemesi
-                          </div>
-                          <div className="space-y-2">
-                            {dryRunData.result.sql.map((s, i) => (
-                              <pre
-                                key={i}
-                                className="rounded-xl bg-black/40 border border-white/5 p-4 text-xs font-mono text-zinc-300 whitespace-pre-wrap break-all"
-                              >
-                                {s}
-                              </pre>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {dryRunData.previewRecords.length > 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
-                          <div className="px-5 py-3 border-b border-white/10 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                            <Eye className="h-3.5 w-3.5" />
-                            İlk {dryRunData.previewRecords.length} satır önizleme
-                          </div>
-                          <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                            <UITable>
-                              <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur">
-                                <TableRow>
-                                  {Object.keys(dryRunData.previewRecords[0]).map(
-                                    (k) => (
-                                      <TableHead
-                                        key={k}
-                                        className="text-[11px] font-semibold whitespace-nowrap px-4 py-2.5"
-                                      >
-                                        {k}
-                                      </TableHead>
-                                    )
-                                  )}
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {dryRunData.previewRecords.map((r, i) => (
-                                  <TableRow key={i}>
-                                    {Object.values(r).map((v, j) => (
-                                      <TableCell
-                                        key={j}
-                                        className="px-4 py-2 text-[11px] text-zinc-300 font-mono"
-                                      >
-                                        {v === null || v === undefined
-                                          ? 'NULL'
-                                          : String(v)}
-                                      </TableCell>
-                                    ))}
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </UITable>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex justify-end gap-3 pt-2">
+                      <div className="flex items-center gap-1.5">
                         <Button
-                          variant="ghost"
-                          onClick={() => {
-                            setDryRunData(null);
-                            setImportFile(null);
-                            form.reset();
-                          }}
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          onClick={() => previewTable.previousPage()}
+                          disabled={!previewTable.getCanPreviousPage()}
                         >
-                          Temizle
+                          <ChevronUp className="h-3 w-3" />
+                          {t('tableDetail.pagination.previous')}
                         </Button>
                         <Button
-                          onClick={handleConfirmImport}
-                          disabled={importMutation.isPending}
-                          className={cn(
-                            dryRunData.result.risk === 'DANGEROUS'
-                              ? 'bg-red-500 hover:bg-red-600 text-white font-bold'
-                              : 'bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold'
-                          )}
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          onClick={() => previewTable.nextPage()}
+                          disabled={!previewTable.getCanNextPage()}
                         >
-                          <Upload className="h-4 w-4 mr-1.5" />
-                          {importMutation.isPending
-                            ? 'İçe aktarılıyor...'
-                            : 'Onayla ve İçe Aktar'}
+                          {t('tableDetail.pagination.next')}
+                          <ChevronDown className="h-3 w-3" />
                         </Button>
                       </div>
                     </div>
                   )}
-                </Section>
-              </div>
+                </>
+              )}
             </TabsContent>
+
+            <TabsContent value="profile" className="space-y-2">
+              {profileQuery.isLoading && <Placeholder text={t('common.loading')} />}
+              {profileQuery.isError && (
+                <InlineError error={profileQuery.error} onRetry={() => profileQuery.refetch()} />
+              )}
+              {profileQuery.data?.length === 0 && <Placeholder text={t('common.noData')} />}
+              {profileRows.length > 0 && (
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <UITable>
+                    <TableHeader className="sticky top-0 z-10 bg-card">
+                      {profileTable.getHeaderGroups().map((hg) => (
+                        <TableRow key={hg.id}>
+                          {hg.headers.map((h) => (
+                            <SortableHead key={h.id} header={h} />
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableHeader>
+                    <TableBody>
+                      {profileTable.getRowModel().rows.map((r) => (
+                        <TableRow key={r.id}>
+                          {r.getVisibleCells().map((c) => (
+                            <TableCell key={c.id} className="px-2 py-1.5 text-xs">
+                              {flexRender(c.column.columnDef.cell, c.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </UITable>
+                </div>
+              )}
+            </TabsContent>
+
+            <IfWriter>
+              <TabsContent value="import" className="space-y-3">
+                <form onSubmit={handleDryRun} className="space-y-1.5">
+                  <Label htmlFor="csv-import-file" className="text-xs font-semibold">
+                    {t('tableDetail.import.fileLabel')}
+                  </Label>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]">
+                    <Input
+                      key={fileInputKey}
+                      id="csv-import-file"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => {
+                        setImportFile(e.target.files?.[0] ?? null);
+                        setDryRunData(null);
+                      }}
+                      className="h-8 cursor-pointer text-xs"
+                    />
+                    <Button type="submit" variant="outline" size="sm" disabled={!importFile || dryRunMutation.isPending}>
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {dryRunMutation.isPending ? t('tableDetail.import.dryRunning') : t('tableDetail.import.dryRun')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('tableDetail.import.help')}</p>
+                </form>
+
+                {dryRunData && (
+                  <div className="space-y-2">
+                    <div
+                      className={cn(
+                        'flex items-start gap-2 rounded-md border px-3 py-2',
+                        dryRisk === 'DANGEROUS'
+                          ? 'border-destructive/40 bg-destructive/5'
+                          : dryRisk === 'MAINTENANCE'
+                            ? 'border-warning/40 bg-warning/5'
+                            : 'border-success/40 bg-success/5'
+                      )}
+                    >
+                      {dryRisk === 'DANGEROUS' ? (
+                        <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                      ) : (
+                        <CheckCircle2
+                          className={cn(
+                            'mt-0.5 h-4 w-4 shrink-0',
+                            dryRisk === 'MAINTENANCE' ? 'text-warning' : 'text-success'
+                          )}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-foreground">
+                            {t('tableDetail.import.dryRunResult')}
+                          </span>
+                          <RiskBadge
+                            riskLevel={
+                              dryRisk === 'DANGEROUS' || dryRisk === 'MAINTENANCE' ? dryRisk : 'OK'
+                            }
+                            size="sm"
+                          >
+                            {dryRisk}
+                          </RiskBadge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{dryRunData.result.note}</p>
+                        {dryRunData.result.target && (
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {t('tableDetail.import.target', { target: dryRunData.result.target })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {dryRunData.result.sql && dryRunData.result.sql.length > 0 && (
+                      <div className="space-y-1 rounded-md border border-border bg-muted/30 px-3 py-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <Hash className="h-3 w-3" />
+                          {t('tableDetail.import.sqlPreview')}
+                        </div>
+                        {dryRunData.result.sql.map((s, i) => (
+                          <pre key={i} className="whitespace-pre-wrap break-all font-mono text-xs text-foreground">
+                            {s}
+                          </pre>
+                        ))}
+                      </div>
+                    )}
+
+                    {dryRunData.previewRecords.length > 0 && (
+                      <div className="overflow-hidden rounded-md border border-border">
+                        <div className="flex items-center gap-1.5 border-b border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <Eye className="h-3 w-3" />
+                          {t('tableDetail.import.firstRows', {
+                            count: formatNumber(dryRunData.previewRecords.length),
+                          })}
+                        </div>
+                        <div className="max-h-64 overflow-auto">
+                          <UITable>
+                            <TableHeader className="sticky top-0 bg-card">
+                              <TableRow>
+                                {Object.keys(dryRunData.previewRecords[0]).map((k) => (
+                                  <TableHead key={k} className="h-7 whitespace-nowrap px-2 font-mono text-xs font-semibold">
+                                    {k}
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {dryRunData.previewRecords.map((r, i) => (
+                                <TableRow key={i}>
+                                  {Object.values(r).map((v, j) => (
+                                    <TableCell key={j} className="px-2 py-1.5 font-mono text-xs text-muted-foreground">
+                                      {v === null || v === undefined ? 'NULL' : String(v)}
+                                    </TableCell>
+                                  ))}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </UITable>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-1.5">
+                      <Button variant="ghost" size="sm" onClick={resetImport}>
+                        {t('tableDetail.import.clear')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={dryRisk === 'DANGEROUS' ? 'destructive' : 'default'}
+                        onClick={handleConfirmImport}
+                        disabled={importMutation.isPending}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        {importMutation.isPending
+                          ? t('tableDetail.import.importing')
+                          : t('tableDetail.import.confirmAndImport')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+            </IfWriter>
           </Tabs>
         </CardContent>
       </Card>
@@ -982,36 +873,56 @@ export default function SchemaTableDetailPage() {
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function SortableHead<T>({ header, mono }: { header: Header<T, unknown>; mono?: boolean }) {
+  const sorted = header.column.getIsSorted();
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <div className="h-px flex-1 bg-white/5" />
-        <span>{title}</span>
-        <div className="h-px flex-1 bg-white/5" />
+    <TableHead
+      aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
+      className={cn('h-7 whitespace-nowrap px-2 text-xs font-semibold', mono && 'font-mono')}
+    >
+      <button
+        type="button"
+        onClick={header.column.getToggleSortingHandler()}
+        className="inline-flex items-center gap-1 hover:text-foreground"
+      >
+        {flexRender(header.column.columnDef.header, header.getContext())}
+        {sorted === 'asc' && <ArrowUp className="h-3 w-3" />}
+        {sorted === 'desc' && <ArrowDown className="h-3 w-3" />}
+      </button>
+    </TableHead>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2">
+      <div className="truncate text-[11px] text-muted-foreground">{label}</div>
+      <div className="truncate font-mono text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function InlineError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-destructive">{t('common.loadFailed')}</span>
+        <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={onRetry}>
+          <RotateCcw className="h-3 w-3" />
+          {t('common.retry')}
+        </Button>
       </div>
-      {children}
+      {error instanceof Error && error.message && (
+        <p className="mt-1 break-words font-mono text-muted-foreground">{error.message}</p>
+      )}
     </div>
   );
 }
 
-function LoadingRow() {
+function Placeholder({ text }: { text: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-16 text-center text-muted-foreground">
-      Yükleniyor...
-    </div>
-  );
-}
-
-function EmptyRow({ text }: { text: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-16 text-center text-muted-foreground">
+    <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
       {text}
     </div>
   );

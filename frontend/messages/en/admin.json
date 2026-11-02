@@ -1,0 +1,419 @@
+{
+  "connections": {
+    "title": "Connection Profiles",
+    "subtitle": "Manage PostgreSQL connection profiles. The profile to work with is chosen explicitly from the top bar.",
+    "newProfile": "New Profile",
+    "default": "Default",
+    "setDefault": "Make default",
+    "count": "{total} profiles · {defaults} default",
+    "searchPlaceholder": "Search profile, host, user...",
+    "noMatch": "No profiles match the search",
+    "columns": {
+      "name": "Profile Name",
+      "host": "Host",
+      "port": "Port",
+      "database": "Database",
+      "username": "User",
+      "actions": "Actions"
+    },
+    "toast": {
+      "created": "Connection profile created",
+      "createFailed": "Could not create the profile",
+      "deleted": "Profile deleted",
+      "defaultUpdated": "Default profile updated",
+      "defaultProtected": "The default profile cannot be deleted. Make another profile the default first."
+    },
+    "confirmDelete": {
+      "title": "Delete profile \"{name}\"?",
+      "description": "This cannot be undone. The profile and its saved connection details are permanently removed.",
+      "placeholder": "Type \"{name}\" to confirm"
+    },
+    "confirmDefault": {
+      "title": "Make \"{name}\" the default?",
+      "description": "The profile is marked as default in the list. The connection selected in this session does not change.",
+      "confirm": "Make default"
+    },
+    "form": {
+      "title": "New Connection Profile",
+      "description": "Enter the details for the PostgreSQL server. Creating a profile does not select it.",
+      "name": "Profile Name *",
+      "required": "Required",
+      "nameTaken": "A profile named \"{name}\" already exists",
+      "portRange": "Port must be between 1 and 65535",
+      "password": "Password",
+      "show": "Show",
+      "hide": "Hide",
+      "passwordEnv": "Password Environment Variable",
+      "passwordEnvHelp": "Optional, used instead of a password. Must be a dedicated variable such as PROD_DB_PASSWORD; PGGUARDIAN_* and PGPASSWORD are not accepted.",
+      "passwordEnvInvalid": "Enter a variable name such as PROD_DB_PASSWORD; PGGUARDIAN_* and PGPASSWORD are not accepted.",
+      "isDefault": "Mark as default",
+      "isDefaultReplaces": "Replaces the current default profile",
+      "isDefaultHelp": "Shown as the default in the list",
+      "create": "Create Profile",
+      "creating": "Creating…"
+    },
+    "empty": {
+      "title": "No profiles yet",
+      "hint": "Create a PostgreSQL connection profile to get started.",
+      "create": "Create First Profile"
+    },
+    "pagination": {
+      "summary": "Page {page} / {pages} · {total} records",
+      "perPage": "Per page:",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "test": {
+      "ok": "Connection succeeded",
+      "failed": "Could not connect",
+      "action": "Test connection"
+    }
+  },
+  "roles": {
+    "title": "Roles and Privileges",
+    "subtitle": "Manage PostgreSQL roles, their attributes and privileges",
+    "newRole": "New Role",
+    "details": "Details",
+    "protected": "System roles cannot be deleted",
+    "count": "{count} roles",
+    "searchPlaceholder": "Search role name...",
+    "noMatch": "No roles match the search",
+    "columns": {
+      "name": "Role Name",
+      "connectionLimit": "Connection Limit",
+      "validUntil": "Password Valid Until",
+      "actions": "Actions"
+    },
+    "stats": {
+      "total": "Total Roles",
+      "superuser": "SUPERUSER",
+      "canLogin": "Can Log In",
+      "elevated": "CREATEDB or CREATEROLE"
+    },
+    "toast": {
+      "created": "Role created",
+      "deleted": "Role deleted"
+    },
+    "confirmCreate": {
+      "title": "Create role \"{name}\"?",
+      "description": "The SQL below will be executed. Do you confirm?"
+    },
+    "confirmDelete": {
+      "title": "Delete role \"{name}\"?",
+      "description": "This cannot be undone. The role and its memberships are permanently removed.",
+      "placeholder": "Type \"{name}\" to confirm"
+    },
+    "form": {
+      "title": "Create New Role",
+      "description": "Create a new role on the PostgreSQL server",
+      "name": "Role Name *",
+      "required": "Required",
+      "password": "Password",
+      "passwordPlaceholder": "Leave empty for no password",
+      "attributes": "Role Attributes",
+      "login": "Can log in (LOGIN)",
+      "loginHelp": "This role can connect to the server",
+      "superuser": "Superuser (SUPERUSER)",
+      "superuserHelp": "Bypasses all restrictions, DANGEROUS",
+      "createdb": "Creates databases (CREATEDB)",
+      "createdbHelp": "Can create new databases",
+      "createrole": "Creates roles (CREATEROLE)",
+      "createroleHelp": "Can manage other roles",
+      "unlimited": "Unlimited (∞)",
+      "connections": "{count} connections",
+      "create": "Create Role",
+      "creating": "Creating…"
+    },
+    "empty": {
+      "title": "No roles yet",
+      "hint": "Create a PostgreSQL role to get started.",
+      "create": "Create First Role"
+    },
+    "pagination": {
+      "summary": "Page {page} / {pages} · {total} records",
+      "perPage": "Per page:",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
+  "roleDetail": {
+    "back": "Back to Roles",
+    "subtitle": "Attributes, privileges and memberships",
+    "refreshAll": "Refresh All",
+    "on": "ON",
+    "off": "OFF",
+    "yes": "YES",
+    "no": "NO",
+    "notFound": {
+      "title": "Role \"{name}\" not found",
+      "hint": "It may have been deleted, or it may not exist on the selected server."
+    },
+    "tabs": {
+      "attributes": "Attributes",
+      "grants": "Privileges ({count})",
+      "memberships": "Memberships ({count})"
+    },
+    "attributes": {
+      "current": "Current State",
+      "editable": "Editable Attributes",
+      "name": "Role Name",
+      "connectionLimit": "Connection Limit",
+      "validUntil": "Password Valid Until",
+      "unlimited": "Unlimited (∞)",
+      "noExpiry": "No expiry",
+      "keep": "Keep current",
+      "connections": "{count} connections",
+      "newPassword": "New Password",
+      "newPasswordPlaceholder": "Leave empty to keep the current password",
+      "validUntilHelp": "Leave empty to keep the current date.",
+      "save": "Save Changes",
+      "saving": "Saving…"
+    },
+    "grants": {
+      "privilege": "Privilege",
+      "type": "Type",
+      "object": "Object",
+      "actions": "Actions",
+      "regrant": "Grant Again",
+      "revoke": "Revoke",
+      "emptyTitle": "No direct privileges",
+      "emptyHint": "No privileges are assigned directly to this role. It may inherit them through memberships."
+    },
+    "confirmGrant": {
+      "title": "Grant {privilege}?",
+      "description": "{privilege} on {type} {target} will be granted to role \"{role}\"."
+    },
+    "confirmRevoke": {
+      "title": "Revoke {privilege}?",
+      "description": "{privilege} on {type} {target} will be revoked from role \"{role}\"."
+    },
+    "confirmAlter": {
+      "title": "Update attributes of \"{name}\"?",
+      "description": "The SQL below will be executed. Do you confirm?",
+      "confirm": "Apply Changes"
+    },
+    "confirmAddMember": {
+      "title": "Grant \"{role}\" membership to \"{member}\"?",
+      "description": "\"{member}\" will become a member of \"{role}\" and inherit its privileges."
+    },
+    "confirmRemoveMember": {
+      "title": "Remove member \"{member}\"?",
+      "description": "\"{member}\" will no longer inherit the privileges of \"{role}\".",
+      "placeholder": "Type \"{member}\" to confirm"
+    },
+    "members": {
+      "title": "Members of This Role ({count})",
+      "addNew": "Add Member",
+      "dialogTitle": "Add Member to \"{role}\"",
+      "dialogDescription": "The role you choose will become a member of \"{role}\".",
+      "memberLabel": "Member Role *",
+      "memberPlaceholder": "Choose a role...",
+      "memberRequired": "Choose a member role",
+      "noCandidates": "No eligible roles to add",
+      "add": "Add Member",
+      "adding": "Adding…",
+      "remove": "Remove",
+      "emptyTitle": "No members yet",
+      "emptyHint": "You can make other roles members of this role."
+    },
+    "memberOf": {
+      "title": "Member Of ({count})",
+      "emptyTitle": "Not a member of any role",
+      "emptyHint": "\"{role}\" is not a member of another role."
+    },
+    "toast": {
+      "altered": "Role attributes updated",
+      "nothingToChange": "You did not enter anything to change",
+      "granted": "Privilege granted",
+      "revoked": "Privilege revoked",
+      "memberAdded": "Membership granted",
+      "memberRemoved": "Membership removed"
+    }
+  },
+  "users": {
+    "title": "User Management",
+    "subtitle": "Manage the users who can access the system",
+    "forbidden": "Only users with the Admin role can view this page.",
+    "newUser": "New User",
+    "createDescription": "Add a new user to the system.",
+    "count": "{count} users",
+    "empty": "No users yet",
+    "creating": "Creating",
+    "edit": "Edit",
+    "password": "Password",
+    "deactivate": "Deactivate",
+    "cannotDeactivateSelf": "You cannot deactivate yourself",
+    "resetTitle": "Reset Password",
+    "resetDescription": "Set a new password for {email}. The user's open sessions are closed.",
+    "resetting": "Resetting",
+    "resetSubmit": "Reset Password",
+    "deactivateTitle": "Deactivate this user?",
+    "deactivateDescription": "The user cannot sign in and their open sessions are closed. The record is not deleted and can be reactivated later.",
+    "editTitle": "Edit User",
+    "editDescription": "Update the details of {email}.",
+    "activeHelp": "A user must be active to sign in.",
+    "saving": "Saving",
+    "fields": {
+      "email": "Email",
+      "fullName": "Full Name",
+      "initialPassword": "Initial Password",
+      "newPassword": "New Password",
+      "role": "Role",
+      "rolePlaceholder": "Choose a role",
+      "lastLogin": "Last Login",
+      "active": "Active",
+      "activeFor": "{email} active",
+      "actions": "Actions"
+    },
+    "validation": {
+      "email": "Enter a valid email",
+      "fullName": "Full name must be at least 2 characters",
+      "password": "Password must be at least {min} characters",
+      "role": "Choose a role"
+    },
+    "toast": {
+      "created": "User created",
+      "createFailed": "Could not create the user",
+      "updated": "User updated",
+      "updateFailed": "Could not update the user",
+      "activated": "User activated",
+      "deactivated": "User deactivated",
+      "statusFailed": "Could not change the status",
+      "deactivateFailed": "Could not deactivate the user",
+      "passwordReset": "Password reset",
+      "passwordResetFailed": "Could not reset the password"
+    }
+  },
+  "report": {
+    "title": "Report",
+    "subtitle": "Health, diagnostics, storage, replication, connections and roles · Generated: {when}",
+    "downloadJson": "Download JSON",
+    "downloadHtml": "Download HTML",
+    "toast": {
+      "jsonDone": "JSON downloaded",
+      "jsonFailed": "Could not download the JSON",
+      "htmlDone": "HTML downloaded",
+      "htmlFailed": "Could not download the HTML"
+    },
+    "kpi": {
+      "score": "Health Score",
+      "database": "Database",
+      "connections": "Connections",
+      "locks": "Locks",
+      "locksSub": "{blocking} blocking · {replicas} replicas",
+      "blocked": "BLOCKED",
+      "clear": "CLEAR"
+    },
+    "sections": {
+      "summary": {
+        "title": "Summary",
+        "description": "Overview of the report"
+      },
+      "health": {
+        "title": "Health Checks",
+        "description": "Status and value of each check"
+      },
+      "diagnostics": {
+        "title": "Diagnostic Findings",
+        "description": "CRITICAL, WARNING and INFO findings"
+      },
+      "storage": {
+        "title": "Storage: Top 10",
+        "description": "Largest tables, indexes and databases"
+      },
+      "replication": {
+        "title": "Replication",
+        "description": "Replica lag and slots"
+      },
+      "connections": {
+        "title": "Connections",
+        "description": "Active, idle and waiting connections"
+      },
+      "roles": {
+        "title": "Roles",
+        "description": "SUPERUSER, LOGIN and privilege summary"
+      }
+    },
+    "summary": {
+      "keys": "Report Sections",
+      "status": "Status",
+      "generatedAt": "Generated At",
+      "raw": "Raw report (top level)",
+      "items": "{count} items"
+    },
+    "health": {
+      "empty": "No health check data"
+    },
+    "diagnostics": {
+      "empty": "No diagnostic findings"
+    },
+    "storage": {
+      "empty": "No storage data"
+    },
+    "replication": {
+      "empty": "No replicas or slots",
+      "replicas": "Replicas ({count})",
+      "slots": "Replication Slots ({count})",
+      "lag": "Lag: {value}",
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "connections": {
+      "active": "Active",
+      "idle": "Idle",
+      "idleInTransaction": "Idle in Transaction",
+      "waiting": "Waiting",
+      "usage": "Usage",
+      "queryDuration": "Query: {seconds} s"
+    },
+    "roles": {
+      "empty": "No role data",
+      "total": "Total Roles",
+      "standard": "Standard"
+    },
+    "export": {
+      "title": "PgGuardian — Full Report",
+      "meta": "Database: {database}",
+      "generated": "Generated: {when}",
+      "fullJson": "Full JSON"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Your preferences are saved automatically",
+    "theme": {
+      "title": "Theme",
+      "description": "Your choice is stored in this browser.",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Language of the interface, dates and numbers."
+    },
+    "refresh": {
+      "title": "Auto Refresh",
+      "description": "When off, pages only update through Refresh.",
+      "on": "ON",
+      "off": "OFF",
+      "pollTitle": "Refresh Interval",
+      "pollDescription": "How often live pages fetch data.",
+      "pollDisabled": "Auto refresh is off.",
+      "pollPlaceholder": "Choose an interval",
+      "seconds": "{seconds} s"
+    },
+    "security": {
+      "title": "Password",
+      "description": "Change the sign-in password of this account.",
+      "change": "Change Password",
+      "dialogDescription": "Your other sessions are closed after the change.",
+      "current": "Current Password",
+      "new": "New Password",
+      "repeat": "New Password (Repeat)",
+      "tooShort": "Password must be at least {min} characters",
+      "mismatch": "The new password and its repeat do not match",
+      "changed": "Your password has been changed"
+    }
+  }
+}

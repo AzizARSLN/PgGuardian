@@ -9,13 +9,25 @@
 
 from __future__ import annotations
 
+import re
 import time
+from contextlib import nullcontext
 from typing import Any
 
+from psycopg.rows import tuple_row
 from pydantic import BaseModel, ConfigDict, Field
 
-from pgguardian.database.connection import DbClient, get_connection
+from pgguardian.database.connection import DbClient
 from pgguardian.sqlexec.classifier import StatementKind, classify, ensure_allowed
+
+# These refuse to run inside a transaction block.
+_NON_TRANSACTIONAL = re.compile(
+    r"^\s*(VACUUM\b|CREATE\s+DATABASE\b|DROP\s+DATABASE\b|ALTER\s+SYSTEM\b"
+    r"|CREATE\s+TABLESPACE\b|DROP\s+TABLESPACE\b"
+    r"|REINDEX\b.*\bCONCURRENTLY\b|CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY\b"
+    r"|DROP\s+INDEX\s+CONCURRENTLY\b)",
+    re.I | re.S,
+)
 
 DEFAULT_MAX_ROWS = 100
 HARD_MAX_ROWS = 5000
@@ -55,14 +67,14 @@ def run_sql(
     ensure_allowed(kind, allow_write=allow_write, allow_dangerous=allow_dangerous)
     cap = max(1, min(max_rows, HARD_MAX_ROWS))
     started = time.perf_counter()
-    settings = client.settings
+    bound = tuple(params) if params else None
 
-    with get_connection(settings) as conn:
+    with client.connection() as conn:
         if kind == StatementKind.READ:
             with conn.transaction():
-                with conn.cursor() as cur:
+                with conn.cursor(row_factory=tuple_row) as cur:
                     cur.execute("SET TRANSACTION READ ONLY")
-                    cur.execute(sql, tuple(params or ()))
+                    cur.execute(sql, bound)
                     columns = [desc[0] for desc in (cur.description or [])]
                     fetched = cur.fetchmany(cap + 1) if cur.description else []
             truncated = len(fetched) > cap
@@ -77,20 +89,24 @@ def run_sql(
                 duration_ms=duration_ms,
                 command="SELECT" if not columns else "SELECT",
             )
-        with conn.transaction():
-            with conn.cursor() as cur:
-                cur.execute(sql, tuple(params or ()))
+        scope = nullcontext() if _NON_TRANSACTIONAL.match(sql) else conn.transaction()
+        with scope:
+            with conn.cursor(row_factory=tuple_row) as cur:
+                cur.execute(sql, bound)
                 row_count = cur.rowcount if cur.rowcount and cur.rowcount >= 0 else 0
                 command = (
                     (cur.statusmessage or "").split(" ")[0] if cur.statusmessage else kind.value
                 )
+                # RETURNING and friends produce rows on write statements too.
+                columns = [desc[0] for desc in (cur.description or [])]
+                fetched = cur.fetchmany(cap + 1) if cur.description else []
         duration_ms = int((time.perf_counter() - started) * 1000)
         return SqlResult(
             kind=kind,
-            columns=[],
-            rows=[],
+            columns=columns,
+            rows=[[_coerce(v) for v in row] for row in fetched[:cap]],
             row_count=row_count,
-            truncated=False,
+            truncated=len(fetched) > cap,
             duration_ms=duration_ms,
             command=command,
         )

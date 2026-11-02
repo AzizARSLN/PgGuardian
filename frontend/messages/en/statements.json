@@ -1,0 +1,292 @@
+{
+  "statements": {
+    "title": "Repeated SQL Analysis",
+    "since": "since {date}",
+    "totals": "{statements} statements · {calls} calls · {time} total time",
+    "noRate": "Not available on PG13, which does not record when statistics started",
+    "perMin": "{value} / min",
+    "searchPlaceholder": "Search SQL text...",
+    "minCalls": "Min calls",
+    "empty": "No statements match the filter. They appear here as the application runs.",
+    "previous": "Previous",
+    "next": "Next",
+    "presets": {
+      "repeated": "Most repeated",
+      "load": "Highest load",
+      "slowest": "Slowest",
+      "io": "Disk reads",
+      "temp": "Temp files",
+      "wal": "WAL generated"
+    },
+    "columns": {
+      "statement": "Statement",
+      "calls": "Calls",
+      "callsPerMin": "Calls/min",
+      "total": "Total",
+      "mean": "Mean",
+      "load": "Load",
+      "rowsPerCall": "Rows/call",
+      "cache": "Cache",
+      "temp": "Temp",
+      "wal": "WAL"
+    },
+    "warnings": {
+      "evictions": "pg_stat_statements ran out of capacity and evicted entries, so call counts may be low. Consider raising pg_stat_statements.max.",
+      "limited_privilege": "This role cannot see other users' SQL text. Grant pg_read_all_stats.",
+      "no_reset_time": "This version does not record when statistics started, so calls/min is unavailable."
+    },
+    "setup": {
+      "not_installed": {
+        "title": "pg_stat_statements is not installed in \"{database}\"",
+        "desc": "Enable the extension to see repeated statements. Changing shared_preload_libraries needs a server restart."
+      },
+      "not_preloaded": {
+        "title": "pg_stat_statements is not preloaded",
+        "desc": "The extension exists but is missing from shared_preload_libraries. Add it and restart the server."
+      }
+    },
+    "tabs": {
+      "overview": "Overview",
+      "recommendations": "Recommendations",
+      "plan": "Plan",
+      "application": "Application fix"
+    },
+    "detail": {
+      "title": "Statement detail",
+      "stddev": "Std deviation",
+      "blocksRead": "Read from disk",
+      "timeBreakdown": "Time breakdown",
+      "runBy": "Run by roles",
+      "variants": "{count} IN-list variants of this statement",
+      "parts": {
+        "execution": "Execution",
+        "ioRead": "Disk read",
+        "jit": "JIT",
+        "planning": "Planning"
+      }
+    },
+    "plan": {
+      "nodeStats": "cost {cost} · {rows} rows",
+      "paramValues": "Parameter values (one per line: $1, $2...)",
+      "generic": "Generic plan",
+      "custom": "Plan with these values",
+      "analyzeNote": "Plans run in a read-only transaction that is rolled back. EXPLAIN ANALYZE really executes the statement and only works on reads.",
+      "genericNote": "An estimate; it ignores how real values are distributed.",
+      "showJson": "Show JSON",
+      "showTree": "Show tree",
+      "mode": {
+        "generic": "Generic plan",
+        "custom": "Custom plan"
+      },
+      "reasons": {
+        "no_text": "The SQL text is not visible; the role lacks privileges.",
+        "not_single_statement": "It contains more than one statement.",
+        "not_read": "Only read statements are planned; no plan was taken for this write.",
+        "search_path": "Table not found. Enter the application's search_path and retry.",
+        "parameter_type": "Could not determine the parameter count or types.",
+        "privilege": "The profile's role has no access to these tables.",
+        "lock_timeout": "Could not plan because the table is locked.",
+        "timeout": "Planning timed out.",
+        "planner_error": "PostgreSQL could not plan this normalized text."
+      }
+    },
+    "severity": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "safety": {
+      "safe": {
+        "label": "Same results",
+        "desc": "Returns the same results and is applied to the suggested SQL."
+      },
+      "conditional": {
+        "label": "Conditional",
+        "desc": "Returns the same results if the stated condition holds; check it."
+      },
+      "advisory": {
+        "label": "Advisory",
+        "desc": "May change behaviour or needs judgement; never applied automatically."
+      }
+    },
+    "advice": {
+      "noPlan": "No plan available, so plan-based findings are missing: {reason}",
+      "notParsed": "The SQL could not be parsed; showing only findings from metrics and the plan.",
+      "suggestedTitle": "Suggested SQL",
+      "suggestedDesc": "Changes applied: {applied}. Validate against your application before using it.",
+      "cost": "plan cost {before} → {after}",
+      "current": "Current",
+      "suggested": "Suggested",
+      "template": "Template, adapt it to your statement",
+      "none": "No rule-based findings for this statement."
+    },
+    "app": {
+      "findTitle": "Find the statement in code",
+      "findDesc": "PgGuardian cannot see your application source; these hints help locate what runs the statement.",
+      "applications": "Applications running it now",
+      "notRunning": "No session is running it right now",
+      "clients": "Client addresses",
+      "ormHint": "ORM hint",
+      "tables": "Tables",
+      "searchCode": "Search your codebase",
+      "tagHint": "Add sqlcommenter and set application_name in your application to see the source of a statement directly.",
+      "nothing": "No findings that require an application change."
+    },
+    "rules": {
+      "N_PLUS_1": {
+        "title": "Possible N+1 query",
+        "problem": "Called very often and returns about one row each time. This usually means reads inside a loop, though statistics alone cannot prove it.",
+        "fix": "Combine the reads in the loop into one batched statement.",
+        "app": "Find the loop calling this statement, collect the ids and read them in one query. With an ORM, eager load the association."
+      },
+      "POLLING": {
+        "title": "Frequent polling",
+        "problem": "The statement runs many times per minute and takes a share of total load.",
+        "fix": "Poll less often, cache the result, or use LISTEN/NOTIFY.",
+        "app": "Find the timer or worker loop; trigger on change instead, or cache the result briefly."
+      },
+      "MISSING_INDEX": {
+        "title": "Missing index",
+        "problem": "A large table is scanned end to end, while the filter selects only a small part of it.",
+        "fix": "Create the index below at a quiet time. Account for the extra write cost and disk space.",
+        "app": "Add the index with a migration, not application code. CONCURRENTLY cannot run in a transaction, so run that migration outside one."
+      },
+      "NON_SARGABLE": {
+        "title": "Function or cast on a column",
+        "problem": "Applying a function to a column in WHERE stops its plain index from being used.",
+        "fix": "Turn the condition into a range or create an expression index. Check time zones with date conversions.",
+        "app": "Remove the function from the code building this statement: normalize the parameter first and compare the bare column."
+      },
+      "LEADING_WILDCARD": {
+        "title": "LIKE with a leading wildcard",
+        "problem": "A '%text' pattern cannot use a B-tree index, so the table is scanned.",
+        "fix": "Create a GIN index with pg_trgm, or use full-text search.",
+        "app": "Check whether the search really needs this pattern; switching to a prefix search may be enough."
+      },
+      "LARGE_IN": {
+        "title": "Variable length IN list",
+        "problem": "PostgreSQL treats each list length as a different statement, which fragments the plan cache and statistics.",
+        "fix": "Use one array parameter with = ANY($1).",
+        "app": "Bind the list as an array instead of individual parameters, so the statement text stays constant."
+      },
+      "IMPLICIT_CAST": {
+        "title": "Parameter type does not match the column",
+        "problem": "PostgreSQL has to convert the column, so its index cannot be used.",
+        "fix": "Send the parameter with the column's type. Make sure the value converts to that type.",
+        "app": "Fix the parameter type in your driver or ORM, for example do not send text for a numeric column."
+      },
+      "OFFSET_PAGING": {
+        "title": "OFFSET pagination",
+        "problem": "OFFSET still reads every skipped row, so deep pages get slower.",
+        "fix": "Switch to keyset pagination. This affects API behaviour: jumping to a page number goes away.",
+        "app": "Return and accept the key of the last row as a cursor rather than a page number."
+      },
+      "SELECT_STAR": {
+        "title": "SELECT *",
+        "problem": "Unneeded columns are read and sent over the network, and index-only scans are ruled out.",
+        "fix": "List only the columns you use. The suggested SQL lists them all; remove what is unused. The application must read columns by name.",
+        "app": "Work out which fields are really used; use a projection or DTO in your ORM."
+      },
+      "TEMP_SPILL": {
+        "title": "Spilling to temp files",
+        "problem": "A sort or hash does not fit in work_mem and writes to disk.",
+        "fix": "Add an index that provides the order, or raise work_mem for this operation.",
+        "app": "Do not raise work_mem globally. If needed, use SET LOCAL in this operation's transaction."
+      },
+      "NO_LIMIT": {
+        "title": "Large result with no limit",
+        "problem": "Thousands of rows come back on each call and there is no LIMIT.",
+        "fix": "Add LIMIT or pagination if the application does not need every row.",
+        "app": "Move filtering from memory into SQL; use streaming or batches for bulk jobs."
+      },
+      "RANDOM_SORT": {
+        "title": "ORDER BY random()",
+        "problem": "It reads and sorts every row, which is very expensive on large tables.",
+        "fix": "Use TABLESAMPLE or pick random ids. The distribution will not be identical.",
+        "app": "Check whether the feature really needs a perfectly even distribution."
+      },
+      "CORRELATED_SUBQUERY": {
+        "title": "Correlated subquery",
+        "problem": "The subquery may run again for each row of the outer query.",
+        "fix": "Consider rewriting with JOIN or LATERAL, and verify the results stay the same.",
+        "app": "Find the ORM association or property that computes this field and load it in bulk."
+      },
+      "NOT_IN_SUBQUERY": {
+        "title": "NOT IN (subquery)",
+        "problem": "A NULL in the subquery makes it return no rows, and the planner optimizes it poorly.",
+        "fix": "Use NOT EXISTS. If the columns can be NULL the results change, so check first.",
+        "app": "Change the NOT IN condition in your query builder to NOT EXISTS."
+      },
+      "COUNT_FOR_EXISTS": {
+        "title": "COUNT used as an existence check",
+        "problem": "Every match is counted just to see whether any row exists.",
+        "fix": "Use SELECT EXISTS(...).",
+        "app": "Replace count() > 0 checks with your ORM's exists method."
+      },
+      "OR_COLUMNS": {
+        "title": "OR across different columns",
+        "problem": "An OR condition cannot be served by one index and can cause a table scan.",
+        "fix": "If the plan shows a scan, consider splitting into two statements with UNION.",
+        "app": "Consider separate statements in the code that builds dynamic filters."
+      },
+      "CTE_MATERIALIZED": {
+        "title": "Materialized CTE",
+        "problem": "Outer filters cannot be pushed into a materialized CTE.",
+        "fix": "Try NOT MATERIALIZED if the CTE has no volatile functions or writes.",
+        "app": "Update the CTE where the statement is built and compare the plans."
+      },
+      "HIGH_VARIANCE": {
+        "title": "Highly variable duration",
+        "problem": "Some calls are far above the mean; this may be value skew or plan changes.",
+        "fix": "In the Plan tab, take a custom plan with values you know are slow.",
+        "app": "Find which parameters the slow calls use from application logs or auto_explain."
+      },
+      "LOW_CACHE": {
+        "title": "Low cache hit ratio",
+        "problem": "The statement reads a lot of its data from disk.",
+        "fix": "Reduce the data scanned with an index; review shared_buffers if needed.",
+        "app": "Check whether the date range or row count this statement reads can be narrowed."
+      },
+      "WAL_HEAVY": {
+        "title": "Heavy WAL generation",
+        "problem": "Each call generates a lot of WAL, which puts pressure on replication and disk.",
+        "fix": "Split large writes into smaller pieces; reduce unneeded indexes and column updates.",
+        "app": "Split bulk updates into batches and leave unchanged columns out of the UPDATE."
+      },
+      "JIT_OVERHEAD": {
+        "title": "High JIT overhead",
+        "problem": "A significant part of the time goes to JIT compilation.",
+        "fix": "Consider raising jit_above_cost or disabling JIT for this statement.",
+        "app": "If needed, use SET LOCAL jit = off before this statement."
+      },
+      "PLAN_HEAVY": {
+        "title": "High planning time",
+        "problem": "A significant part of the time goes to planning.",
+        "fix": "Use prepared statements; review the partition and join counts.",
+        "app": "Enable prepared statements in your driver; with PgBouncer check that the pool mode supports them."
+      }
+    }
+  },
+  "databases": {
+    "title": "Databases",
+    "subtitle": "Databases on the selected profile's server",
+    "name": "Name",
+    "owner": "Owner",
+    "size": "Size",
+    "connections": "Connections",
+    "connectionLimit": "Limit",
+    "unlimited": "Unlimited",
+    "system": "System",
+    "create": "Create database",
+    "createTitle": "New database",
+    "encoding": "Encoding",
+    "ownerOptional": "Owner (optional)",
+    "preview": "SQL to run",
+    "created": "\"{name}\" created",
+    "dropTitle": "Drop database \"{name}\"",
+    "dropDesc": "This cannot be undone. Type the database name to continue.",
+    "dropped": "\"{name}\" dropped",
+    "drop": "Drop",
+    "writesDisabled": "This is refused when writes are disabled on the server (PGGUARDIAN_ALLOW_WRITES)."
+  }
+}

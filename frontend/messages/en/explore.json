@@ -1,0 +1,177 @@
+{
+  "sqlEditor": {
+    "title": "SQL Editor",
+    "subtitle": "Schema tree, query execution, history and CSV export",
+    "readOnlyMode": "Read-only",
+    "writeMode": "Writes enabled",
+    "unknownError": "Unknown error",
+    "editor": {
+      "starterComment": "pgGuardian SQL Editor"
+    },
+    "tree": {
+      "title": "Schema tree",
+      "tables": "Tables",
+      "views": "Views",
+      "sequences": "Sequences",
+      "functions": "Functions",
+      "empty": "Empty",
+      "insert": "Insert into query",
+      "system": "system"
+    },
+    "actions": {
+      "execute": "Execute (F5)",
+      "running": "Running...",
+      "format": "Format",
+      "clear": "Clear",
+      "downloadCsv": "Download CSV"
+    },
+    "tabs": {
+      "results": "Results",
+      "messages": "Messages",
+      "history": "History"
+    },
+    "results": {
+      "empty": "No results yet. Run a query.",
+      "noRows": "No rows returned",
+      "rows": "{count} rows",
+      "affected": "{count} rows affected",
+      "truncated": "Result truncated"
+    },
+    "messages": {
+      "empty": "No messages yet",
+      "running": "Running query...",
+      "explaining": "Running {command}...",
+      "cancelled": "Query cancelled",
+      "summary": "{rows} rows, {duration}",
+      "success": "{command} succeeded: {summary}",
+      "failed": "Error: {message}"
+    },
+    "history": {
+      "empty": "No query history yet"
+    },
+    "toast": {
+      "executed": "Query executed",
+      "explained": "{command} finished",
+      "formatted": "SQL formatted",
+      "empty": "Query is empty"
+    },
+    "confirm": {
+      "title": "Run this statement?",
+      "description": "Risk: {risk}. This statement can change the database and may not be reversible.",
+      "run": "Run"
+    }
+  },
+  "schemaBrowser": {
+    "title": "Schema Browser",
+    "subtitle": "Schemas, tables, size and dead tuple ratios",
+    "schemas": {
+      "title": "Schemas",
+      "counts": "{user} user · {system} system",
+      "user": "User schemas",
+      "system": "System schemas"
+    },
+    "stats": {
+      "tables": "Tables",
+      "size": "Total size",
+      "liveRows": "Live rows",
+      "deadRows": "Dead rows"
+    },
+    "tables": {
+      "title": "Tables",
+      "hint": "Click a row for details",
+      "limitReached": "Showing the first {limit} tables",
+      "empty": "No tables in this schema",
+      "selectSchema": "Select a schema"
+    },
+    "columns": {
+      "table": "Table",
+      "owner": "Owner",
+      "size": "Size",
+      "liveRows": "Live rows",
+      "deadPercent": "Dead rows %"
+    },
+    "pagination": {
+      "page": "Page {page} / {total}",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
+  "tableDetail": {
+    "back": "Back to Schema Browser",
+    "subtitle": "Columns, indexes, constraints, preview, profile and CSV",
+    "rowCount": "{count} rows",
+    "stats": {
+      "size": "Size",
+      "liveRows": "Live rows",
+      "deadRows": "Dead rows",
+      "owner": "Owner"
+    },
+    "tabs": {
+      "columns": "Columns",
+      "indexes": "Indexes",
+      "constraints": "Constraints",
+      "preview": "Preview ({limit})",
+      "profile": "Profile",
+      "import": "CSV import"
+    },
+    "columns": {
+      "name": "Column",
+      "type": "Data type",
+      "nullable": "Nullability",
+      "default": "Default",
+      "empty": "No columns found"
+    },
+    "indexes": {
+      "empty": "No indexes defined"
+    },
+    "constraints": {
+      "empty": "No constraints defined"
+    },
+    "preview": {
+      "summary": "{rows} rows · {columns} columns"
+    },
+    "profile": {
+      "column": "Column",
+      "type": "Data type",
+      "sampled": "Sampled rows",
+      "avgWidth": "Avg. length",
+      "unavailable": "Unavailable"
+    },
+    "pagination": {
+      "page": "Page {page} / {total}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "export": {
+      "action": "Export CSV",
+      "preview": "Download preview CSV",
+      "done": "CSV exported",
+      "capped": "Export is limited to the first {limit} rows.",
+      "noData": "No data to export"
+    },
+    "analyze": {
+      "confirmTitle": "Run ANALYZE on {table}?",
+      "confirmDescription": "Planner statistics will be refreshed. This can take a while on large tables.",
+      "done": "ANALYZE finished for {table}"
+    },
+    "import": {
+      "fileLabel": "CSV file",
+      "help": "Standard CSV with a header row. A Dry Run previews the SQL first, then you confirm the write.",
+      "selectFile": "Please select a CSV file",
+      "dryRun": "Preview with Dry Run",
+      "dryRunning": "Running Dry Run...",
+      "dryRunDone": "Dry Run finished",
+      "dryRunResult": "Dry Run result",
+      "target": "Target: {target}",
+      "sqlPreview": "SQL preview",
+      "firstRows": "First {count} rows",
+      "clear": "Clear",
+      "importing": "Importing...",
+      "confirmAndImport": "Confirm and import",
+      "confirmTitle": "Import into {table}?",
+      "confirmDescription": "Risk: {risk}. {note} Writes to the database cannot be undone.",
+      "confirmLabel": "Import",
+      "success": "Import succeeded"
+    }
+  }
+}

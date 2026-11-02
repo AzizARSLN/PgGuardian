@@ -22,6 +22,13 @@ class ApiSettings(PgGuardianSettings):
         default=None,
         description="When set, every API call needs 'Authorization: Bearer <token>'.",
     )
+    auth_disabled: bool = Field(
+        default=False,
+        description="Local development only: allow API calls with no credentials at all.",
+    )
+    cookie_secure: bool = Field(
+        default=False, description="Mark the refresh cookie Secure (enable behind HTTPS)."
+    )
     backup_dir: str = Field(default="./backups", description="pg_dump/pg_restore work directory.")
     audit_log_file: str | None = Field(
         default=None, description="Optional JSONL file for the audit trail."

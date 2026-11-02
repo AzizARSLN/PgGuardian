@@ -176,7 +176,7 @@ def run_reindex(
         head = SQL("REINDEX INDEX CONCURRENTLY") if body.concurrently else SQL("REINDEX INDEX")
     elif body.table_name:
         target_sql, target = _table_target(body.schema_name, body.table_name)
-        head = SQL("REINDEX TABLE")
+        head = SQL("REINDEX TABLE CONCURRENTLY") if body.concurrently else SQL("REINDEX TABLE")
     else:
         raise HTTPException(status_code=400, detail="Pass index_name or table_name.")
     query = SQL("{} {}").format(head, target_sql)

@@ -30,6 +30,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 ACCESS_TTL = timedelta(hours=12)
 REFRESH_TTL = timedelta(days=7)
 REFRESH_COOKIE = "pgg_refresh"
+REFRESH_GRACE_SECONDS = 30
 
 
 class LoginRequest(BaseModel):
@@ -154,15 +155,15 @@ def login(
     client = _auth_db_client(settings)
     row = client.fetch_one(
         "SELECT id, email, full_name, password_hash, app_role, is_active, password_must_change "
-        "FROM pgguardian_users WHERE email = %s",
+        "FROM pgguardian_users WHERE lower(email) = %s",
         (body.email.lower().strip(),),
     )
     if row is None:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
-    if not row["is_active"]:
-        raise HTTPException(status_code=401, detail="Account disabled.")
     if not _verify(body.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials.")
+    if not row["is_active"]:
+        raise HTTPException(status_code=401, detail="Account disabled.")
 
     user_id = int(row["id"])
     access, refresh, expires_in = _mint_tokens(
@@ -195,7 +196,7 @@ def login(
         key=REFRESH_COOKIE,
         value=refresh,
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
         samesite="lax",
         max_age=int(REFRESH_TTL.total_seconds()),
     )
@@ -217,7 +218,6 @@ def login(
 def logout(
     response: Response,
     settings: ApiSettings = Depends(get_api_settings),
-    _claims: dict[str, Any] = Depends(verify_jwt),
     refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ) -> None:
     """Invalidate the stored refresh session and clear the cookie."""
@@ -281,7 +281,7 @@ def refresh(
     session = client.fetch_one(
         "SELECT s.id, s.user_id, u.email, u.full_name, u.app_role, u.is_active, "
         "u.password_must_change FROM pgguardian_sessions s JOIN pgguardian_users u "
-        "ON u.id = s.user_id WHERE s.refresh_hash = %s",
+        "ON u.id = s.user_id WHERE s.refresh_hash = %s AND s.expires_at > now()",
         (_jti_hash(refresh_token),),
     )
     if session is None:
@@ -289,7 +289,13 @@ def refresh(
     if not session["is_active"]:
         raise HTTPException(status_code=401, detail="Account disabled.")
     user_id = int(session["user_id"])
-    client.execute_raw("DELETE FROM pgguardian_sessions WHERE id = %s", (int(session["id"]),))
+    # Keep the old token briefly: a reload can abort this response after the
+    # rotation, and the browser would be left holding a dead cookie.
+    client.execute_raw(
+        "UPDATE pgguardian_sessions SET expires_at = LEAST(expires_at, now() + %s * interval '1 second')"
+        " WHERE id = %s",
+        (REFRESH_GRACE_SECONDS, int(session["id"])),
+    )
     access, new_refresh, expires_in = _mint_tokens(
         user_id=user_id,
         email=str(session["email"]),
@@ -314,7 +320,7 @@ def refresh(
         key=REFRESH_COOKIE,
         value=new_refresh,
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
         samesite="lax",
         max_age=int(REFRESH_TTL.total_seconds()),
     )
@@ -348,7 +354,7 @@ def change_password(
     if row is None:
         raise HTTPException(status_code=404, detail="User not found.")
     if not _verify(body.current_password, str(row["password_hash"])):
-        raise HTTPException(status_code=401, detail="Incorrect current password.")
+        raise HTTPException(status_code=400, detail="Incorrect current password.")
     client.execute_raw(
         "UPDATE pgguardian_users SET password_hash = %s, password_must_change = FALSE WHERE id = %s",
         (_hash(body.new_password), user_id),

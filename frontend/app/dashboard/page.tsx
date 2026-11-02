@@ -1,71 +1,85 @@
 "use client";
 
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Database,
+  HardDrive,
+  Lock,
+  RefreshCw,
+  Users,
+} from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { toast } from "sonner";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 import { endpoints } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Activity,
-  Database,
-  Lock,
-  Copy,
-  ArrowUpRight,
-  RefreshCw,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  HardDrive,
-  Users,
-} from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { formatBytes, formatInterval, formatPercent } from "@/lib/utils";
-import { useMemo } from "react";
-import { toast } from "sonner";
+import { formatBytes } from "@/lib/utils";
+import { useI18n, useT, type TFunction } from "@/lib/i18n";
 
-const BAR_COLORS = [
-  "from-indigo-500 to-purple-500",
-  "from-emerald-500 to-teal-500",
-  "from-amber-500 to-orange-500",
-  "from-sky-500 to-blue-500",
-  "from-pink-500 to-rose-500",
+const BAR_FILLS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
 
-const BAR_FILLS = ["#6366f1", "#10b981", "#f59e0b", "#0ea5e9", "#ec4899"];
+const LAG_WARNING_BYTES = 10 * 1024 * 1024;
+const LAG_DANGEROUS_BYTES = 100 * 1024 * 1024;
+const METRIC = "font-mono tabular-nums";
+
+function formatSeconds(seconds: number, t: TFunction): string {
+  if (!Number.isFinite(seconds) || seconds < 1) {
+    return t("dashboard.units.second", { n: "<1" });
+  }
+  const s = Math.floor(seconds);
+  const parts = [
+    t("dashboard.units.day", { n: Math.floor(s / 86400) }),
+    t("dashboard.units.hour", { n: Math.floor((s % 86400) / 3600) }),
+    t("dashboard.units.minute", { n: Math.floor((s % 3600) / 60) }),
+    t("dashboard.units.second", { n: s % 60 }),
+  ];
+  const values = [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
+  const first = values.findIndex((v) => v > 0);
+  return parts.slice(first, first + 2).join(" ");
+}
 
 function HealthGauge({ score }: { score: number }) {
   const clamped = Math.max(0, Math.min(100, score));
   const color =
-    clamped >= 85 ? "#10b981" : clamped >= 60 ? "#f59e0b" : "#ef4444";
+    clamped >= 85 ? "var(--chart-2)" : clamped >= 60 ? "var(--chart-3)" : "var(--chart-4)";
   const circumference = 2 * Math.PI * 45;
   const offset = circumference - (clamped / 100) * circumference;
 
   return (
-    <div className="relative w-36 h-36 mx-auto">
-      <svg className="w-36 h-36 -rotate-90" viewBox="0 0 100 100">
-        <defs>
-          <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={color} stopOpacity="1" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.5" />
-          </linearGradient>
-        </defs>
+    <div className="relative h-14 w-14 shrink-0">
+      <svg className="h-14 w-14 -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="45" stroke="var(--color-border)" strokeWidth="9" fill="none" />
         <circle
           cx="50"
           cy="50"
           r="45"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="8"
-          fill="none"
-        />
-        <circle
-          cx="50"
-          cy="50"
-          r="45"
-          stroke="url(#gaugeGradient)"
-          strokeWidth="8"
+          stroke={color}
+          strokeWidth="9"
           fill="none"
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -73,580 +87,571 @@ function HealthGauge({ score }: { score: number }) {
           style={{ transition: "stroke-dashoffset 0.8s ease-out" }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span
-          className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br"
-          style={{
-            backgroundImage: `linear-gradient(135deg, ${color}, ${color}88)`,
-          }}
-        >
-          {Math.round(clamped)}
-        </span>
-        <span className="text-xs text-muted-foreground mt-0.5">/ 100</span>
-      </div>
+      <span
+        className={`absolute inset-0 flex items-center justify-center text-sm font-semibold ${METRIC}`}
+        style={{ color }}
+      >
+        {Math.round(clamped)}
+      </span>
     </div>
   );
 }
 
-function MetricCardSkeleton() {
+function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const t = useT();
+  const message = error instanceof Error ? error.message : "";
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-6">
-        <Skeleton className="h-4 w-24 mb-4" />
-        <Skeleton className="h-10 w-32 mb-2" />
-        <Skeleton className="h-3 w-40" />
-      </CardContent>
-    </Card>
+    <div role="alert" className="flex flex-wrap items-center gap-2 text-xs">
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+      <span className="font-medium text-foreground">{t("common.loadFailed")}</span>
+      {message && <span className="min-w-0 truncate text-muted-foreground">{message}</span>}
+      <Button variant="outline" size="sm" onClick={onRetry} className="h-6 px-2 text-xs">
+        {t("common.retry")}
+      </Button>
+    </div>
+  );
+}
+
+function Tile({
+  icon,
+  label,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        {icon}
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function TileSkeleton() {
+  return (
+    <div className="space-y-1.5">
+      <Skeleton className="h-6 w-20" />
+      <Skeleton className="h-3 w-full" />
+    </div>
+  );
+}
+
+function MiniStat({ label, value, className }: { label: string; value: number; className?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-1 text-[11px]">
+      <span className="truncate text-muted-foreground">{label}</span>
+      <span className={`${METRIC} font-semibold ${className ?? "text-foreground"}`}>{value}</span>
+    </div>
+  );
+}
+
+function Panel({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-md border border-border bg-card">
+      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+        {icon}
+        <h2 className="text-xs font-semibold text-foreground">{title}</h2>
+        {subtitle && <span className="ml-auto text-[11px] text-muted-foreground">{subtitle}</span>}
+      </header>
+      {children}
+    </section>
   );
 }
 
 export default function DashboardPage() {
+  const t = useT();
+  const { formatNumber } = useI18n();
   const pollInterval = useUIPrefsStore((s) => s.pollInterval);
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
   const refMs = autoRefresh ? pollInterval : false;
 
-  const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery({
+  const healthQ = useQuery({
     queryKey: qk.health(),
     queryFn: () => endpoints.getHealth(),
     refetchInterval: refMs,
   });
-
-  const { data: diagnostics, isLoading: diagLoading, refetch: refetchDiag } = useQuery({
+  const diagQ = useQuery({
     queryKey: qk.diagnostics.diagnose(),
     queryFn: () => endpoints.getDiagnose(),
     refetchInterval: refMs,
   });
-
-  const { data: connections, isLoading: connLoading, refetch: refetchConn } = useQuery({
+  const connQ = useQuery({
     queryKey: qk.diagnostics.connections(50),
     queryFn: () => endpoints.getConnections(50),
     refetchInterval: refMs,
   });
-
-  const { data: locks, isLoading: locksLoading, refetch: refetchLocks } = useQuery({
+  const locksQ = useQuery({
     queryKey: qk.diagnostics.locks(50),
     queryFn: () => endpoints.getLocks(50),
     refetchInterval: refMs,
   });
-
-  const { data: replication, isLoading: replLoading, refetch: refetchRepl } = useQuery({
+  const replQ = useQuery({
     queryKey: qk.replication.status(),
     queryFn: () => endpoints.getReplication(),
     refetchInterval: refMs,
   });
-
-  const { data: storage, isLoading: storageLoading, refetch: refetchStorage } = useQuery({
+  const storageQ = useQuery({
     queryKey: qk.diagnostics.storage("tables", 10),
     queryFn: () => endpoints.getStorage("tables", 10),
     refetchInterval: refMs,
   });
 
-  const top5Tables = useMemo(() => {
-    return (storage?.tables ?? [])
-      .sort((a, b) => b.total_size_bytes - a.total_size_bytes)
-      .slice(0, 5)
-      .map((t) => ({
-        name: `${t.schema_name ?? "public"}.${t.table_name}`,
-        size: t.total_size_bytes,
-        sizeLabel: formatBytes(t.total_size_bytes),
-      }));
-  }, [storage]);
+  const health = healthQ.data;
+  const findings = diagQ.data ?? [];
+  const conn = connQ.data?.summary;
+  const lockSummary = locksQ.data?.summary;
+  const replicas = replQ.data?.replicas ?? [];
+  const slots = replQ.data?.slots ?? [];
 
-  const totalLag = useMemo(() => {
-    return (replication?.replicas ?? []).reduce(
-      (acc, r) => acc + (r.replay_lag_bytes ?? 0),
-      0
-    );
-  }, [replication]);
+  const top5Tables = useMemo(
+    () =>
+      [...(storageQ.data?.tables ?? [])]
+        .sort((a, b) => b.total_size_bytes - a.total_size_bytes)
+        .slice(0, 5)
+        .map((table) => ({
+          name: `${table.schema_name ?? "public"}.${table.table_name}`,
+          size: table.total_size_bytes,
+          sizeLabel: formatBytes(table.total_size_bytes),
+        })),
+    [storageQ.data]
+  );
 
-  const hasBlocking = (locks?.summary.blocking_pairs ?? 0) > 0;
-  const hasLocks = (locks?.summary.total_locks ?? 0) > 0;
+  const totalLag = useMemo(
+    () => (replQ.data?.replicas ?? []).reduce((acc, r) => acc + (r.replay_lag_bytes ?? 0), 0),
+    [replQ.data]
+  );
 
-  const handleRefetchAll = () => {
-    try {
-      refetchHealth();
-      refetchDiag();
-      refetchConn();
-      refetchLocks();
-      refetchRepl();
-      refetchStorage();
-      toast.success("Veriler yenilendi");
-    } catch (e) {
-      toast.error("Yenileme başarısız");
-    }
+  const usage = conn?.usage_percent ?? 0;
+  const hasBlocking = (lockSummary?.blocking_pairs ?? 0) > 0;
+  const hasWaiting = (lockSummary?.waiting_locks ?? 0) > 0;
+  const activeSlots = slots.filter((s) => s.active).length;
+
+  const handleRefetchAll = async () => {
+    const results = await Promise.all([
+      healthQ.refetch(),
+      diagQ.refetch(),
+      connQ.refetch(),
+      locksQ.refetch(),
+      replQ.refetch(),
+      storageQ.refetch(),
+    ]);
+    // Failures already surface inline and through the API client's toast.
+    if (results.every((r) => !r.isError)) toast.success(t("dashboard.refreshed"));
   };
 
+  const anyFetching =
+    healthQ.isFetching ||
+    diagQ.isFetching ||
+    connQ.isFetching ||
+    locksQ.isFetching ||
+    replQ.isFetching ||
+    storageQ.isFetching;
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Activity className="h-8 w-8 text-emerald-400" />
-            Kontrol Paneli
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Activity className="h-4 w-4 text-success" />
+            {t("dashboard.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Sunucu sağlığı, bağlantılar, tanı bulguları ve depolama özeti
-          </p>
+          <p className="text-xs text-muted-foreground">{t("dashboard.subtitle")}</p>
         </div>
-        <Button variant="outline" onClick={handleRefetchAll} className="h-12 px-6 rounded-full">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Tümünü Yenile
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefetchAll}
+          disabled={anyFetching}
+          className="h-7 px-2 text-xs"
+        >
+          <RefreshCw className={`mr-1 h-3.5 w-3.5 ${anyFetching ? "animate-spin" : ""}`} />
+          {t("dashboard.refreshAll")}
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
-        {healthLoading ? (
-          <MetricCardSkeleton />
-        ) : (
-          <Card className="relative overflow-hidden border-emerald-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-indigo-500/10 pointer-events-none" />
-            <CardContent className="p-6 relative">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                  Sağlık Skoru
-                </span>
-              </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <Tile
+          icon={<CheckCircle2 className="h-3 w-3 text-success" />}
+          label={t("dashboard.health.title")}
+        >
+          {healthQ.isLoading ? (
+            <TileSkeleton />
+          ) : healthQ.isError ? (
+            <ErrorState error={healthQ.error} onRetry={() => healthQ.refetch()} />
+          ) : (
+            <div className="flex items-center gap-3">
               <HealthGauge score={health?.score ?? 0} />
-              <div className="mt-4 text-center">
-                <p className="text-xs text-muted-foreground">
-                  {health?.status ?? "-"} · {health?.server_version ?? "-"}
-                </p>
-                {health?.uptime_seconds !== undefined && health.uptime_seconds !== null && (
-                  <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1">
+              <div className="min-w-0 space-y-0.5 text-[11px] text-muted-foreground">
+                <p className="font-semibold text-foreground">{health?.status ?? "-"}</p>
+                <p className="truncate font-mono">{health?.server_version ?? "-"}</p>
+                {health?.uptime_seconds != null && (
+                  <p className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    Çalışma: {formatInterval(health.uptime_seconds)}
+                    {t("dashboard.health.uptime", {
+                      value: formatSeconds(health.uptime_seconds, t),
+                    })}
                   </p>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
+        </Tile>
 
-        {connLoading ? (
-          <MetricCardSkeleton />
-        ) : (
-          <Card className="relative overflow-hidden border-sky-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-500/10 via-transparent to-indigo-500/10 pointer-events-none" />
-            <CardContent className="p-6 relative">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-sky-400" />
-                  Bağlantı Kullanımı
-                </span>
+        <Tile icon={<Users className="h-3 w-3 text-info" />} label={t("dashboard.connections.title")}>
+          {connQ.isLoading ? (
+            <TileSkeleton />
+          ) : connQ.isError ? (
+            <ErrorState error={connQ.error} onRetry={() => connQ.refetch()} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <p className={`${METRIC} text-lg font-semibold leading-6 text-foreground`}>
+                  {conn?.current_connections ?? 0}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {" "}
+                    / {conn?.max_connections ?? 0}
+                  </span>
+                </p>
+                <RiskBadge
+                  riskLevel={usage >= 85 ? "DANGEROUS" : usage >= 60 ? "WARNING" : "OK"}
+                  size="sm"
+                >
+                  <span className={METRIC}>
+                    {t("dashboard.percent", {
+                      value: formatNumber(usage, { maximumFractionDigits: 1 }),
+                    })}
+                  </span>
+                </RiskBadge>
               </div>
-              <div className="flex items-end gap-3 mt-2">
-                <div>
-                  <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-sky-400 to-indigo-400">
-                    {connections?.summary.current_connections ?? 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground -mt-1">
-                    / {connections?.summary.max_connections ?? 0} max
-                  </div>
-                </div>
-                <div className="ml-auto">
-                  <RiskBadge
-                    riskLevel={
-                      (connections?.summary.usage_percent ?? 0) >= 85
-                        ? "DANGEROUS"
-                        : (connections?.summary.usage_percent ?? 0) >= 60
-                        ? "WARNING"
-                        : "OK"
-                    }
-                    size="md"
-                  >
-                    {formatPercent(
-                      connections?.summary.current_connections ?? 0,
-                      connections?.summary.max_connections ?? 0
-                    )}
-                  </RiskBadge>
-                </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-sm bg-muted">
+                <div className="h-full bg-info" style={{ width: `${Math.min(100, usage)}%` }} />
               </div>
-              <div className="mt-5 h-2.5 rounded-full bg-white/5 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-700"
-                  style={{
-                    width: `${Math.min(100, connections?.summary.usage_percent ?? 0)}%`,
-                  }}
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                <MiniStat
+                  label={t("dashboard.connections.active")}
+                  value={conn?.active ?? 0}
+                  className="text-success"
+                />
+                <MiniStat label={t("dashboard.connections.idle")} value={conn?.idle ?? 0} />
+                <MiniStat
+                  label={t("dashboard.connections.waiting")}
+                  value={conn?.waiting ?? 0}
+                  className="text-warning"
                 />
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <div className="text-sm font-semibold text-emerald-400">
-                    {connections?.summary.active ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Aktif</div>
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-muted-foreground">
-                    {connections?.summary.idle ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Boşta</div>
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-amber-400">
-                    {connections?.summary.waiting ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Bekleyen</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            </>
+          )}
+        </Tile>
 
-        {locksLoading ? (
-          <MetricCardSkeleton />
-        ) : (
-          <Card className="relative overflow-hidden border-red-500/20">
-            <div className={`absolute inset-0 pointer-events-none bg-gradient-to-br ${hasBlocking ? "from-red-500/15 to-amber-500/10" : "from-emerald-500/10 to-transparent"}`} />
-            <CardContent className="p-6 relative">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Lock className="h-3.5 w-3.5" />
-                  Kilitler / Deadlock
-                </span>
+        <Tile icon={<Lock className="h-3 w-3 text-warning" />} label={t("dashboard.locks.title")}>
+          {locksQ.isLoading ? (
+            <TileSkeleton />
+          ) : locksQ.isError ? (
+            <ErrorState error={locksQ.error} onRetry={() => locksQ.refetch()} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <p className={`${METRIC} text-lg font-semibold leading-6 text-foreground`}>
+                  {lockSummary?.blocking_pairs ?? 0}
+                  <span className="ml-1 font-sans text-xs font-normal text-muted-foreground">
+                    {t("dashboard.locks.blockingPairs")}
+                  </span>
+                </p>
+                <RiskBadge
+                  riskLevel={hasBlocking ? "DANGEROUS" : hasWaiting ? "WARNING" : "OK"}
+                  size="sm"
+                >
+                  {hasBlocking
+                    ? t("dashboard.locks.blocked")
+                    : hasWaiting
+                      ? t("dashboard.locks.waitingBadge")
+                      : t("dashboard.locks.clear")}
+                </RiskBadge>
               </div>
-              <div className="flex items-end gap-3 mt-2">
-                <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-red-400 to-amber-400">
-                  {locks?.summary.blocking_pairs ?? 0}
-                </div>
-                <div className="ml-auto">
-                  <RiskBadge
-                    riskLevel={hasBlocking ? "DANGEROUS" : hasLocks ? "WARNING" : "OK"}
-                    size="md"
-                  >
-                    {hasBlocking ? "BLOKE VAR" : hasLocks ? "BEKLEYEN" : "Temiz"}
-                  </RiskBadge>
-                </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <MiniStat label={t("dashboard.locks.total")} value={lockSummary?.total_locks ?? 0} />
+                <MiniStat
+                  label={t("dashboard.locks.waiting")}
+                  value={lockSummary?.waiting_locks ?? 0}
+                  className="text-warning"
+                />
               </div>
-              <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-2xl bg-white/5 p-3">
-                  <div className="text-lg font-bold">
-                    {locks?.summary.total_locks ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Toplam</div>
-                </div>
-                <div className="rounded-2xl bg-white/5 p-3">
-                  <div className="text-lg font-bold text-amber-400">
-                    {locks?.summary.waiting_locks ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Bekleyen</div>
-                </div>
-                <div className="rounded-2xl bg-white/5 p-3">
-                  <div className="text-lg font-bold text-red-400">
-                    {locks?.summary.blocking_pairs ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Bloke</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            </>
+          )}
+        </Tile>
 
-        {replLoading ? (
-          <MetricCardSkeleton />
-        ) : (
-          <Card className="relative overflow-hidden border-purple-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-indigo-500/10 pointer-events-none" />
-            <CardContent className="p-6 relative">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Copy className="h-3.5 w-3.5 text-purple-400" />
-                  Replikasyon Lag
-                </span>
-              </div>
-              <div className="flex items-end gap-3 mt-2">
-                <div>
-                  <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-purple-400 to-indigo-400">
-                    {formatBytes(totalLag)}
-                  </div>
-                  <div className="text-xs text-muted-foreground -mt-1">Toplam replay lag</div>
-                </div>
-                <div className="ml-auto">
-                  <RiskBadge
-                    riskLevel={
-                      totalLag > 100 * 1024 * 1024
-                        ? "DANGEROUS"
-                        : totalLag > 10 * 1024 * 1024
+        <Tile icon={<Copy className="h-3 w-3 text-info" />} label={t("dashboard.replication.title")}>
+          {replQ.isLoading ? (
+            <TileSkeleton />
+          ) : replQ.isError ? (
+            <ErrorState error={replQ.error} onRetry={() => replQ.refetch()} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <p className={`${METRIC} text-lg font-semibold leading-6 text-foreground`}>
+                  {formatBytes(totalLag)}
+                </p>
+                <RiskBadge
+                  riskLevel={
+                    totalLag > LAG_DANGEROUS_BYTES
+                      ? "DANGEROUS"
+                      : totalLag > LAG_WARNING_BYTES
                         ? "WARNING"
                         : "OK"
-                    }
-                    size="md"
-                  >
-                    {(replication?.replicas ?? []).length} Replica
-                  </RiskBadge>
-                </div>
+                  }
+                  size="sm"
+                >
+                  {t("dashboard.replication.replicaCount", { count: replicas.length })}
+                </RiskBadge>
               </div>
-              <div className="mt-5 space-y-2">
-                {(replication?.replicas ?? []).slice(0, 2).map((r, idx) => (
-                  <div key={idx} className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${r.state === "streaming" ? "bg-emerald-400" : "bg-amber-400"}`} />
-                      <span className="text-xs font-medium">
-                        {r.application_name ?? r.client_address ?? `replica-${idx + 1}`}
-                      </span>
-                    </div>
-                    <span className="text-xs font-mono text-muted-foreground">
-                      {formatBytes(r.replay_lag_bytes ?? 0)}
-                    </span>
-                  </div>
-                ))}
-                {(replication?.slots ?? []).length > 0 && (
-                  <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-2.5">
-                    <span className="text-xs font-medium">Slotlar</span>
-                    <span className="text-xs font-semibold text-emerald-400">
-                      {(replication?.slots ?? []).filter((s) => s.active).length} /{" "}
-                      {(replication?.slots ?? []).length} aktif
-                    </span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              <p className="text-[11px] text-muted-foreground">
+                {t("dashboard.replication.totalLag")}
+              </p>
+              {slots.length > 0 && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {t("dashboard.replication.slotsActive", {
+                    active: activeSlots,
+                    total: slots.length,
+                  })}
+                </p>
+              )}
+            </>
+          )}
+        </Tile>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card className="lg:col-span-1 overflow-hidden">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-xl flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-400" />
-              Tanı Bulguları
-            </CardTitle>
-            <CardDescription>
-              {diagnostics?.length ?? 0} adet bulgu
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="!p-0">
-            {diagLoading ? (
-              <div className="space-y-3 p-6 pt-0">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-20 w-full" />
-                ))}
-              </div>
-            ) : (diagnostics?.length ?? 0) === 0 ? (
-              <div className="p-12 text-center">
-                <CheckCircle2 className="h-12 w-12 mx-auto text-emerald-400 mb-3" />
-                <p className="font-semibold">Her şey yolunda</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Tanı bulgusu bulunamadı.
-                </p>
-              </div>
-            ) : (
-              <div className="max-h-[520px] overflow-y-auto divide-y divide-white/5">
-                {(diagnostics ?? []).map((f, idx) => (
-                  <div key={`${f.code}-${idx}`} className="p-5 hover:bg-white/5 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <RiskBadge
-                        riskLevel={
-                          f.severity === "CRITICAL"
-                            ? "DANGEROUS"
-                            : f.severity === "WARNING"
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+        <Panel
+          icon={<AlertTriangle className="h-3.5 w-3.5 text-warning" />}
+          title={t("dashboard.findings.title")}
+          subtitle={diagQ.data ? t("dashboard.findings.count", { count: findings.length }) : undefined}
+        >
+          {diagQ.isLoading ? (
+            <div className="space-y-1.5 p-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : diagQ.isError ? (
+            <div className="p-3">
+              <ErrorState error={diagQ.error} onRetry={() => diagQ.refetch()} />
+            </div>
+          ) : findings.length === 0 ? (
+            <div className="flex items-center gap-2 p-3 text-xs">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+              <span className="font-medium text-foreground">{t("dashboard.findings.emptyTitle")}</span>
+              <span className="text-muted-foreground">{t("dashboard.findings.emptyDesc")}</span>
+            </div>
+          ) : (
+            <div className="max-h-[420px] divide-y divide-border overflow-y-auto">
+              {findings.map((f, idx) => (
+                <div key={`${f.code}-${idx}`} className="px-3 py-1.5 hover:bg-muted/50">
+                  <div className="flex items-start gap-2">
+                    <RiskBadge
+                      riskLevel={
+                        f.severity === "CRITICAL"
+                          ? "DANGEROUS"
+                          : f.severity === "WARNING"
                             ? "WARNING"
                             : f.severity === "OK"
-                            ? "OK"
-                            : "INFO"
-                        }
-                        size="sm"
-                        className="shrink-0 mt-0.5"
-                      >
-                        {f.severity}
-                      </RiskBadge>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-sm">{f.title}</p>
-                          <code className="text-[10px] font-mono text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">
-                            {f.code}
-                          </code>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                          {f.description}
-                        </p>
-                        {f.recommendation && (
-                          <p className="text-xs text-emerald-400/90 mt-2 flex items-start gap-1.5">
-                            <ArrowUpRight className="h-3 w-3 shrink-0 mt-0.5" />
-                            {f.recommendation}
-                          </p>
-                        )}
+                              ? "OK"
+                              : "INFO"
+                      }
+                      size="sm"
+                      showIcon={false}
+                      className="mt-0.5 shrink-0"
+                    >
+                      {f.severity}
+                    </RiskBadge>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-xs font-medium text-foreground">{f.title}</p>
+                        <code className="font-mono text-[10px] text-muted-foreground">{f.code}</code>
                       </div>
+                      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                        {f.description}
+                      </p>
+                      {f.recommendation && (
+                        <p className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-success">
+                          <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0" />
+                          {f.recommendation}
+                        </p>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
 
-        <Card className="lg:col-span-1 overflow-hidden">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-xl flex items-center gap-2">
-              <HardDrive className="h-5 w-5 text-indigo-400" />
-              En Büyük 5 Tablo
-            </CardTitle>
-            <CardDescription>
-              Toplam boyut (tablo + indeks)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {storageLoading ? (
-              <div className="h-72">
-                <Skeleton className="h-full w-full" />
-              </div>
-            ) : top5Tables.length === 0 ? (
-              <div className="h-72 flex items-center justify-center">
-                <p className="text-sm text-muted-foreground">Veri yok</p>
-              </div>
-            ) : (
-              <div className="h-72">
+        <Panel
+          icon={<HardDrive className="h-3.5 w-3.5 text-info" />}
+          title={t("dashboard.tables.title")}
+          subtitle={t("dashboard.tables.subtitle")}
+        >
+          {storageQ.isLoading ? (
+            <div className="p-3">
+              <Skeleton className="h-36 w-full" />
+            </div>
+          ) : storageQ.isError ? (
+            <div className="p-3">
+              <ErrorState error={storageQ.error} onRetry={() => storageQ.refetch()} />
+            </div>
+          ) : top5Tables.length === 0 ? (
+            <p className="p-3 text-xs text-muted-foreground">{t("common.noData")}</p>
+          ) : (
+            <>
+              <div className="h-36 px-2 pt-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={top5Tables}
                     layout="vertical"
-                    margin={{ top: 10, right: 20, left: 10, bottom: 10 }}
+                    margin={{ top: 0, right: 8, left: 0, bottom: 0 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => formatBytes(v, 0)} />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      tick={{ fontSize: 11, fill: "#cbd5e1" }}
-                      width={140}
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-border)"
+                      horizontal={false}
                     />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
+                      tickFormatter={(v) => formatBytes(v, 0)}
+                    />
+                    <YAxis type="category" dataKey="name" hide />
                     <Tooltip
-                      cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                      cursor={{ fill: "var(--color-muted)" }}
                       contentStyle={{
-                        backgroundColor: "rgba(15, 23, 42, 0.95)",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: "16px",
-                        color: "#f8fafc",
-                        fontSize: "12px",
+                        backgroundColor: "var(--color-card)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: 6,
+                        color: "var(--color-foreground)",
+                        fontSize: 12,
                       }}
-                      formatter={(value: unknown) => {
-                        const n = typeof value === "number" ? value : 0;
-                        return formatBytes(n, 2);
-                      }}
-                      labelStyle={{ color: "#cbd5e1", fontWeight: 600 }}
+                      itemStyle={{ color: "var(--color-foreground)" }}
+                      labelStyle={{ color: "var(--color-muted-foreground)" }}
+                      formatter={(value: unknown) =>
+                        formatBytes(typeof value === "number" ? value : 0, 2)
+                      }
                     />
-                    <Bar dataKey="size" radius={[0, 10, 10, 0]} barSize={22}>
+                    <Bar dataKey="size" name={t("dashboard.tables.size")} radius={[0, 3, 3, 0]} barSize={14}>
                       {top5Tables.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={BAR_FILLS[index % BAR_FILLS.length]} />
+                        <Cell key={index} fill={BAR_FILLS[index % BAR_FILLS.length]} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            )}
-            {top5Tables.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {top5Tables.map((t, i) => (
-                  <div key={t.name} className="flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-2.5">
-                    <div
-                      className={`h-3 w-3 rounded-full bg-gradient-to-br ${BAR_COLORS[i % BAR_COLORS.length]}`}
+              <div className="divide-y divide-border border-t border-border">
+                {top5Tables.map((table, i) => (
+                  <div key={table.name} className="flex items-center gap-2 px-3 py-1.5">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-sm"
+                      style={{ backgroundColor: BAR_FILLS[i % BAR_FILLS.length] }}
                     />
-                    <span className="text-xs font-mono flex-1 truncate">{t.name}</span>
-                    <span className="text-xs font-semibold">{t.sizeLabel}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
+                      {table.name}
+                    </span>
+                    <span className={`${METRIC} text-xs font-semibold text-foreground`}>
+                      {table.sizeLabel}
+                    </span>
                   </div>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </>
+          )}
+        </Panel>
 
-        <Card className="lg:col-span-1 overflow-hidden">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Copy className="h-5 w-5 text-purple-400" />
-              Replikasyon Slotları
-            </CardTitle>
-            <CardDescription>
-              {(replication?.slots ?? []).length} slot · {(replication?.replicas ?? []).length} replica
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="!p-0">
-            {replLoading ? (
-              <div className="space-y-3 p-6 pt-0">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
+        <Panel
+          icon={<Copy className="h-3.5 w-3.5 text-info" />}
+          title={t("dashboard.slots.title")}
+          subtitle={
+            replQ.data
+              ? t("dashboard.slots.summary", { slots: slots.length, replicas: replicas.length })
+              : undefined
+          }
+        >
+          {replQ.isLoading ? (
+            <div className="space-y-1.5 p-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : replQ.isError ? (
+            <div className="p-3">
+              <ErrorState error={replQ.error} onRetry={() => replQ.refetch()} />
+            </div>
+          ) : slots.length === 0 && replicas.length === 0 ? (
+            <div className="flex items-start gap-2 p-3 text-xs">
+              <Database className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="font-medium text-foreground">{t("dashboard.slots.emptyTitle")}</p>
+                <p className="text-muted-foreground">{t("dashboard.slots.emptyDesc")}</p>
               </div>
-            ) : (replication?.slots ?? []).length === 0 && (replication?.replicas ?? []).length === 0 ? (
-              <div className="p-12 text-center">
-                <Database className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                <p className="font-semibold">Replikasyon yok</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Bu sunucuda replica veya slot yapılandırılmamış.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-white/5">
-                {(replication?.slots ?? []).map((slot, idx) => (
-                  <div key={`slot-${slot.slot_name}-${idx}`} className="p-5 hover:bg-white/5 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`h-2.5 w-2.5 rounded-full ${
-                            slot.active ? "bg-emerald-400 shadow-lg shadow-emerald-400/30" : "bg-amber-400"
-                          }`}
-                        />
-                        <div>
-                          <p className="font-semibold text-sm flex items-center gap-2">
-                            {slot.slot_name}
-                            {slot.slot_type && (
-                              <code className="text-[10px] font-mono text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">
-                                {slot.slot_type}
-                              </code>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <RiskBadge
-                        riskLevel={slot.active ? "OK" : "WARNING"}
-                        size="sm"
-                      >
-                        {slot.active ? "Aktif" : "Pasif"}
-                      </RiskBadge>
-                    </div>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {slots.map((slot) => (
+                <div key={`slot-${slot.slot_name}`} className="flex items-center gap-2 px-3 py-1.5">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${slot.active ? "bg-success" : "bg-warning"}`}
+                  />
+                  <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                    {slot.slot_name}
+                  </span>
+                  {slot.slot_type && (
+                    <code className="font-mono text-[10px] text-muted-foreground">{slot.slot_type}</code>
+                  )}
+                  <RiskBadge
+                    riskLevel={slot.active ? "OK" : "WARNING"}
+                    size="sm"
+                    showIcon={false}
+                    className="ml-auto"
+                  >
+                    {slot.active ? t("dashboard.slots.active") : t("dashboard.slots.inactive")}
+                  </RiskBadge>
+                </div>
+              ))}
+              {replicas.map((repl, idx) => (
+                <div key={`repl-${idx}`} className="flex items-center gap-2 px-3 py-1.5">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      repl.state === "streaming" ? "bg-success" : "bg-warning"
+                    }`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-foreground">
+                      {repl.application_name ??
+                        t("dashboard.slots.replicaFallback", { n: idx + 1 })}
+                    </p>
+                    <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      {repl.client_address ?? "-"} · {repl.username ?? "-"} · {repl.state ?? "-"}
+                    </p>
                   </div>
-                ))}
-                {(replication?.replicas ?? []).map((repl, idx) => (
-                  <div key={`repl-${idx}`} className="p-5 hover:bg-white/5 transition-colors">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`h-2.5 w-2.5 rounded-full mt-1.5 ${
-                            repl.state === "streaming"
-                              ? "bg-emerald-400 shadow-lg shadow-emerald-400/30"
-                              : "bg-amber-400"
-                          }`}
-                        />
-                        <div>
-                          <p className="font-semibold text-sm">
-                            {repl.application_name ?? `Replica ${idx + 1}`}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {repl.client_address ?? "-"} ·{" "}
-                            <span className="font-mono">{repl.username ?? "-"}</span>
-                          </p>
-                          {repl.state && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              State: <span className="text-emerald-400">{repl.state}</span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-muted-foreground">Lag</p>
-                        <p className="text-sm font-semibold font-mono text-purple-400">
-                          {formatBytes(repl.replay_lag_bytes ?? 0)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <span className={`${METRIC} text-xs font-semibold text-info`}>
+                    {formatBytes(repl.replay_lag_bytes ?? 0)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
       </div>
     </div>
   );

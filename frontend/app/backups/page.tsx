@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ColumnDef,
   flexRender,
@@ -11,32 +11,21 @@ import {
 } from "@tanstack/react-table";
 import { toast } from "sonner";
 import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
   DatabaseBackup,
   Download,
-  Play,
-  RefreshCw,
   HardDriveUpload,
   Loader2,
-  CheckCircle2,
+  Play,
+  RefreshCw,
   XCircle,
-  Clock,
-  AlertCircle,
 } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { RiskBadge } from "@/components/ui/risk-badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +35,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RiskBadge } from "@/components/ui/risk-badge";
 import {
   Select,
   SelectContent,
@@ -53,97 +45,178 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { IfWriter } from "@/components/role-guard";
 
+import { API_BASE_URL } from "@/lib/api/client";
 import { endpoints, BackupJob, BackupRequest, RestoreRequest } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 import useConfirm from "@/lib/hooks/useConfirm";
-import { formatBytes, formatDate } from "@/lib/utils";
+import { useI18n, useT } from "@/lib/i18n";
+import { cn, formatBytes } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
+import { getSelectedProfileFromStore, useProfileStore } from "@/store/useProfileStore";
+import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 
 type BackupStatus = "queued" | "running" | "done" | "failed";
 
-function getStatusMeta(status: string): { level: BackupStatus; label: string; icon: React.ComponentType<{ className?: string }> } {
+/** The API also returns the owning profile; the shared type does not list it yet. */
+type Job = BackupJob & { profile?: string | null };
+
+/** Options the backups API accepts beyond the shared request type. */
+type StartBackupBody = BackupRequest & {
+  compression?: number;
+  schema_name?: string;
+  table_name?: string;
+  filename?: string;
+};
+
+const RUNNING_POLL_MS = 3000;
+const CELL = "px-2 py-1.5 text-xs";
+const HEAD = "h-8 px-2 text-xs";
+const FIELD = "h-8 text-xs";
+const EMPTY_FORM = {
+  format: "custom",
+  compression: "6",
+  schema: "",
+  table: "",
+  filename: "",
+  database: "",
+};
+
+function getStatusMeta(status: string): {
+  level: BackupStatus;
+  labelKey: string | null;
+  icon: React.ComponentType<{ className?: string }>;
+} {
   const s = (status || "").toLowerCase();
-  if (s.includes("queue")) return { level: "queued", label: "Kuyrukta", icon: Clock };
-  if (s.includes("run") || s.includes("progress")) return { level: "running", label: "Çalışıyor", icon: Loader2 };
-  if (s.includes("done") || s.includes("success") || s.includes("complete")) return { level: "done", label: "Tamamlandı", icon: CheckCircle2 };
-  if (s.includes("fail") || s.includes("error")) return { level: "failed", label: "Hatalı", icon: XCircle };
-  return { level: "queued", label: status || "-", icon: AlertCircle };
+  if (s.includes("queue")) return { level: "queued", labelKey: "backups.status.queued", icon: Clock };
+  if (s.includes("run") || s.includes("progress"))
+    return { level: "running", labelKey: "backups.status.running", icon: Loader2 };
+  if (s.includes("done") || s.includes("success") || s.includes("complete"))
+    return { level: "done", labelKey: "backups.status.done", icon: CheckCircle2 };
+  if (s.includes("fail") || s.includes("error"))
+    return { level: "failed", labelKey: "backups.status.failed", icon: XCircle };
+  return { level: "queued", labelKey: null, icon: AlertCircle };
 }
 
-function StatusProgressBar({ status }: { status: string }) {
-  const { level, label, icon: Icon } = getStatusMeta(status);
-  const progressMap: Record<BackupStatus, number> = {
-    queued: 10,
-    running: 55,
-    done: 100,
-    failed: 100,
+function isUnfinished(job: BackupJob): boolean {
+  const { level } = getStatusMeta(job.status);
+  return level === "queued" || level === "running";
+}
+
+function isRestorable(job: BackupJob): boolean {
+  return job.kind === "backup" && getStatusMeta(job.status).level === "done";
+}
+
+function isDirectoryBackup(job: BackupJob): boolean {
+  return (job.file ?? "").toLowerCase().endsWith(".dir");
+}
+
+function isPlainBackup(job: BackupJob): boolean {
+  return (job.file ?? "").toLowerCase().endsWith(".sql");
+}
+
+async function fetchBackupBlob(jobId: string): Promise<Blob> {
+  const send = (token: string | null) => {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const profile = getSelectedProfileFromStore();
+    if (profile) headers["X-Profile-Name"] = encodeURIComponent(profile);
+    return fetch(`${API_BASE_URL}/backups/${encodeURIComponent(jobId)}/download`, {
+      headers,
+      credentials: "include",
+    });
   };
-  const colorMap: Record<BackupStatus, string> = {
-    queued: "from-slate-400 to-slate-500",
-    running: "from-amber-400 to-orange-500",
-    done: "from-emerald-400 to-teal-500",
-    failed: "from-red-400 to-rose-500",
-  };
-  const pct = progressMap[level];
+
+  const auth = useAuthStore.getState();
+  let response = await send(auth.access_token);
+  if (response.status === 401) {
+    const refreshed = await auth.refreshAccessToken().catch(() => null);
+    if (refreshed) response = await send(refreshed);
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+    throw new Error(typeof body?.detail === "string" ? body.detail : `HTTP ${response.status}`);
+  }
+  return response.blob();
+}
+
+function StatusCell({ job }: { job: Job }) {
+  const t = useT();
+  const { level, labelKey, icon: Icon } = getStatusMeta(job.status);
+  // The server reports orphaned jobs in English with a fixed prefix.
+  const error = job.error?.startsWith("interrupted") ? t("backups.interrupted") : job.error;
   return (
-    <div className="space-y-1.5 min-w-[180px]">
-      <div className="flex items-center gap-2">
-        <RiskBadge
-          riskLevel={
-            level === "done"
-              ? "OK"
-              : level === "failed"
+    <div className="max-w-md space-y-1">
+      <RiskBadge
+        riskLevel={
+          level === "done"
+            ? "OK"
+            : level === "failed"
               ? "DANGEROUS"
               : level === "running"
-              ? "WARNING"
-              : "INFO"
-          }
-          size="sm"
+                ? "WARNING"
+                : "INFO"
+        }
+        size="sm"
+        showIcon={false}
+      >
+        <span className="flex items-center gap-1">
+          <Icon className={cn("h-3 w-3", level === "running" && "animate-spin")} />
+          {labelKey ? t(labelKey) : job.status || "-"}
+        </span>
+      </RiskBadge>
+      {error && (
+        <p
+          className="line-clamp-3 whitespace-pre-wrap break-words font-mono text-xs text-destructive"
+          title={error}
         >
-          <span className="flex items-center gap-1.5">
-            {level === "running" ? <Icon className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
-            {label}
-          </span>
-        </RiskBadge>
-      </div>
-      <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-        <div
-          className={`h-full rounded-full bg-gradient-to-r ${colorMap[level]} transition-all duration-500`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+          {error}
+        </p>
+      )}
     </div>
   );
 }
 
 export default function BackupsPage() {
+  const t = useT();
+  const { formatDate } = useI18n();
   const qc = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const pollInterval = useUIPrefsStore((s) => s.pollInterval);
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
+  const selectedProfile = useProfileStore((s) => s.selectedProfileName);
   const refMs = autoRefresh ? pollInterval : false;
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [restoreOpen, setRestoreOpen] = useState<BackupJob | null>(null);
-
-  const [form, setForm] = useState({
-    format: "custom",
-    compression: "6",
-    schema: "",
-    table: "",
-    filename: "",
-    database: "",
-  });
-
+  const [restoreOpen, setRestoreOpen] = useState<Job | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
   const [restoreDb, setRestoreDb] = useState("");
   const [restoreClean, setRestoreClean] = useState(false);
 
-  const { data: backups, isLoading, refetch } = useQuery({
+  const backupsQuery = useQuery({
     queryKey: qk.backups.all(),
-    queryFn: () => endpoints.listBackups(),
-    refetchInterval: refMs,
+    queryFn: () => endpoints.listBackups() as Promise<Job[]>,
+    // Follow a running job even with auto-refresh off, and stop polling (and
+    // repeating the error toast) once a request has failed.
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      if (query.state.data?.some(isUnfinished)) {
+        return refMs ? Math.min(refMs, RUNNING_POLL_MS) : RUNNING_POLL_MS;
+      }
+      return refMs;
+    },
   });
+  const backups = backupsQuery.data;
 
   const sortedBackups = useMemo(() => {
     return [...(backups ?? [])].sort((a, b) => {
@@ -154,72 +227,94 @@ export default function BackupsPage() {
   }, [backups]);
 
   const stats = useMemo(() => {
-    const list = backups ?? [];
-    const done = list.filter((b) => getStatusMeta(b.status).level === "done");
-    const totalBytes = done.reduce((acc, b) => acc + (b.size_bytes ?? 0), 0);
-    const last = list[0];
+    const done = sortedBackups.filter(isRestorable);
     return {
-      total: list.length,
-      size: totalBytes,
-      lastAt: last?.started_at ?? null,
+      total: sortedBackups.length,
+      size: done.reduce((acc, job) => acc + (job.size_bytes ?? 0), 0),
+      lastAt: done[0]?.started_at ?? null,
       success: done.length,
-      failed: list.filter((b) => getStatusMeta(b.status).level === "failed").length,
+      failed: sortedBackups.filter((job) => getStatusMeta(job.status).level === "failed").length,
     };
-  }, [backups]);
+  }, [sortedBackups]);
+
+  const formatWhen = (value?: string | null) => (value ? formatDate(value) : "-");
 
   const createBackupMutation = useMutation({
-    mutationFn: (body: BackupRequest) => endpoints.startBackup(body),
+    mutationFn: (body: StartBackupBody) => endpoints.startBackup(body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.backups.all() });
-      toast.success("Yedekleme görevi kuyruğa alındı");
+      toast.success(t("backups.toast.backupQueued"));
       setCreateOpen(false);
-      setForm({ format: "custom", compression: "6", schema: "", table: "", filename: "", database: "" });
+      setForm(EMPTY_FORM);
     },
-    onError: () => toast.error("Yedekleme başlatılamadı"),
+    onError: () => toast.error(t("backups.toast.backupFailed")),
   });
 
   const restoreMutation = useMutation({
     mutationFn: (body: RestoreRequest) => endpoints.startRestore(body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.backups.all() });
-      toast.success("Geri yükleme görevi kuyruğa alındı");
+      toast.success(t("backups.toast.restoreQueued"));
       setRestoreOpen(null);
       setRestoreDb("");
       setRestoreClean(false);
     },
-    onError: () => toast.error("Geri yükleme başlatılamadı"),
+    onError: () => toast.error(t("backups.toast.restoreFailed")),
   });
+
+  const isPlainForm = form.format === "plain";
 
   const handleCreate = async () => {
     const ok = await confirm({
-      title: "Yedek Oluştur",
-      description: `Format: ${form.format.toUpperCase()}, sıkıştırma: ${form.compression}. Bu işlem MAINTENANCE risk seviyesinde ve sunucu I/O kullanımını artırabilir.`,
+      title: t("backups.create"),
+      description: isPlainForm
+        ? t("backups.confirm.createPlain", { format: form.format.toUpperCase() })
+        : t("backups.confirm.create", {
+            format: form.format.toUpperCase(),
+            compression: form.compression,
+          }),
       risk_level: "MAINTENANCE",
-      confirm_label: "Yedeği Başlat",
+      confirm_label: t("backups.start"),
+      cancel_label: t("common.cancel"),
     });
     if (!ok) return;
 
-    const body: BackupRequest = {
+    createBackupMutation.mutate({
       confirm: true,
       format: form.format,
-      database: form.database || undefined,
-    };
-    createBackupMutation.mutate(body);
+      database: form.database.trim() || undefined,
+      // pg_dump would gzip a plain .sql, which psql could not restore.
+      compression: isPlainForm ? undefined : Number(form.compression),
+      schema_name: form.schema.trim() || undefined,
+      table_name: form.table.trim() || undefined,
+      filename: form.filename.trim() || undefined,
+    });
   };
 
-  const handleRestore = async (job: BackupJob) => {
-    if (!restoreDb.trim()) {
-      toast.error("Hedef veritabanı adı zorunlu");
+  const openRestore = (job: Job) => {
+    setRestoreOpen(job);
+    setRestoreDb(job.database || "");
+    setRestoreClean(false);
+  };
+
+  const handleRestore = async (job: Job) => {
+    const dbName = restoreDb.trim();
+    if (!dbName) {
+      toast.error(t("backups.restore.databaseRequired"));
       return;
     }
-    const dbName = restoreDb.trim();
+    const clean = restoreClean && !isPlainBackup(job);
     const ok = await confirm({
-      title: "Geri Yükle — DANGEROUS",
-      description: `Backup #${job.id} dosyası "${dbName}" veritabanına geri yüklenecek. ${restoreClean ? "Önce mevcut objeler temizlenecek (CLEAN)." : "Mevcut objelerin üzerine yazılabilir."} Bu işlem DANGEROUS seviyesinde!`,
+      title: t("backups.restore.title"),
+      description: t(clean ? "backups.confirm.restoreClean" : "backups.confirm.restore", {
+        id: job.id,
+        database: dbName,
+      }),
       risk_level: "DANGEROUS",
       confirm_name_required: true,
       confirm_name_value: dbName,
-      confirm_label: "Geri Yükle",
+      confirm_label: t("backups.restore.action"),
+      cancel_label: t("common.cancel"),
     });
     if (!ok) return;
 
@@ -228,100 +323,127 @@ export default function BackupsPage() {
       confirm_name: dbName,
       backup_id: job.id,
       database: dbName,
-      clean: restoreClean,
+      clean,
     });
   };
 
-  const handleDownload = async (job: BackupJob) => {
+  const handleDownload = async (job: Job) => {
+    const toastId = `download-${job.id}`;
     try {
-      toast.loading("Dosya hazırlanıyor...", { id: "dl" });
-      const blob = await endpoints.downloadBackup(job.id);
+      toast.loading(t("backups.toast.downloadPreparing"), { id: toastId });
+      const blob = await fetchBackupBlob(job.id);
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = job.file || `backup-${job.id}.dump`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = job.file || `backup-${job.id}.dump`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       window.URL.revokeObjectURL(url);
-      toast.success("İndirme başarıyla başladı", { id: "dl" });
-    } catch {
-      toast.error("İndirme başarısız", { id: "dl" });
+      toast.success(t("backups.toast.downloadStarted"), { id: toastId });
+    } catch (error) {
+      toast.error(t("backups.toast.downloadFailed"), {
+        id: toastId,
+        description: error instanceof Error ? error.message : undefined,
+      });
     }
   };
 
-  const columns: ColumnDef<BackupJob>[] = [
+  const columns: ColumnDef<Job>[] = [
     {
       accessorKey: "id",
-      header: "ID",
-      cell: ({ row }) => (
-        <div className="font-mono text-xs">{row.original.id}</div>
-      ),
+      header: t("backups.columns.id"),
+      cell: ({ row }) => <span className="font-mono">{row.original.id}</span>,
     },
     {
       accessorKey: "kind",
-      header: "Format",
+      header: t("backups.columns.kind"),
       cell: ({ row }) => (
-        <Badge variant="outline" className="font-mono">
-          {row.original.kind?.toUpperCase() || row.original.database || "pg_dump"}
+        <Badge variant="outline" className="font-mono text-xs">
+          {row.original.kind === "restore" ? "pg_restore" : "pg_dump"}
         </Badge>
       ),
     },
     {
+      accessorKey: "profile",
+      header: t("backups.columns.profile"),
+      cell: ({ row }) => <span className="font-mono">{row.original.profile || "-"}</span>,
+    },
+    {
+      accessorKey: "database",
+      header: t("backups.columns.database"),
+      cell: ({ row }) => <span className="font-mono">{row.original.database || "-"}</span>,
+    },
+    {
+      accessorKey: "file",
+      header: t("backups.columns.file"),
+      cell: ({ row }) => <span className="break-all font-mono">{row.original.file || "-"}</span>,
+    },
+    {
       accessorKey: "status",
-      header: "Durum",
-      cell: ({ row }) => <StatusProgressBar status={row.original.status} />,
+      header: t("backups.columns.status"),
+      cell: ({ row }) => <StatusCell job={row.original} />,
     },
     {
       accessorKey: "size_bytes",
-      header: "Boyut",
+      header: t("backups.columns.size"),
       cell: ({ row }) => (
-        <span className="font-mono text-sm">{formatBytes(row.original.size_bytes ?? 0)}</span>
+        <span className="whitespace-nowrap font-mono">
+          {formatBytes(row.original.size_bytes ?? 0)}
+        </span>
       ),
     },
     {
       accessorKey: "started_at",
-      header: "Başlama",
+      header: t("backups.columns.started"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">{formatDate(row.original.started_at)}</span>
+        <span className="whitespace-nowrap font-mono text-muted-foreground">
+          {formatWhen(row.original.started_at)}
+        </span>
       ),
     },
     {
       accessorKey: "finished_at",
-      header: "Bitiş",
+      header: t("backups.columns.finished"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.finished_at ? formatDate(row.original.finished_at) : "-"}
+        <span className="whitespace-nowrap font-mono text-muted-foreground">
+          {formatWhen(row.original.finished_at)}
         </span>
       ),
     },
     {
       id: "actions",
-      header: "Aksiyonlar",
+      header: t("backups.columns.actions"),
       cell: ({ row }) => {
         const job = row.original;
-        const meta = getStatusMeta(job.status);
-        const isDone = meta.level === "done";
+        if (job.kind !== "backup") return null;
+        const ready = isRestorable(job);
+        const directory = isDirectoryBackup(job);
         return (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="sm"
-              disabled={!isDone}
+              className="h-7 px-2 text-xs"
+              disabled={!ready || directory}
+              title={directory ? t("backups.directoryDownloadHint") : undefined}
               onClick={() => handleDownload(job)}
             >
-              <Download className="h-4 w-4 mr-1.5" /> İndir
+              <Download className="mr-1 h-3 w-3" />
+              {t("backups.download")}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setRestoreOpen(job);
-                setRestoreDb(job.database || "");
-              }}
-            >
-              <HardDriveUpload className="h-4 w-4 mr-1.5" /> Geri Yükle
-            </Button>
+            <IfWriter>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={!ready}
+                onClick={() => openRestore(job)}
+              >
+                <HardDriveUpload className="mr-1 h-3 w-3" />
+                {t("backups.restore.action")}
+              </Button>
+            </IfWriter>
           </div>
         );
       },
@@ -334,307 +456,392 @@ export default function BackupsPage() {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  const pollLabel = refMs
+    ? t("backups.pollEvery", { seconds: refMs / 1000 })
+    : t("backups.pollManual");
+  const restoreProfileMismatch = Boolean(
+    restoreOpen?.profile && restoreOpen.profile !== selectedProfile
+  );
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <DatabaseBackup className="h-8 w-8 text-indigo-400" />
-            Backup / Restore
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <DatabaseBackup className="h-4 w-4 text-info" />
+            {t("backups.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            pg_dump · yedekleme listesi · blob indirme · geri yükleme
-          </p>
+          <p className="text-xs text-muted-foreground">{t("backups.subtitle")}</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" className="h-12" onClick={() => refetch()}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} /> Yenile
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => backupsQuery.refetch()}
+          >
+            <RefreshCw
+              className={cn("mr-1.5 h-3.5 w-3.5", backupsQuery.isFetching && "animate-spin")}
+            />
+            {t("common.refresh")}
           </Button>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-12 px-6 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600">
-                <Play className="h-5 w-5 mr-2" />
-                Yedek Oluştur
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <DatabaseBackup className="h-6 w-6 text-indigo-400" />
-                  Yeni Yedek Oluştur
-                </DialogTitle>
-                <DialogDescription>
-                  Format, sıkıştırma ve isteğe bağlı şema/tablo seçin.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-5 py-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Format</Label>
-                    <Select value={form.format} onValueChange={(v) => setForm({ ...form, format: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pgdump">pg_dump (varsayılan)</SelectItem>
-                        <SelectItem value="custom">Custom (sıkıştırılmış .dump)</SelectItem>
-                        <SelectItem value="plain">Plain SQL (.sql)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Sıkıştırma Seviyesi (0-9)</Label>
-                    <Select value={form.compression} onValueChange={(v) => setForm({ ...form, compression: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["0", "1", "3", "6", "9"].map((v) => (
-                          <SelectItem key={v} value={v}>
-                            Seviye {v} {v === "0" ? "(hızlı)" : v === "9" ? "(en sıkışık)" : ""}
+          <IfWriter>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="h-8 text-xs">
+                  <Play className="mr-1.5 h-3.5 w-3.5" />
+                  {t("backups.create")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-base">
+                    <DatabaseBackup className="h-4 w-4 text-info" />
+                    {t("backups.createDialog.title")}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs">
+                    {t("backups.createDialog.description")}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 py-1">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("backups.createDialog.format")}</Label>
+                      <Select
+                        value={form.format}
+                        onValueChange={(format) => setForm({ ...form, format })}
+                      >
+                        <SelectTrigger className={FIELD}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="custom">
+                            {t("backups.createDialog.formats.custom")}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          <SelectItem value="plain">
+                            {t("backups.createDialog.formats.plain")}
+                          </SelectItem>
+                          <SelectItem value="directory">
+                            {t("backups.createDialog.formats.directory")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("backups.createDialog.compression")}</Label>
+                      <Select
+                        value={form.compression}
+                        disabled={isPlainForm}
+                        onValueChange={(compression) => setForm({ ...form, compression })}
+                      >
+                        <SelectTrigger className={FIELD}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {["0", "1", "3", "6", "9"].map((level) => (
+                            <SelectItem key={level} value={level}>
+                              {t(
+                                level === "0"
+                                  ? "backups.createDialog.levelNone"
+                                  : level === "9"
+                                    ? "backups.createDialog.levelMax"
+                                    : "backups.createDialog.level",
+                                { level }
+                              )}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Hedef Veritabanı (opsiyonel)</Label>
-                    <Input
-                      value={form.database}
-                      onChange={(e) => setForm({ ...form, database: e.target.value })}
-                      placeholder="mevcut aktif DB"
-                    />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("backups.createDialog.database")}</Label>
+                      <Input
+                        value={form.database}
+                        onChange={(e) => setForm({ ...form, database: e.target.value })}
+                        placeholder={t("backups.createDialog.databasePlaceholder")}
+                        className={cn(FIELD, "font-mono")}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("backups.createDialog.filename")}</Label>
+                      <Input
+                        value={form.filename}
+                        onChange={(e) => setForm({ ...form, filename: e.target.value })}
+                        placeholder="nightly"
+                        className={cn(FIELD, "font-mono")}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("backups.createDialog.schema")}</Label>
+                      <Input
+                        value={form.schema}
+                        onChange={(e) => setForm({ ...form, schema: e.target.value })}
+                        placeholder="public"
+                        className={cn(FIELD, "font-mono")}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("backups.createDialog.table")}</Label>
+                      <Input
+                        value={form.table}
+                        onChange={(e) => setForm({ ...form, table: e.target.value })}
+                        placeholder="orders"
+                        className={cn(FIELD, "font-mono")}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Dosya Adı (opsiyonel)</Label>
-                    <Input
-                      value={form.filename}
-                      onChange={(e) => setForm({ ...form, filename: e.target.value })}
-                      placeholder="backup-2026-09-15.dump"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Şema (opsiyonel)</Label>
-                    <Input
-                      value={form.schema}
-                      onChange={(e) => setForm({ ...form, schema: e.target.value })}
-                      placeholder="public"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Tablo (opsiyonel)</Label>
-                    <Input
-                      value={form.table}
-                      onChange={(e) => setForm({ ...form, table: e.target.value })}
-                      placeholder="orders"
-                    />
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-                  <p className="text-xs text-amber-400 flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    Bu işlem MAINTENANCE onayı gerektirir ve sunucu I/O&apos;sunu artırabilir.
+                  <p className="flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2 text-xs text-warning">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {t("backups.createDialog.warning")}
                   </p>
                 </div>
-              </div>
-              <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                  İptal
-                </Button>
-                <Button
-                  onClick={handleCreate}
-                  disabled={createBackupMutation.isPending}
-                  className="bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600"
-                >
-                  {createBackupMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  <Play className="h-4 w-4 mr-2" />
-                  Yedeği Başlat
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter className="gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setCreateOpen(false)}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={handleCreate}
+                    disabled={createBackupMutation.isPending}
+                  >
+                    {createBackupMutation.isPending ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Play className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    {t("backups.start")}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </IfWriter>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <Card className="relative overflow-hidden border-indigo-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-emerald-500/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Toplam İş</span>
-            </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-indigo-400 to-emerald-400">
-              {stats.total}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              Başarılı: <span className="text-emerald-400 font-semibold">{stats.success}</span> · Hata:{" "}
-              <span className="text-red-400 font-semibold">{stats.failed}</span>
-            </div>
-          </CardContent>
-        </Card>
+      {!backupsQuery.isError && (
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {backupsQuery.isLoading ? (
+            [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[70px] w-full rounded-md" />)
+          ) : (
+            <>
+              <StatTile
+                label={t("backups.stats.total")}
+                value={String(stats.total)}
+                hint={t("backups.stats.totalHint", {
+                  success: stats.success,
+                  failed: stats.failed,
+                })}
+              />
+              <StatTile
+                label={t("backups.stats.success")}
+                value={String(stats.success)}
+                tone="text-success"
+                hint={
+                  stats.lastAt
+                    ? t("backups.stats.last", { date: formatWhen(stats.lastAt) })
+                    : t("backups.stats.none")
+                }
+              />
+              <StatTile
+                label={t("backups.stats.size")}
+                value={formatBytes(stats.size, 1)}
+                hint={t("backups.stats.sizeHint")}
+              />
+              <StatTile
+                label={t("backups.stats.failed")}
+                value={String(stats.failed)}
+                tone={stats.failed > 0 ? "text-destructive" : "text-foreground"}
+                hint={t("backups.stats.failedHint")}
+              />
+            </>
+          )}
+        </div>
+      )}
 
-        <Card className="relative overflow-hidden border-emerald-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-teal-500/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Başarılı Yedek</span>
-            </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-emerald-400 to-teal-400">
-              {stats.success}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {stats.lastAt ? `Son: ${formatDate(stats.lastAt)}` : "Henüz yedek yok"}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border-amber-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Toplam Boyut</span>
-            </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-amber-400 to-orange-400">
-              {formatBytes(stats.size, 1)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">Sadece başarılı yedekler</div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border-red-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-rose-500/10 pointer-events-none" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hatalı İş</span>
-            </div>
-            <div className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-br from-red-400 to-rose-400">
-              {stats.failed}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">Retry veya log kontrolü gerekli</div>
-          </CardContent>
-        </Card>
+      <div className="overflow-hidden rounded-md border border-border bg-card">
+        <div className="border-b border-border px-3 py-2">
+          <h2 className="text-sm font-semibold">{t("backups.list.title")}</h2>
+          <p className="text-xs text-muted-foreground">
+            {t("backups.list.subtitle", { poll: pollLabel, count: sortedBackups.length })}
+          </p>
+        </div>
+        {backupsQuery.isError ? (
+          <div className="flex items-center justify-between gap-2 px-3 py-3" role="alert">
+            <span className="flex items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {t("common.loadFailed")}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => backupsQuery.refetch()}
+            >
+              <RefreshCw className="mr-1.5 h-3 w-3" />
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : backupsQuery.isLoading ? (
+          <div className="space-y-1.5 p-3" aria-label={t("common.loading")}>
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+          </div>
+        ) : sortedBackups.length === 0 ? (
+          <div className="px-3 py-6 text-center">
+            <p className="text-sm font-medium">{t("backups.list.emptyTitle")}</p>
+            <p className="text-xs text-muted-foreground">{t("backups.list.emptyHint")}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((group) => (
+                  <TableRow key={group.id}>
+                    {group.headers.map((header) => (
+                      <TableHead key={header.id} className={HEAD}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(header.column.columnDef.header, header.getContext())}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className={cn(CELL, "align-top")}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
 
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl flex items-center gap-2">
-            <DatabaseBackup className="h-5 w-5 text-indigo-400" />
-            Yedek İşleri Listesi
-          </CardTitle>
-          <CardDescription>Poll: {refMs ? `${refMs / 1000} sn` : "manuel"} · {sortedBackups.length} iş kaydı</CardDescription>
-        </CardHeader>
-        <CardContent className="!p-0">
-          {isLoading && !backups ? (
-            <div className="p-12 text-center text-muted-foreground">Yükleniyor...</div>
-          ) : sortedBackups.length === 0 ? (
-            <div className="p-16 text-center">
-              <DatabaseBackup className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-              <p className="font-semibold">Henüz yedek işi yok</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Sağ üstteki &quot;Yedek Oluştur&quot; butonuyla ilk yedeği alın.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  {table.getHeaderGroups().map((hg) => (
-                    <TableRow key={hg.id}>
-                      {hg.headers.map((h) => (
-                        <TableHead key={h.id}>
-                          {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((c) => (
-                        <TableCell key={c.id}>
-                          {flexRender(c.column.columnDef.cell, c.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={!!restoreOpen} onOpenChange={(o) => !o && setRestoreOpen(null)}>
+      <Dialog open={!!restoreOpen} onOpenChange={(open) => !open && setRestoreOpen(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <HardDriveUpload className="h-6 w-6 text-red-400" />
-              Geri Yükle — DANGEROUS
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <HardDriveUpload className="h-4 w-4 text-destructive" />
+              {t("backups.restore.title")}
             </DialogTitle>
-            <DialogDescription>
-              {restoreOpen ? `Backup #${restoreOpen.id} · ${formatBytes(restoreOpen.size_bytes ?? 0)}` : ""}
+            <DialogDescription className="font-mono text-xs">
+              {restoreOpen
+                ? `#${restoreOpen.id} · ${formatBytes(restoreOpen.size_bytes ?? 0)}`
+                : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="restore-db">
-                Hedef Veritabanı Adı <span className="text-red-400">*</span>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1">
+              <Label htmlFor="restore-db" className="text-xs">
+                {t("backups.restore.database")} <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="restore-db"
                 value={restoreDb}
                 onChange={(e) => setRestoreDb(e.target.value)}
-                placeholder="onayda aynı adı yazmanız gerekecek"
-                className="font-mono"
+                placeholder={t("backups.restore.databasePlaceholder")}
+                className={cn(FIELD, "font-mono")}
               />
-              <p className="text-xs text-muted-foreground">
-                Bu adı onay ekranında aynen tekrar yazmanız istenecektir.
-              </p>
+              <p className="text-xs text-muted-foreground">{t("backups.restore.databaseHint")}</p>
             </div>
-            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="flex items-start gap-2 rounded-md border border-border px-2.5 py-2">
+              <Checkbox
+                id="restore-clean"
+                className="mt-0.5"
+                checked={restoreClean}
+                disabled={restoreOpen ? isPlainBackup(restoreOpen) : false}
+                onCheckedChange={(value) => setRestoreClean(value === true)}
+              />
               <div>
-                <Label className="cursor-pointer">CLEAN (mevcut objeleri temizle)</Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Önce DROP/CASCADE benzeri temizlik yapar. Daha da riskli.
+                <Label htmlFor="restore-clean" className="cursor-pointer text-xs">
+                  {t("backups.restore.clean")}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    restoreOpen && isPlainBackup(restoreOpen)
+                      ? "backups.restore.cleanPlainHint"
+                      : "backups.restore.cleanHint"
+                  )}
                 </p>
               </div>
-              <input
-                type="checkbox"
-                className="h-6 w-6 rounded border-white/20 bg-white/10 accent-red-500"
-                checked={restoreClean}
-                onChange={(e) => setRestoreClean(e.target.checked)}
-              />
             </div>
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4">
-              <p className="text-xs text-red-400 flex items-start gap-2 leading-relaxed">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                Geri yükleme, veritabanı objelerinin üzerine yazabilir ve veri kaybına neden olabilir.
-                İşlem DANGEROUS onayı gerektirir.
+            {restoreProfileMismatch && restoreOpen && (
+              <p
+                className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs text-destructive"
+                role="alert"
+              >
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {t("backups.restore.profileMismatch", {
+                  profile: restoreOpen.profile ?? "",
+                })}
               </p>
-            </div>
+            )}
+            <p className="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {t("backups.restore.warning")}
+            </p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setRestoreOpen(null)}>
-              İptal
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setRestoreOpen(null)}
+            >
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
-              disabled={!restoreDb.trim() || restoreMutation.isPending}
+              size="sm"
+              className="h-8 text-xs"
+              disabled={!restoreDb.trim() || restoreMutation.isPending || restoreProfileMismatch}
               onClick={() => restoreOpen && handleRestore(restoreOpen)}
             >
-              {restoreMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Onay Ekranına Geç
+              {restoreMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              {t("backups.restore.continue")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  hint,
+  tone = "text-foreground",
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone?: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="truncate text-xs text-muted-foreground">{label}</div>
+      <div className={cn("font-mono text-base font-semibold", tone)}>{value}</div>
+      <div className="truncate text-xs text-muted-foreground" title={hint}>
+        {hint}
+      </div>
     </div>
   );
 }

@@ -1,0 +1,144 @@
+{
+  "common": {
+    "language": "Language",
+    "logout": "Sign out",
+    "refresh": "Refresh",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "create": "Create",
+    "close": "Close",
+    "search": "Search",
+    "copy": "Copy",
+    "copied": "Copied",
+    "retry": "Retry",
+    "loading": "Loading...",
+    "noData": "No records",
+    "loadFailed": "Could not load data"
+  },
+  "api": {
+    "sessionExpired": "Your session has expired, please sign in again.",
+    "validation": "Validation error",
+    "server": "Server error",
+    "forbidden": "Permission denied",
+    "request": "Request error",
+    "notFound": "Not found",
+    "network": "Cannot reach the server",
+    "timeout": "The request timed out",
+    "timeoutHint": "The server did not respond. Long operations may still be running.",
+    "loginFailed": "Sign in failed"
+  },
+  "nav": {
+    "tagline": "PostgreSQL DBA console",
+    "menu": "Menu",
+    "groups": {
+      "monitor": "Monitor",
+      "explore": "Data",
+      "operate": "Operate",
+      "access": "Access",
+      "system": "System"
+    },
+    "items": {
+      "dashboard": "Overview",
+      "statements": "SQL Analysis",
+      "queryManagement": "Live Queries",
+      "diagnostics": "Diagnostics",
+      "replication": "Replication",
+      "sqlEditor": "SQL Editor",
+      "schemaBrowser": "Schema Browser",
+      "databases": "Databases",
+      "maintenance": "Maintenance",
+      "backups": "Backups",
+      "snapshots": "Snapshots",
+      "config": "Configuration",
+      "connections": "Connection Profiles",
+      "roles": "Roles",
+      "users": "Users",
+      "report": "Report",
+      "settings": "Settings"
+    }
+  },
+  "header": {
+    "loadingProfiles": "Loading profiles...",
+    "noProfile": "No profile",
+    "connectionProfile": "Connection profile",
+    "manage": "Manage",
+    "emptyProfiles": "No connection profiles yet",
+    "createFirstProfile": "Create the first profile",
+    "toggleTheme": "Toggle theme",
+    "account": "Account"
+  },
+  "login": {
+    "headline": "See what is slowing your database down and what to change.",
+    "features": {
+      "statements": {
+        "title": "Repeated SQL analysis",
+        "desc": "The most frequent statements per profile, with their cost, plans and suggested fixes."
+      },
+      "diagnostics": {
+        "title": "Live diagnostics",
+        "desc": "Locks, long-running queries, bloat, replication lag and a health score."
+      },
+      "operations": {
+        "title": "Guarded operations",
+        "desc": "VACUUM, backups and role management, with a preview and explicit confirmation."
+      }
+    },
+    "title": "Sign in",
+    "subtitle": "Sign in with your account to continue.",
+    "email": "Email",
+    "password": "Password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "submit": "Sign in",
+    "locked": "Too many failed attempts. Try again in {seconds}s.",
+    "passwordChanged": "Your password was changed",
+    "changeTitle": "Change your password",
+    "changeDescription": "You need to set a new password for your account before continuing.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "New password (again)",
+    "changeSubmit": "Change password",
+    "errors": {
+      "emailShort": "Email must be at least 3 characters",
+      "emailFormat": "Enter a valid email (e.g. admin@local)",
+      "passwordRequired": "Password is required",
+      "currentRequired": "Current password is required",
+      "newShort": "Password must be at least 8 characters",
+      "mismatch": "Passwords do not match",
+      "failed": "Sign in failed",
+      "changeFailed": "Could not change the password"
+    }
+  },
+  "profileGate": {
+    "title": "Choose a connection profile",
+    "subtitle": "Pick the database to connect to before continuing. No screen loads any data until a profile is selected.",
+    "loading": "Loading profiles...",
+    "error": "Could not load the profiles.",
+    "retry": "Try again",
+    "empty": "No connection profiles yet",
+    "emptyHint": "Create a connection profile first to continue.",
+    "createProfile": "Create profile",
+    "manageProfiles": "Manage profiles",
+    "default": "Default",
+    "connect": "Connect",
+    "logout": "Sign out"
+  },
+  "table": {
+    "search": "Search...",
+    "emptyTitle": "No data",
+    "emptyDesc": "There are no records to show.",
+    "summary": "Page {page} / {pages} · {total} records",
+    "perPage": "Per page:",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "risk": {
+    "ok": "OK",
+    "info": "Info",
+    "warning": "Warning",
+    "maintenance": "Maintenance",
+    "dangerous": "Dangerous"
+  }
+}

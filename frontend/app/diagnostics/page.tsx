@@ -1,37 +1,62 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ColumnDef,
+  ColumnFiltersState,
   flexRender,
   getCoreRowModel,
-  useReactTable,
-  getPaginationRowModel,
-  SortingState,
-  getSortedRowModel,
-  ColumnFiltersState,
   getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  SortingState,
+  useReactTable,
 } from "@tanstack/react-table";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Database,
+  Hash,
+  HardDrive,
+  ListOrdered,
+  Lock,
+  RefreshCw,
+  Search,
+  Skull,
+  StopCircle,
+  Users,
+  Wrench,
+  Zap,
+} from "lucide-react";
+import { toast } from "sonner";
 import { endpoints } from "@/lib/api/types";
 import type {
+  BackendActionResult,
   ConnectionInfo,
-  QueryInfo,
-  LockInfo,
-  TableSize,
-  IndexInfo,
-  TableMaintenance,
-  PgStatStatementsRow,
-  BloatRow,
-  SequenceRow,
   DiagnosticFinding,
+  DryRunResult,
+  IndexInfo,
+  LockInfo,
+  PgStatStatementsRow,
+  QueryInfo,
+  SequenceRow,
+  TableMaintenance,
+  TableSize,
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { IfWriter } from "@/components/role-guard";
 import {
   Table,
   TableBody,
@@ -40,12 +65,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -54,216 +74,64 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useConfirm } from "@/lib/hooks/useConfirm";
-import {
-  Activity,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Users,
-  Zap,
-  Clock,
-  Lock,
-  HardDrive,
-  Database,
-  Wrench,
-  ListOrdered,
-  Hash,
-  FileSearch,
-  StopCircle,
-  Skull,
-  ArrowUpRight,
-  AlertTriangle,
-} from "lucide-react";
-import { toast } from "sonner";
-import {
-  formatBytes,
-  formatInterval,
-  formatDuration,
-  formatNumber,
-  formatDate,
-} from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
+import { useI18n, useT, type TFunction } from "@/lib/i18n";
+import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 
 type PageSize = 10 | 25 | 50;
 
-function TableSkeleton({ rows = 8 }: { rows?: number }) {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full" />
-      ))}
-    </div>
-  );
+const LONG_RUNNING_SECONDS = 300;
+const METRIC = "font-mono tabular-nums";
+const PRE = "font-mono text-[11px] text-muted-foreground whitespace-pre-wrap overflow-hidden";
+
+const TABS = [
+  { id: "findings", labelKey: "diagnostics.tabs.findings", icon: AlertTriangle },
+  { id: "connections", labelKey: "diagnostics.tabs.connections", icon: Users },
+  { id: "active", labelKey: "diagnostics.tabs.active", icon: Zap },
+  { id: "long", labelKey: "diagnostics.tabs.long", icon: Clock },
+  { id: "locks", labelKey: "diagnostics.tabs.locks", icon: Lock },
+  { id: "storage", labelKey: "diagnostics.tabs.storage", icon: HardDrive },
+  { id: "indexes", labelKey: "diagnostics.tabs.indexes", icon: Database },
+  { id: "maintenance", labelKey: "diagnostics.tabs.maintenance", icon: Wrench },
+  { id: "pgss", labelKey: "diagnostics.tabs.pgss", icon: ListOrdered },
+  { id: "sequences", labelKey: "diagnostics.tabs.sequences", icon: Hash },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function formatSeconds(seconds: number, t: TFunction): string {
+  if (!Number.isFinite(seconds) || seconds < 1) return t("diagnostics.units.second", { n: "<1" });
+  const s = Math.floor(seconds);
+  const values = [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
+  const labels = [
+    t("diagnostics.units.day", { n: values[0] }),
+    t("diagnostics.units.hour", { n: values[1] }),
+    t("diagnostics.units.minute", { n: values[2] }),
+    t("diagnostics.units.second", { n: values[3] }),
+  ];
+  const first = values.findIndex((v) => v > 0);
+  return labels.slice(first, first + 2).join(" ");
 }
 
-interface DataTableProps<TData, TValue> {
-  columns: ColumnDef<TData, TValue>[];
-  data: TData[];
-  isLoading: boolean;
-  emptyTitle?: string;
-  emptyDesc?: string;
-  pageSize: PageSize;
-  setPageSize: (n: PageSize) => void;
-  globalFilter: string;
-  setGlobalFilter: (v: string) => void;
-  searchPlaceholder?: string;
+/** pg_stat_statements reports times in milliseconds. */
+function formatMs(
+  ms: number,
+  t: TFunction,
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string
+): string {
+  if (!Number.isFinite(ms) || ms < 0) return "-";
+  if (ms < 1) return t("diagnostics.units.ms", { n: "<1" });
+  if (ms < 1000) return t("diagnostics.units.ms", { n: formatNumber(ms, { maximumFractionDigits: 0 }) });
+  if (ms < 60000) {
+    return t("diagnostics.units.second", {
+      n: formatNumber(ms / 1000, { maximumFractionDigits: 1 }),
+    });
+  }
+  return formatSeconds(ms / 1000, t);
 }
 
-function DataTable<TData, TValue>({
-  columns,
-  data,
-  isLoading,
-  emptyTitle = "Veri yok",
-  emptyDesc = "Görüntülenecek kayıt bulunamadı.",
-  pageSize,
-  setPageSize,
-  globalFilter,
-  setGlobalFilter,
-  searchPlaceholder = "Ara...",
-}: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-
-  const table = useReactTable({
-    data,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    state: {
-      sorting,
-      columnFilters,
-      globalFilter,
-    },
-    initialState: {
-      pagination: { pageSize },
-    },
-  });
-
-  const currentPage = table.getState().pagination.pageIndex;
-  const pageCount = table.getPageCount();
-  const canPrev = currentPage > 0;
-  const canNext = currentPage < pageCount - 1;
-
-  return (
-    <div className="space-y-5">
-      <div className="relative max-w-md w-full">
-        <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          value={globalFilter ?? ""}
-          onChange={(e) => {
-            setGlobalFilter(String(e.target.value));
-            table.setGlobalFilter(String(e.target.value));
-          }}
-          placeholder={searchPlaceholder}
-          className="pl-12 h-11"
-        />
-      </div>
-
-      <div className="rounded-3xl overflow-hidden">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
-                    {h.isPlaceholder
-                      ? null
-                      : flexRender(h.column.columnDef.header, h.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="p-6">
-                  <TableSkeleton />
-                </TableCell>
-              </TableRow>
-            ) : table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="p-16 text-center">
-                  <FileSearch className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                  <p className="font-semibold">{emptyTitle}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{emptyDesc}</p>
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center gap-3 text-sm flex-wrap">
-          <p className="text-muted-foreground">
-            Sayfa{" "}
-            <span className="font-semibold text-foreground">{currentPage + 1}</span> /{" "}
-            {Math.max(1, pageCount)} · Toplam{" "}
-            <span className="font-semibold text-foreground">{data.length}</span> kayıt
-          </p>
-          <div className="h-6 w-px bg-white/10" />
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Sayfa başına:</span>
-            <Select
-              value={String(pageSize)}
-              onValueChange={(v) => {
-                const n = Number(v) as PageSize;
-                setPageSize(n);
-                table.setPageSize(n);
-              }}
-            >
-              <SelectTrigger className="h-9 w-[88px] rounded-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[10, 25, 50].map((n) => (
-                  <SelectItem key={n} value={String(n)}>
-                    {n}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!canPrev}
-            className="h-9 rounded-full"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Önceki
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!canNext}
-            className="h-9 rounded-full"
-          >
-            Sonraki
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
+function sequenceUsage(row: SequenceRow): number {
+  return Number(row.usage_percent ?? 0);
 }
 
 function severityToRisk(sev: string): "OK" | "WARNING" | "DANGEROUS" | "INFO" {
@@ -279,1121 +147,236 @@ function severityToRisk(sev: string): "OK" | "WARNING" | "DANGEROUS" | "INFO" {
   }
 }
 
-export default function DiagnosticsPage() {
-  const queryClient = useQueryClient();
-  const { confirm, Component: ConfirmDialog } = useConfirm();
+function latestDate(...dates: (string | null | undefined)[]): string | null {
+  let latest: string | null = null;
+  for (const d of dates) {
+    if (d && !Number.isNaN(new Date(d).getTime())) {
+      if (!latest || new Date(d) > new Date(latest)) latest = d;
+    }
+  }
+  return latest;
+}
 
-  const [activeTab, setActiveTab] = useState("findings");
+interface DataTableProps<TData> {
+  columns: ColumnDef<TData>[];
+  data: TData[];
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetry: () => void;
+  emptyTitle: string;
+  emptyDesc: string;
+  searchPlaceholder: string;
+}
 
-  const [findingsSearch, setFindingsSearch] = useState("");
-  const [findingsPS, setFindingsPS] = useState<PageSize>(25);
+function DataTable<TData>({
+  columns,
+  data,
+  isLoading,
+  isError,
+  error,
+  onRetry,
+  emptyTitle,
+  emptyDesc,
+  searchPlaceholder,
+}: DataTableProps<TData>) {
+  const t = useT();
+  const { formatNumber } = useI18n();
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
 
-  const [connSearch, setConnSearch] = useState("");
-  const [connPS, setConnPS] = useState<PageSize>(25);
-
-  const [aqSearch, setAqSearch] = useState("");
-  const [aqPS, setAqPS] = useState<PageSize>(25);
-
-  const [lrSearch, setLrSearch] = useState("");
-  const [lrPS, setLrPS] = useState<PageSize>(25);
-
-  const [locksSearch, setLocksSearch] = useState("");
-  const [locksPS, setLocksPS] = useState<PageSize>(25);
-
-  const [storageSearch, setStorageSearch] = useState("");
-  const [storagePS, setStoragePS] = useState<PageSize>(25);
-
-  const [idxSearch, setIdxSearch] = useState("");
-  const [idxPS, setIdxPS] = useState<PageSize>(25);
-
-  const [maintSearch, setMaintSearch] = useState("");
-  const [maintPS, setMaintPS] = useState<PageSize>(25);
-
-  const [pgssSearch, setPgssSearch] = useState("");
-  const [pgssPS, setPgssPS] = useState<PageSize>(25);
-
-  const [seqSearch, setSeqSearch] = useState("");
-  const [seqPS, setSeqPS] = useState<PageSize>(50);
-
-  const { data: findings, isLoading: findingsLoading } = useQuery({
-    queryKey: qk.diagnostics.diagnose(),
-    queryFn: () => endpoints.getDiagnose(),
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    // A column whose first row is null must stay searchable.
+    getColumnCanGlobalFilter: () => true,
+    // Polling replaces the data; the reader must stay on their page.
+    autoResetPageIndex: false,
+    state: { sorting, columnFilters, globalFilter },
+    initialState: { pagination: { pageSize: 25 } },
   });
 
-  const { data: connReport, isLoading: connLoading } = useQuery({
-    queryKey: qk.diagnostics.connections(100),
-    queryFn: () => endpoints.getConnections(100),
-  });
+  const { pageIndex, pageSize } = table.getState().pagination;
+  const pageCount = table.getPageCount();
+  const filteredCount = table.getFilteredRowModel().rows.length;
 
-  const { data: aqReport, isLoading: aqLoading } = useQuery({
-    queryKey: qk.diagnostics.queries.active(100),
-    queryFn: () => endpoints.getActiveQueries(100),
-  });
+  useEffect(() => {
+    if (pageIndex > 0 && pageIndex >= pageCount) table.setPageIndex(Math.max(0, pageCount - 1));
+  }, [pageIndex, pageCount, table]);
 
-  const { data: lrReport, isLoading: lrLoading } = useQuery({
-    queryKey: qk.diagnostics.queries.longRunning(300, 100),
-    queryFn: () => endpoints.getLongRunningQueries(300, 100),
-  });
-
-  const { data: locksReport, isLoading: locksLoading } = useQuery({
-    queryKey: qk.diagnostics.locks(100),
-    queryFn: () => endpoints.getLocks(100),
-  });
-
-  const { data: storageReport, isLoading: storageLoading } = useQuery({
-    queryKey: qk.diagnostics.storage("tables", 200),
-    queryFn: () => endpoints.getStorage("tables", 200),
-  });
-
-  const { data: idxReport, isLoading: idxLoading } = useQuery({
-    queryKey: qk.diagnostics.indexes(200),
-    queryFn: () => endpoints.getIndexes(200),
-  });
-
-  const { data: maintReport, isLoading: maintLoading } = useQuery({
-    queryKey: qk.diagnostics.maintenance(200),
-    queryFn: () => endpoints.getMaintenance(200),
-  });
-
-  const { data: pgssRows, isLoading: pgssLoading } = useQuery({
-    queryKey: qk.diagnostics.pgStatStatements(200),
-    queryFn: () => endpoints.getPgStatStatements(200),
-  });
-
-  const { data: bloatRows, isLoading: bloatLoading } = useQuery({
-    queryKey: qk.diagnostics.bloat(200),
-    queryFn: () => endpoints.getBloat(200),
-  });
-
-  const { data: seqRows, isLoading: seqLoading } = useQuery({
-    queryKey: qk.diagnostics.sequences(500),
-    queryFn: () => endpoints.getSequences(500),
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: (pid: number) =>
-      endpoints.cancelBackend(pid, { confirm: true }),
-    onSuccess: () => {
-      toast.success("Sorgu iptal edildi");
-      queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() });
-    },
-    onError: () => toast.error("İptal başarısız"),
-  });
-
-  const termMutation = useMutation({
-    mutationFn: (pid: number) =>
-      endpoints.terminateBackend(pid, { confirm: true, confirm_name: String(pid) }),
-    onSuccess: () => {
-      toast.success("Bağlantı sonlandırıldı");
-      queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() });
-    },
-    onError: () => toast.error("Sonlandırma başarısız"),
-  });
-
-  const handleCancel = async (pid: number) => {
-    const ok = await confirm({
-      title: `PID ${pid} sorgusunu iptal et?`,
-      description:
-        "Şu an çalışan sorguyu pg_cancel_backend() ile iptal edeceğiz. Bağlantı açık kalır, sadece aktif sorgu kesilir.",
-      risk_level: "MAINTENANCE",
-      confirm_label: "İptal Et",
-      cancel_label: "Vazgeç",
-      sql_preview: [`SELECT pg_cancel_backend(${pid});`],
-    });
-    if (ok) await cancelMutation.mutateAsync(pid);
-  };
-
-  const handleTerminate = async (pid: number) => {
-    const ok = await confirm({
-      title: `PID ${pid} bağlantısını SONLANDIR?`,
-      description:
-        "Bu işlem pg_terminate_backend() çalıştırır — bağlantı tamamen kapanır, aktif işlem rollback olur. Dikkatli kullanın.",
-      risk_level: "DANGEROUS",
-      confirm_label: "SONLANDIR",
-      cancel_label: "İptal",
-      confirm_name_required: true,
-      confirm_name_value: String(pid),
-      confirm_name_placeholder: `Onaylamak için PID "${pid}" yazın`,
-      sql_preview: [`SELECT pg_terminate_backend(${pid});`],
-    });
-    if (ok) await termMutation.mutateAsync(pid);
-  };
-
-  const connData: ConnectionInfo[] = connReport?.connections ?? [];
-  const aqData: QueryInfo[] = aqReport?.queries ?? [];
-  const lrData: QueryInfo[] = lrReport?.queries ?? [];
-  const locksData: LockInfo[] = locksReport?.locks ?? [];
-  const storageData: TableSize[] = storageReport?.tables ?? [];
-  const idxData: IndexInfo[] = idxReport?.indexes ?? [];
-  const maintData: TableMaintenance[] = maintReport?.tables ?? (bloatRows as unknown as TableMaintenance[]) ?? [];
-  const pgssData: PgStatStatementsRow[] = pgssRows ?? [];
-  const seqData: SequenceRow[] = seqRows ?? [];
-
-  const findingsCols: ColumnDef<DiagnosticFinding>[] = useMemo(
-    () => [
-      {
-        accessorKey: "severity",
-        header: "Seviye",
-        cell: ({ row }) => (
-          <RiskBadge
-            riskLevel={severityToRisk(row.original.severity)}
-            size="sm"
-          >
-            {row.original.severity}
-          </RiskBadge>
-        ),
-      },
-      {
-        accessorKey: "code",
-        header: "Kod",
-        cell: ({ row }) => (
-          <code className="text-[11px] font-mono text-muted-foreground bg-white/5 px-2.5 py-1 rounded-full">
-            {row.original.code}
-          </code>
-        ),
-      },
-      {
-        accessorKey: "title",
-        header: "Başlık",
-        cell: ({ row }) => (
-          <div className="min-w-0">
-            <p className="font-semibold text-sm">{row.original.title}</p>
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-              {row.original.description}
-            </p>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "value",
-        header: "Değer",
-        cell: ({ row }) => (
-          <span className="text-xs font-mono text-muted-foreground">
-            {row.original.value ?? "-"}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "recommendation",
-        header: "Öneri",
-        cell: ({ row }) => (
-          row.original.recommendation ? (
-            <p className="text-xs text-emerald-400/90 flex items-start gap-1.5 max-w-md">
-              <ArrowUpRight className="h-3 w-3 shrink-0 mt-0.5" />
-              <span className="line-clamp-2">{row.original.recommendation}</span>
-            </p>
-          ) : (
-            <span className="text-xs text-muted-foreground">-</span>
-          )
-        ),
-      },
-    ],
-    []
-  );
-
-  const connCols: ColumnDef<ConnectionInfo>[] = useMemo(
-    () => [
-      {
-        accessorKey: "pid",
-        header: "PID",
-        cell: ({ row }) => (
-          <code className="text-xs font-mono font-semibold text-indigo-400">
-            {row.original.pid}
-          </code>
-        ),
-      },
-      {
-        accessorKey: "user",
-        header: "Kullanıcı",
-        cell: ({ row }) => (
-          <span className="text-sm font-mono">{row.original.user ?? "-"}</span>
-        ),
-      },
-      {
-        accessorKey: "database",
-        header: "DB",
-        cell: ({ row }) => (
-          <span className="text-sm">{row.original.database ?? "-"}</span>
-        ),
-      },
-      {
-        accessorKey: "client_address",
-        header: "Client",
-        cell: ({ row }) => (
-          <code className="text-xs font-mono text-muted-foreground">
-            {row.original.client_address ?? "-"}
-          </code>
-        ),
-      },
-      {
-        accessorKey: "state",
-        header: "Durum",
-        cell: ({ row }) => {
-          const st = row.original.state ?? "unknown";
-          const color: "OK" | "WARNING" | "INFO" =
-            st === "active"
-              ? "OK"
-              : st === "idle in transaction"
-              ? "WARNING"
-              : "INFO";
-          return <RiskBadge riskLevel={color} size="sm">{st}</RiskBadge>;
-        },
-      },
-      {
-        accessorKey: "query_duration_seconds",
-        header: "Süre",
-        cell: ({ row }) => {
-          const s = row.original.query_duration_seconds;
-          const n = typeof s === "number" ? s : null;
-          return (
-            <span
-              className={
-                "text-sm font-mono " +
-                (n !== null && n > 300
-                  ? "text-red-400"
-                  : n !== null && n > 60
-                  ? "text-amber-400"
-                  : "")
-              }
-            >
-              {n !== null ? formatInterval(n) : "-"}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: "application_name",
-        header: "Uygulama",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground truncate max-w-[180px]">
-            {row.original.application_name ?? "-"}
-          </span>
-        ),
-      },
-      {
-        id: "actions",
-        header: () => <div className="text-right">İşlemler</div>,
-        enableSorting: false,
-        cell: ({ row }) => {
-          const pid = row.original.pid;
-          const busy = cancelMutation.isPending || termMutation.isPending;
-          return (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy || cancelMutation.isPending}
-                onClick={() => handleCancel(pid)}
-                className="h-9 rounded-full"
-              >
-                <StopCircle className="h-3.5 w-3.5" />
-                Cancel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy || termMutation.isPending}
-                onClick={() => handleTerminate(pid)}
-                className="h-9 rounded-full text-red-400 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50"
-              >
-                <Skull className="h-3.5 w-3.5" />
-                Terminate
-              </Button>
-            </div>
-          );
-        },
-      },
-    ],
-    [cancelMutation.isPending, termMutation.isPending]
-  );
-
-  const qCols = (): ColumnDef<QueryInfo>[] => [
-    {
-      accessorKey: "pid",
-      header: "PID",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono font-semibold text-indigo-400">
-          {row.original.pid}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "user",
-      header: "Kullanıcı",
-      cell: ({ row }) => (
-        <span className="text-sm font-mono">{row.original.user ?? "-"}</span>
-      ),
-    },
-    {
-      accessorKey: "state",
-      header: "Durum",
-      cell: ({ row }) => (
-        <RiskBadge riskLevel="INFO" size="sm">
-          {row.original.state ?? "-"}
-        </RiskBadge>
-      ),
-    },
-    {
-      accessorKey: "duration_seconds",
-      header: "Süre",
-      cell: ({ row }) => (
-        <span className="text-sm font-mono text-amber-400">
-          {typeof row.original.duration_seconds === "number"
-            ? formatInterval(row.original.duration_seconds)
-            : "-"}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "wait_event",
-      header: "Wait",
-      cell: ({ row }) => (
-        <div className="text-xs text-muted-foreground">
-          {row.original.wait_event_type ? (
-            <code className="bg-white/5 px-2 py-0.5 rounded-full">
-              {row.original.wait_event_type}
-              {row.original.wait_event ? `:${row.original.wait_event}` : ""}
-            </code>
-          ) : (
-            "-"
-          )}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "query",
-      header: "Sorgu",
-      cell: ({ row }) => (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-white/5 rounded-xl p-3 max-h-20 overflow-hidden whitespace-pre-wrap line-clamp-3 max-w-[480px]">
-          {row.original.query ?? "-"}
-        </pre>
-      ),
-    },
-  ];
-
-  const lockCols: ColumnDef<LockInfo>[] = [
-    {
-      accessorKey: "blocking_pid",
-      header: "Blok Eden PID",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono font-semibold text-red-400">
-          {row.original.blocking_pid}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "blocked_pid",
-      header: "Blok Olan PID",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono font-semibold text-amber-400">
-          {row.original.blocked_pid}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "relation",
-      header: "İlişki",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono text-muted-foreground bg-white/5 px-2 py-1 rounded-full">
-          {row.original.relation ?? "-"}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "lock_type",
-      header: "Kilit Türü",
-      cell: ({ row }) => (
-        <RiskBadge riskLevel="WARNING" size="sm">
-          {row.original.lock_type ?? "-"}
-        </RiskBadge>
-      ),
-    },
-    {
-      accessorKey: "blocked_mode",
-      header: "Mod",
-      cell: ({ row }) => (
-        <span className="text-xs font-mono">
-          {row.original.blocking_mode ?? "-"} → {row.original.blocked_mode ?? "-"}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "blocking_duration_seconds",
-      header: "Bekleme",
-      cell: ({ row }) => (
-        <span className="text-sm font-mono text-red-400">
-          {typeof row.original.blocking_duration_seconds === "number"
-            ? formatInterval(row.original.blocking_duration_seconds)
-            : "-"}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "blocking_query",
-      header: "Blok Eden Sorgu",
-      cell: ({ row }) => (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-white/5 rounded-xl p-3 max-h-16 overflow-hidden whitespace-pre-wrap line-clamp-2 max-w-[400px]">
-          {row.original.blocking_query ?? "-"}
-        </pre>
-      ),
-    },
-  ];
-
-  const storageCols: ColumnDef<TableSize>[] = [
-    {
-      accessorKey: "schema_name",
-      header: "Schema",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono text-muted-foreground">
-          {row.original.schema_name ?? "public"}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "table_name",
-      header: "Tablo",
-      cell: ({ row }) => (
-        <span className="font-semibold text-sm">{row.original.table_name}</span>
-      ),
-    },
-    {
-      accessorKey: "total_size_bytes",
-      header: "Toplam Boyut",
-      cell: ({ row }) => (
-        <span className="font-mono font-semibold text-sm">
-          {formatBytes(row.original.total_size_bytes ?? 0)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "table_size_bytes",
-      header: "Tablo",
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground font-mono">
-          {formatBytes(row.original.table_size_bytes ?? 0)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "indexes_size_bytes",
-      header: "İndeksler",
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground font-mono">
-          {formatBytes(row.original.indexes_size_bytes ?? 0)}
-        </span>
-      ),
-    },
-    {
-      id: "index_ratio",
-      header: "İndeks Oranı",
-      cell: ({ row }) => {
-        const t = row.original.total_size_bytes ?? 1;
-        const i = row.original.indexes_size_bytes ?? 0;
-        const pct = (i / t) * 100;
-        return (
-          <div className="flex items-center gap-3">
-            <div className="h-2 w-24 rounded-full bg-white/5 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full"
-                style={{ width: `${Math.min(100, pct)}%` }}
-              />
-            </div>
-            <span className="text-xs font-mono text-muted-foreground">
-              {pct.toFixed(1)}%
-            </span>
-          </div>
-        );
-      },
-    },
-  ];
-
-  const idxCols: ColumnDef<IndexInfo>[] = [
-    {
-      accessorKey: "table_name",
-      header: "Tablo",
-      cell: ({ row }) => (
-        <div className="text-xs">
-          <div className="font-semibold">{row.original.index_name}</div>
-          <div className="text-muted-foreground font-mono text-[11px]">
-            {row.original.schema_name ?? "public"}.{row.original.table_name ?? "-"}
-          </div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "index_size_bytes",
-      header: "Boyut",
-      cell: ({ row }) => (
-        <span className="font-mono text-sm">
-          {formatBytes(row.original.index_size_bytes ?? 0)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "index_scans",
-      header: "Scan",
-      cell: ({ row }) => (
-        <span className="font-mono text-sm text-emerald-400">
-          {formatNumber(row.original.index_scans ?? 0)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "tuples_fetched",
-      header: "Tuples",
-      cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          Read: {formatNumber(row.original.tuples_read ?? 0)} · Fetch: {formatNumber(row.original.tuples_fetched ?? 0)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "potentially_unused",
-      header: "Durum",
-      cell: ({ row }) =>
-        row.original.potentially_unused ? (
-          <RiskBadge riskLevel="WARNING" size="sm">
-            Kullanılmayabilir
-          </RiskBadge>
-        ) : (
-          <RiskBadge riskLevel="OK" size="sm">Kullanımda</RiskBadge>
-        ),
-    },
-  ];
-
-  const maintCols: ColumnDef<TableMaintenance>[] = [
-    {
-      accessorKey: "table_name",
-      header: "Tablo",
-      cell: ({ row }) => (
-        <div>
-          <div className="font-semibold text-sm">{row.original.table_name}</div>
-          <div className="text-[11px] font-mono text-muted-foreground">
-            {row.original.schema_name ?? "public"}
-          </div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: "Durum",
-      cell: ({ row }) => (
-        <RiskBadge riskLevel={severityToRisk(row.original.status)} size="sm">
-          {row.original.status}
-        </RiskBadge>
-      ),
-    },
-    {
-      accessorKey: "dead_tuple_percent",
-      header: "Dead Tuple %",
-      cell: ({ row }) => {
-        const pct = row.original.dead_tuple_percent ?? 0;
-        return (
-          <div className="flex items-center gap-3 min-w-[180px]">
-            <div className="h-2 flex-1 rounded-full bg-white/5 overflow-hidden">
-              <div
-                className={`h-full rounded-full ${pct > 40 ? "bg-red-500" : pct > 20 ? "bg-amber-500" : "bg-emerald-500"}`}
-                style={{ width: `${Math.min(100, pct)}%` }}
-              />
-            </div>
-            <span className="text-xs font-mono font-semibold w-12 text-right">
-              {pct.toFixed(1)}%
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      accessorKey: "live_tuples",
-      header: "Canlı / Ölü",
-      cell: ({ row }) => (
-        <div className="text-xs font-mono space-y-0.5">
-          <div className="text-emerald-400">Live: {formatNumber(row.original.live_tuples ?? 0)}</div>
-          <div className="text-red-400">Dead: {formatNumber(row.original.dead_tuples ?? 0)}</div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "last_vacuum",
-      header: "Son VACUUM",
-      cell: ({ row }) => {
-        const d = row.original.last_autovacuum ?? row.original.last_vacuum;
-        return (
-          <div className="text-xs">
-            <div className="font-mono">{d ? formatDate(d) : "-"}</div>
-            <div className="text-muted-foreground mt-0.5">
-              AV cnt: {row.original.autovacuum_count ?? 0} · V cnt: {row.original.vacuum_count ?? 0}
-            </div>
-          </div>
-        );
-      },
-    },
-  ];
-
-  const pgssCols: ColumnDef<PgStatStatementsRow>[] = [
-    {
-      accessorKey: "queryid",
-      header: "QueryID",
-      cell: ({ row }) => (
-        <code className="text-[11px] font-mono text-indigo-400 bg-white/5 px-2 py-1 rounded-full">
-          {String(row.original.queryid ?? "-")}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "calls",
-      header: "Çağrı",
-      cell: ({ row }) => (
-        <span className="font-mono font-semibold text-emerald-400">
-          {formatNumber(Number(row.original.calls ?? 0))}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "total_exec_time",
-      header: "Toplam Zaman",
-      cell: ({ row }) => (
-        <span className="font-mono text-amber-400">
-          {formatDuration(Number(row.original.total_exec_time ?? 0))}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "mean_exec_time",
-      header: "Ort. Zaman",
-      cell: ({ row }) => (
-        <span className="font-mono text-sm">
-          {formatDuration(Number(row.original.mean_exec_time ?? 0))}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "rows",
-      header: "Rows",
-      cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {formatNumber(Number(row.original.rows ?? 0))}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "query",
-      header: "Sorgu",
-      cell: ({ row }) => (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-white/5 rounded-xl p-3 max-h-20 overflow-hidden whitespace-pre-wrap line-clamp-3 max-w-[520px]">
-          {String(row.original.query ?? "-")}
-        </pre>
-      ),
-    },
-  ];
-
-  const seqCols: ColumnDef<SequenceRow>[] = [
-    {
-      accessorKey: "sequence_name",
-      header: "Sequence",
-      cell: ({ row }) => (
-        <div>
-          <div className="font-semibold text-sm font-mono">
-            {row.original.sequence_name}
-          </div>
-          <div className="text-[11px] font-mono text-muted-foreground">
-            {row.original.schema_name ?? "public"}
-          </div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "last_value",
-      header: "Son Değer",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono">
-          {formatNumber(Number(row.original.last_value ?? 0))}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "max_value",
-      header: "Max Değer",
-      cell: ({ row }) => (
-        <code className="text-xs font-mono text-muted-foreground">
-          {formatNumber(Number(row.original.max_value ?? 0))}
-        </code>
-      ),
-    },
-    {
-      accessorKey: "exhaustion_percent",
-      header: "Cycle Riski",
-      cell: ({ row }) => {
-        const pct = Number(row.original.exhaustion_percent ?? 0);
-        const risk: "OK" | "WARNING" | "DANGEROUS" =
-          pct >= 90 ? "DANGEROUS" : pct >= 75 ? "WARNING" : "OK";
-        return (
-          <div className="flex items-center gap-4 min-w-[260px]">
-            <div className="h-2 flex-1 rounded-full bg-white/5 overflow-hidden">
-              <div
-                className={`h-full rounded-full ${
-                  pct >= 90
-                    ? "bg-red-500"
-                    : pct >= 75
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
-                }`}
-                style={{ width: `${Math.min(100, pct)}%` }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-semibold w-14 text-right">
-                {pct.toFixed(2)}%
-              </span>
-              <RiskBadge riskLevel={risk} size="sm" />
-            </div>
-          </div>
-        );
-      },
-    },
-  ];
-
-  const tabs = [
-    { id: "findings", label: "Bulgu", icon: AlertTriangle },
-    { id: "connections", label: "Bağlantılar", icon: Users },
-    { id: "active", label: "Aktif Sorgular", icon: Zap },
-    { id: "long", label: "Uzun Çalışan", icon: Clock },
-    { id: "locks", label: "Kilitler", icon: Lock },
-    { id: "storage", label: "Depolama", icon: HardDrive },
-    { id: "indexes", label: "İndeksler", icon: Database },
-    { id: "maintenance", label: "Bakım", icon: Wrench },
-    { id: "pgss", label: "pg_stat", icon: ListOrdered },
-    { id: "sequences", label: "Sequences", icon: Hash },
-  ] as const;
+  if (isError) {
+    const message = error instanceof Error ? error.message : "";
+    return (
+      <div
+        role="alert"
+        className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs"
+      >
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+        <span className="font-medium text-foreground">{t("common.loadFailed")}</span>
+        {message && <span className="min-w-0 truncate text-muted-foreground">{message}</span>}
+        <Button variant="outline" size="sm" onClick={onRetry} className="h-6 px-2 text-xs">
+          {t("common.retry")}
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8">
-      <ConfirmDialog />
-      <div>
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <Activity className="h-8 w-8 text-purple-400" />
-          Diagnostics
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Tanı bulguları, bağlantılar, sorgular, kilitler, depolama, indeksler, bakım ve performans özeti.
-        </p>
+    <div className="space-y-2">
+      <div className="relative w-full max-w-sm">
+        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={globalFilter}
+          onChange={(e) => {
+            setGlobalFilter(e.target.value);
+            table.setPageIndex(0);
+          }}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          className="h-7 pl-7 text-xs"
+        />
       </div>
 
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl flex items-center gap-2">
-            <Database className="h-5 w-5 text-purple-400" />
-            Tanı Paneli
-          </CardTitle>
-          <CardDescription>
-            Sekmeler arasında geçiş yaparak farklı açılardan inceleyin
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="overflow-x-auto pb-2 -mx-2 px-2">
-              <TabsList className="h-auto inline-flex gap-1 p-1 min-w-max">
-                {tabs.map((t) => {
-                  const Icon = t.icon;
+      <div className="overflow-hidden rounded-md border border-border">
+        <Table className="text-xs">
+          <TableHeader>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id} className="hover:bg-transparent">
+                {hg.headers.map((h) => {
+                  const sorted = h.column.getIsSorted();
+                  const label = h.isPlaceholder
+                    ? null
+                    : flexRender(h.column.columnDef.header, h.getContext());
                   return (
-                    <TabsTrigger
-                      key={t.id}
-                      value={t.id}
-                      className="h-10 px-4 text-xs"
+                    <TableHead
+                      key={h.id}
+                      aria-sort={
+                        sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
+                      }
+                      className="h-8 whitespace-nowrap px-2 py-1.5 text-xs font-semibold"
                     >
-                      <Icon className="h-3.5 w-3.5 mr-1.5" />
-                      {t.label}
-                    </TabsTrigger>
+                      {h.column.getCanSort() ? (
+                        <button
+                          type="button"
+                          onClick={h.column.getToggleSortingHandler()}
+                          className="inline-flex items-center gap-1 hover:text-foreground"
+                        >
+                          {label}
+                          {sorted === "asc" && <ArrowUp className="h-3 w-3" />}
+                          {sorted === "desc" && <ArrowDown className="h-3 w-3" />}
+                        </button>
+                      ) : (
+                        label
+                      )}
+                    </TableHead>
                   );
                 })}
-              </TabsList>
-            </div>
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="p-2">
+                  <div className="space-y-1.5">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-7 w-full" />
+                    ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="px-3 py-2">
+                  <p className="font-medium text-foreground">{emptyTitle}</p>
+                  <p className="text-muted-foreground">{emptyDesc}</p>
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="px-2 py-1.5 text-xs">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-            <TabsContent value="findings" className="mt-6">
-              <DataTable
-                columns={findingsCols}
-                data={findings ?? []}
-                isLoading={findingsLoading}
-                emptyTitle="Tanı bulgusu yok"
-                emptyDesc="Sağlık denetimlerinde sorun bulunmadı."
-                pageSize={findingsPS}
-                setPageSize={setFindingsPS}
-                globalFilter={findingsSearch}
-                setGlobalFilter={setFindingsSearch}
-                searchPlaceholder="Başlık, kod, açıklama ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="connections" className="mt-6">
-              <div className="mb-5 grid grid-cols-2 md:grid-cols-5 gap-3">
-                <StatCard
-                  label="Aktif"
-                  value={String(connReport?.summary.active ?? 0)}
-                  tone="emerald"
-                />
-                <StatCard
-                  label="Boşta"
-                  value={String(connReport?.summary.idle ?? 0)}
-                  tone="muted"
-                />
-                <StatCard
-                  label="Trans'da"
-                  value={String(connReport?.summary.idle_in_transaction ?? 0)}
-                  tone="amber"
-                />
-                <StatCard
-                  label="Bekleyen"
-                  value={String(connReport?.summary.waiting ?? 0)}
-                  tone="red"
-                />
-                <StatCard
-                  label="Kullanım"
-                  value={`${(connReport?.summary.usage_percent ?? 0).toFixed(1)}%`}
-                  tone="indigo"
-                />
-              </div>
-              <DataTable
-                columns={connCols}
-                data={connData}
-                isLoading={connLoading}
-                emptyTitle="Bağlantı yok"
-                emptyDesc="Aktif PostgreSQL bağlantısı bulunamadı."
-                pageSize={connPS}
-                setPageSize={setConnPS}
-                globalFilter={connSearch}
-                setGlobalFilter={setConnSearch}
-                searchPlaceholder="PID, kullanıcı, DB, client ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="active" className="mt-6">
-              <DataTable
-                columns={qCols()}
-                data={aqData}
-                isLoading={aqLoading}
-                emptyTitle="Aktif sorgu yok"
-                emptyDesc="Şu an çalışan sorgu bulunmuyor."
-                pageSize={aqPS}
-                setPageSize={setAqPS}
-                globalFilter={aqSearch}
-                setGlobalFilter={setAqSearch}
-                searchPlaceholder="PID, kullanıcı, sorgu ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="long" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 flex items-start gap-3">
-                <Clock className="h-5 w-5 text-amber-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold text-amber-400">
-                    5 dakikadan uzun çalışan sorgular
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {lrData.length} adet uzun çalışan sorgu bulundu. Performans etkisi için optimize edin.
-                  </p>
-                </div>
-              </div>
-              <DataTable
-                columns={qCols()}
-                data={lrData}
-                isLoading={lrLoading}
-                emptyTitle="Uzun sorgu yok"
-                emptyDesc="Harika — 5dk eşiğini aşan sorgu yok."
-                pageSize={lrPS}
-                setPageSize={setLrPS}
-                globalFilter={lrSearch}
-                setGlobalFilter={setLrSearch}
-                searchPlaceholder="PID, kullanıcı, sorgu ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="locks" className="mt-6">
-              <div className="mb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <StatCard
-                  label="Toplam Kilit"
-                  value={String(locksReport?.summary.total_locks ?? 0)}
-                  tone="indigo"
-                />
-                <StatCard
-                  label="Bekleyen"
-                  value={String(locksReport?.summary.waiting_locks ?? 0)}
-                  tone="amber"
-                />
-                <StatCard
-                  label="Bloke Çift"
-                  value={String(locksReport?.summary.blocking_pairs ?? 0)}
-                  tone="red"
-                />
-              </div>
-              <DataTable
-                columns={lockCols}
-                data={locksData}
-                isLoading={locksLoading}
-                emptyTitle="Kilit sorunu yok"
-                emptyDesc="Bekleyen veya blok eden kilit bulunmadı."
-                pageSize={locksPS}
-                setPageSize={setLocksPS}
-                globalFilter={locksSearch}
-                setGlobalFilter={setLocksSearch}
-                searchPlaceholder="PID, ilişki, kilit türü ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="storage" className="mt-6">
-              <DataTable
-                columns={storageCols}
-                data={storageData.sort(
-                  (a, b) => (b.total_size_bytes ?? 0) - (a.total_size_bytes ?? 0)
-                )}
-                isLoading={storageLoading}
-                emptyTitle="Tablo bulunamadı"
-                emptyDesc="Depolama raporunda tablo yok."
-                pageSize={storagePS}
-                setPageSize={setStoragePS}
-                globalFilter={storageSearch}
-                setGlobalFilter={setStorageSearch}
-                searchPlaceholder="Tablo adı, şema ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="indexes" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 p-5 flex items-start gap-3">
-                <Database className="h-5 w-5 text-indigo-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold">İndeks durumu</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Toplam {idxData.length} indeks ·{" "}
-                    <span className="text-amber-400">
-                      {idxData.filter((i) => i.potentially_unused).length} adedi
-                      kullanılmamış olabilir
-                    </span>{" "}
-                    · REINDEX önermeden önce kullanımı gözlemleyin.
-                  </p>
-                </div>
-              </div>
-              <DataTable
-                columns={idxCols}
-                data={idxData}
-                isLoading={idxLoading}
-                emptyTitle="İndeks yok"
-                emptyDesc="İndeks raporu boş."
-                pageSize={idxPS}
-                setPageSize={setIdxPS}
-                globalFilter={idxSearch}
-                setGlobalFilter={setIdxSearch}
-                searchPlaceholder="İndeks / tablo adı ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="maintenance" className="mt-6">
-              <div className="mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <StatCard
-                  label="Canlı Tuples"
-                  value={formatNumber(maintReport?.summary.total_live_tuples ?? 0)}
-                  tone="emerald"
-                />
-                <StatCard
-                  label="Ölü Tuples"
-                  value={formatNumber(maintReport?.summary.total_dead_tuples ?? 0)}
-                  tone="red"
-                />
-                <StatCard
-                  label="Dead %"
-                  value={`${(maintReport?.summary.dead_tuple_percent ?? 0).toFixed(2)}%`}
-                  tone="amber"
-                />
-                <StatCard
-                  label="Hiç VACUUM Olmayan"
-                  value={String(maintReport?.summary.tables_never_vacuumed ?? 0)}
-                  tone="indigo"
-                />
-              </div>
-              <DataTable
-                columns={maintCols}
-                data={maintData}
-                isLoading={maintLoading && bloatLoading}
-                emptyTitle="Bakım önerisi yok"
-                emptyDesc="Tabloların dead tuple oranı düşük."
-                pageSize={maintPS}
-                setPageSize={setMaintPS}
-                globalFilter={maintSearch}
-                setGlobalFilter={setMaintSearch}
-                searchPlaceholder="Tablo adı ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="pgss" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 p-5 flex items-start gap-3">
-                <ListOrdered className="h-5 w-5 text-emerald-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold">pg_stat_statements — Top sorgular</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Toplam çalışma süresine göre sıralanmış en yüksek maliyetli sorgular.
-                    Uzun süreli performans analizi için kullanın.
-                  </p>
-                </div>
-              </div>
-              <DataTable
-                columns={pgssCols}
-                data={pgssData}
-                isLoading={pgssLoading}
-                emptyTitle="pg_stat_statements yüklenemedi"
-                emptyDesc="Eklenti etkin mi? pg_stat_statements yüklü olmalı."
-                pageSize={pgssPS}
-                setPageSize={setPgssPS}
-                globalFilter={pgssSearch}
-                setGlobalFilter={setPgssSearch}
-                searchPlaceholder="QueryID veya sorgu içinde ara..."
-              />
-            </TabsContent>
-
-            <TabsContent value="sequences" className="mt-6">
-              <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-5 flex items-start gap-3">
-                <Hash className="h-5 w-5 text-red-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold text-red-400">
-                    Sequence Cycle Riski
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    %90+ olanlar DANGEROUS — nextval hatası (sequence exhausted)
-                    almadan ALTER SEQUENCE ile MAXVALUE artırın.
-                  </p>
-                </div>
-              </div>
-              <DataTable
-                columns={seqCols}
-                data={seqData.sort(
-                  (a, b) =>
-                    Number(b.exhaustion_percent ?? 0) -
-                    Number(a.exhaustion_percent ?? 0)
-                )}
-                isLoading={seqLoading}
-                emptyTitle="Sequence bulunamadı"
-                emptyDesc="Sequence listesi boş."
-                pageSize={seqPS}
-                setPageSize={setSeqPS}
-                globalFilter={seqSearch}
-                setGlobalFilter={setSeqSearch}
-                searchPlaceholder="Sequence adı ara..."
-              />
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span className={METRIC}>
+            {t("diagnostics.table.pageInfo", {
+              page: pageIndex + 1,
+              pages: Math.max(1, pageCount),
+              total: formatNumber(filteredCount),
+            })}
+          </span>
+          <span>{t("diagnostics.table.perPage")}</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => table.setPageSize(Number(v) as PageSize)}
+          >
+            <SelectTrigger
+              className="h-7 w-[64px] rounded-md text-xs"
+              aria-label={t("diagnostics.table.perPage")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 25, 50].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            className="h-7 px-2 text-xs"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            {t("diagnostics.table.previous")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            className="h-7 px-2 text-xs"
+          >
+            {t("diagnostics.table.next")}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
-type Tone = "emerald" | "muted" | "amber" | "red" | "indigo" | "purple";
-
-const toneMap: Record<Tone, string> = {
-  emerald: "from-emerald-500/15 to-emerald-500/0 text-emerald-400 border-emerald-500/20",
-  muted: "from-white/10 to-white/0 text-muted-foreground border-white/10",
-  amber: "from-amber-500/15 to-amber-500/0 text-amber-400 border-amber-500/20",
-  red: "from-red-500/15 to-red-500/0 text-red-400 border-red-500/20",
-  indigo: "from-indigo-500/15 to-indigo-500/0 text-indigo-400 border-indigo-500/20",
-  purple: "from-purple-500/15 to-purple-500/0 text-purple-400 border-purple-500/20",
-};
+const TONES = {
+  success: "text-success",
+  muted: "text-muted-foreground",
+  warning: "text-warning",
+  destructive: "text-destructive",
+  info: "text-info",
+} as const;
 
 function StatCard({
   label,
@@ -1402,18 +385,1028 @@ function StatCard({
 }: {
   label: string;
   value: string;
-  tone: Tone;
+  tone: keyof typeof TONES;
 }) {
   return (
-    <div
-      className={`relative rounded-2xl border bg-gradient-to-br ${toneMap[tone]} p-5 overflow-hidden`}
-    >
-      <div className="relative">
-        <p className="text-[11px] uppercase tracking-wider font-semibold opacity-75">
-          {label}
-        </p>
-        <p className="text-2xl font-bold mt-2">{value}</p>
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={`${METRIC} text-base font-semibold ${TONES[tone]}`}>{value}</p>
+    </div>
+  );
+}
+
+function Notice({
+  icon,
+  title,
+  className,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`mb-2 flex items-start gap-2 rounded-md border px-3 py-2 ${className ?? "border-border bg-card"}`}>
+      {icon}
+      <div className="text-xs">
+        <p className="font-medium text-foreground">{title}</p>
+        <p className="text-muted-foreground">{children}</p>
       </div>
+    </div>
+  );
+}
+
+function PercentBar({ pct, className }: { pct: number; className: string }) {
+  return (
+    <div className="h-1.5 w-20 overflow-hidden rounded-sm bg-muted">
+      <div className={`h-full ${className}`} style={{ width: `${Math.min(100, pct)}%` }} />
+    </div>
+  );
+}
+
+function isActionResult(data: DryRunResult | BackendActionResult): data is BackendActionResult {
+  return "signal_sent" in data;
+}
+
+export default function DiagnosticsPage() {
+  const t = useT();
+  const { formatNumber, formatDate } = useI18n();
+  const queryClient = useQueryClient();
+  const { confirm, Component: ConfirmDialog } = useConfirm();
+  const pollInterval = useUIPrefsStore((s) => s.pollInterval);
+  const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
+
+  const [activeTab, setActiveTab] = useState<TabId>("findings");
+
+  // Only the visible tab polls, so the heavier catalog reports are not hit in the background.
+  const poll = (tab: TabId) => (autoRefresh && activeTab === tab ? pollInterval : false);
+
+  const findingsQ = useQuery({
+    queryKey: qk.diagnostics.diagnose(),
+    queryFn: () => endpoints.getDiagnose(),
+    refetchInterval: poll("findings"),
+  });
+  const connQ = useQuery({
+    queryKey: qk.diagnostics.connections(100),
+    queryFn: () => endpoints.getConnections(100),
+    refetchInterval: poll("connections"),
+  });
+  const aqQ = useQuery({
+    queryKey: qk.diagnostics.queries.active(100),
+    queryFn: () => endpoints.getActiveQueries(100),
+    refetchInterval: poll("active"),
+  });
+  const lrQ = useQuery({
+    queryKey: qk.diagnostics.queries.longRunning(LONG_RUNNING_SECONDS, 100),
+    queryFn: () => endpoints.getLongRunningQueries(LONG_RUNNING_SECONDS, 100),
+    refetchInterval: poll("long"),
+  });
+  const locksQ = useQuery({
+    queryKey: qk.diagnostics.locks(100),
+    queryFn: () => endpoints.getLocks(100),
+    refetchInterval: poll("locks"),
+  });
+  const storageQ = useQuery({
+    queryKey: qk.diagnostics.storage("tables", 200),
+    queryFn: () => endpoints.getStorage("tables", 200),
+    refetchInterval: poll("storage"),
+  });
+  const idxQ = useQuery({
+    queryKey: qk.diagnostics.indexes(200),
+    queryFn: () => endpoints.getIndexes(200),
+    refetchInterval: poll("indexes"),
+  });
+  const maintQ = useQuery({
+    queryKey: qk.diagnostics.maintenance(200),
+    queryFn: () => endpoints.getMaintenance(200),
+    refetchInterval: poll("maintenance"),
+  });
+  const pgssQ = useQuery({
+    queryKey: qk.diagnostics.pgStatStatements(100),
+    queryFn: () => endpoints.getPgStatStatements(100),
+    refetchInterval: poll("pgss"),
+  });
+  const seqQ = useQuery({
+    queryKey: qk.diagnostics.sequences(500),
+    queryFn: () => endpoints.getSequences(500),
+    refetchInterval: poll("sequences"),
+  });
+
+  const notifyResult = (data: DryRunResult | BackendActionResult, pid: number, sentKey: string) => {
+    queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() });
+    if (isActionResult(data) && !data.signal_sent) {
+      toast.warning(t("diagnostics.toast.notSent", { pid }));
+    } else {
+      toast.success(t(sentKey), { description: `PID ${pid}` });
+    }
+  };
+
+  // Failures are toasted by the API client.
+  const { mutate: cancelBackend, isPending: cancelling } = useMutation({
+    mutationFn: (pid: number) => endpoints.cancelBackend(pid, { confirm: true }),
+    onSuccess: (data, pid) => notifyResult(data, pid, "diagnostics.toast.cancelled"),
+  });
+  const { mutate: terminateBackend, isPending: terminating } = useMutation({
+    mutationFn: (pid: number) =>
+      endpoints.terminateBackend(pid, { confirm: true, confirm_name: String(pid) }),
+    onSuccess: (data, pid) => notifyResult(data, pid, "diagnostics.toast.terminated"),
+  });
+
+  const storageData = useMemo(
+    () =>
+      [...(storageQ.data?.tables ?? [])].sort(
+        (a, b) => (b.total_size_bytes ?? 0) - (a.total_size_bytes ?? 0)
+      ),
+    [storageQ.data]
+  );
+  const seqData = useMemo(
+    () => [...(seqQ.data ?? [])].sort((a, b) => sequenceUsage(b) - sequenceUsage(a)),
+    [seqQ.data]
+  );
+  const idxData = useMemo(() => idxQ.data?.indexes ?? [], [idxQ.data]);
+  const lrData = useMemo(() => lrQ.data?.queries ?? [], [lrQ.data]);
+  const aqData = useMemo(() => aqQ.data?.queries ?? [], [aqQ.data]);
+  const connData = useMemo(() => connQ.data?.connections ?? [], [connQ.data]);
+  const locksData = useMemo(() => locksQ.data?.locks ?? [], [locksQ.data]);
+  const maintData = useMemo(() => maintQ.data?.tables ?? [], [maintQ.data]);
+  const pgssData = useMemo(() => pgssQ.data ?? [], [pgssQ.data]);
+  const findingsData = useMemo(() => findingsQ.data ?? [], [findingsQ.data]);
+
+  const percent = useMemo(
+    () => (value: number, digits = 1) =>
+      t("diagnostics.percent", {
+        value: formatNumber(value, { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+      }),
+    [t, formatNumber]
+  );
+
+  const findingsCols = useMemo<ColumnDef<DiagnosticFinding>[]>(
+    () => [
+      {
+        accessorKey: "severity",
+        header: () => t("diagnostics.findings.severity"),
+        cell: ({ row }) => (
+          <RiskBadge riskLevel={severityToRisk(row.original.severity)} size="sm" showIcon={false}>
+            {row.original.severity}
+          </RiskBadge>
+        ),
+      },
+      {
+        accessorKey: "code",
+        header: () => t("diagnostics.findings.code"),
+        cell: ({ row }) => (
+          <code className="font-mono text-[11px] text-muted-foreground">{row.original.code}</code>
+        ),
+      },
+      {
+        accessorKey: "title",
+        header: () => t("diagnostics.findings.heading"),
+        cell: ({ row }) => (
+          <div className="min-w-0">
+            <p className="font-medium text-foreground">{row.original.title}</p>
+            <p className="line-clamp-1 text-[11px] text-muted-foreground">{row.original.description}</p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "value",
+        header: () => t("diagnostics.findings.value"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-muted-foreground`}>{row.original.value ?? "-"}</span>
+        ),
+      },
+      {
+        accessorKey: "recommendation",
+        header: () => t("diagnostics.findings.recommendation"),
+        cell: ({ row }) =>
+          row.original.recommendation ? (
+            <p className="flex max-w-md items-start gap-1 text-[11px] text-success">
+              <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0" />
+              <span className="line-clamp-2">{row.original.recommendation}</span>
+            </p>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+    ],
+    [t]
+  );
+
+  const connCols = useMemo<ColumnDef<ConnectionInfo>[]>(() => {
+    const handleCancel = async (pid: number) => {
+      const ok = await confirm({
+        title: t("diagnostics.confirm.cancelTitle", { pid }),
+        description: t("diagnostics.confirm.cancelDesc"),
+        risk_level: "MAINTENANCE",
+        confirm_label: t("diagnostics.actions.cancel"),
+        cancel_label: t("common.cancel"),
+        sql_preview: [`SELECT pg_cancel_backend(${pid});`],
+      });
+      if (ok) cancelBackend(pid);
+    };
+    const handleTerminate = async (pid: number) => {
+      const ok = await confirm({
+        title: t("diagnostics.confirm.terminateTitle", { pid }),
+        description: t("diagnostics.confirm.terminateDesc"),
+        risk_level: "DANGEROUS",
+        confirm_label: t("diagnostics.actions.terminate"),
+        cancel_label: t("common.cancel"),
+        confirm_name_required: true,
+        confirm_name_value: String(pid),
+        confirm_name_placeholder: t("diagnostics.confirm.typePid", { pid }),
+        sql_preview: [`SELECT pg_terminate_backend(${pid});`],
+      });
+      if (ok) terminateBackend(pid);
+    };
+    return [
+      {
+        accessorKey: "pid",
+        header: () => "PID",
+        cell: ({ row }) => (
+          <code className={`${METRIC} font-semibold text-info`}>{row.original.pid}</code>
+        ),
+      },
+      {
+        accessorKey: "user",
+        header: () => t("diagnostics.columns.user"),
+        cell: ({ row }) => <span className="font-mono">{row.original.user ?? "-"}</span>,
+      },
+      {
+        accessorKey: "database",
+        header: () => t("diagnostics.columns.database"),
+        cell: ({ row }) => <span className="font-mono">{row.original.database ?? "-"}</span>,
+      },
+      {
+        accessorKey: "client_address",
+        header: () => t("diagnostics.columns.client"),
+        cell: ({ row }) => (
+          <code className="font-mono text-muted-foreground">{row.original.client_address ?? "-"}</code>
+        ),
+      },
+      {
+        accessorKey: "state",
+        header: () => t("diagnostics.columns.state"),
+        cell: ({ row }) => {
+          const state = row.original.state ?? "unknown";
+          const risk: "OK" | "WARNING" | "INFO" =
+            state === "active" ? "OK" : state === "idle in transaction" ? "WARNING" : "INFO";
+          return (
+            <RiskBadge riskLevel={risk} size="sm" showIcon={false}>
+              {state}
+            </RiskBadge>
+          );
+        },
+      },
+      {
+        accessorKey: "query_duration_seconds",
+        header: () => t("diagnostics.columns.duration"),
+        cell: ({ row }) => {
+          const s = row.original.query_duration_seconds;
+          if (typeof s !== "number") return <span className="text-muted-foreground">-</span>;
+          return (
+            <span
+              className={`${METRIC} ${s > 300 ? "text-destructive" : s > 60 ? "text-warning" : ""}`}
+            >
+              {formatSeconds(s, t)}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "application_name",
+        header: () => t("diagnostics.columns.application"),
+        cell: ({ row }) => (
+          <span className="block max-w-[180px] truncate text-muted-foreground">
+            {row.original.application_name ?? "-"}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => (
+          <IfWriter>
+            <div className="text-right">{t("diagnostics.columns.actions")}</div>
+          </IfWriter>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const pid = row.original.pid;
+          const busy = cancelling || terminating;
+          return (
+            <IfWriter>
+              <div className="flex items-center justify-end gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => handleCancel(pid)}
+                  className="h-6 px-1.5 text-[11px]"
+                >
+                  <StopCircle className="h-3 w-3" />
+                  {t("diagnostics.actions.cancel")}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => handleTerminate(pid)}
+                  className="h-6 border-destructive/30 px-1.5 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Skull className="h-3 w-3" />
+                  {t("diagnostics.actions.terminate")}
+                </Button>
+              </div>
+            </IfWriter>
+          );
+        },
+      },
+    ];
+  }, [t, confirm, cancelBackend, terminateBackend, cancelling, terminating]);
+
+  const queryCols = useMemo<ColumnDef<QueryInfo>[]>(
+    () => [
+      {
+        accessorKey: "pid",
+        header: () => "PID",
+        cell: ({ row }) => (
+          <code className={`${METRIC} font-semibold text-info`}>{row.original.pid}</code>
+        ),
+      },
+      {
+        accessorKey: "user",
+        header: () => t("diagnostics.columns.user"),
+        cell: ({ row }) => <span className="font-mono">{row.original.user ?? "-"}</span>,
+      },
+      {
+        accessorKey: "state",
+        header: () => t("diagnostics.columns.state"),
+        cell: ({ row }) => (
+          <RiskBadge riskLevel="INFO" size="sm" showIcon={false}>
+            {row.original.state ?? "-"}
+          </RiskBadge>
+        ),
+      },
+      {
+        accessorKey: "duration_seconds",
+        header: () => t("diagnostics.columns.duration"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-warning`}>
+            {typeof row.original.duration_seconds === "number"
+              ? formatSeconds(row.original.duration_seconds, t)
+              : "-"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "wait_event",
+        header: () => t("diagnostics.columns.wait"),
+        cell: ({ row }) => (
+          <code className="font-mono text-[11px] text-muted-foreground">
+            {row.original.wait_event_type
+              ? `${row.original.wait_event_type}${
+                  row.original.wait_event ? `:${row.original.wait_event}` : ""
+                }`
+              : "-"}
+          </code>
+        ),
+      },
+      {
+        accessorKey: "query",
+        header: () => t("diagnostics.columns.query"),
+        cell: ({ row }) => (
+          <pre className={`${PRE} line-clamp-2 max-w-[520px]`}>{row.original.query ?? "-"}</pre>
+        ),
+      },
+    ],
+    [t]
+  );
+
+  const lockCols = useMemo<ColumnDef<LockInfo>[]>(
+    () => [
+      {
+        accessorKey: "blocking_pid",
+        header: () => t("diagnostics.locks.blockingPid"),
+        cell: ({ row }) => (
+          <code className={`${METRIC} font-semibold text-destructive`}>{row.original.blocking_pid}</code>
+        ),
+      },
+      {
+        accessorKey: "blocked_pid",
+        header: () => t("diagnostics.locks.blockedPid"),
+        cell: ({ row }) => (
+          <code className={`${METRIC} font-semibold text-warning`}>{row.original.blocked_pid}</code>
+        ),
+      },
+      {
+        accessorKey: "relation",
+        header: () => t("diagnostics.locks.relation"),
+        cell: ({ row }) => (
+          <code className="font-mono text-muted-foreground">{row.original.relation ?? "-"}</code>
+        ),
+      },
+      {
+        accessorKey: "lock_type",
+        header: () => t("diagnostics.locks.type"),
+        cell: ({ row }) => (
+          <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
+            {row.original.lock_type ?? "-"}
+          </RiskBadge>
+        ),
+      },
+      {
+        accessorKey: "blocked_mode",
+        header: () => t("diagnostics.locks.mode"),
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px]">
+            {row.original.blocking_mode ?? "-"} → {row.original.blocked_mode ?? "-"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "blocking_duration_seconds",
+        header: () => t("diagnostics.locks.blockingDuration"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-destructive`}>
+            {typeof row.original.blocking_duration_seconds === "number"
+              ? formatSeconds(row.original.blocking_duration_seconds, t)
+              : "-"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "blocking_query",
+        header: () => t("diagnostics.locks.blockingQuery"),
+        cell: ({ row }) => (
+          <pre className={`${PRE} line-clamp-2 max-w-[400px]`}>{row.original.blocking_query ?? "-"}</pre>
+        ),
+      },
+    ],
+    [t]
+  );
+
+  const storageCols = useMemo<ColumnDef<TableSize>[]>(
+    () => [
+      {
+        accessorKey: "schema_name",
+        header: () => t("diagnostics.columns.schema"),
+        cell: ({ row }) => (
+          <code className="font-mono text-muted-foreground">{row.original.schema_name ?? "public"}</code>
+        ),
+      },
+      {
+        accessorKey: "table_name",
+        header: () => t("diagnostics.columns.table"),
+        cell: ({ row }) => <span className="font-medium">{row.original.table_name}</span>,
+      },
+      {
+        accessorKey: "total_size_bytes",
+        header: () => t("diagnostics.storage.total"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} font-semibold`}>{formatBytes(row.original.total_size_bytes ?? 0)}</span>
+        ),
+      },
+      {
+        accessorKey: "table_size_bytes",
+        header: () => t("diagnostics.storage.tableSize"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-muted-foreground`}>
+            {formatBytes(row.original.table_size_bytes ?? 0)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "indexes_size_bytes",
+        header: () => t("diagnostics.storage.indexes"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-muted-foreground`}>
+            {formatBytes(row.original.indexes_size_bytes ?? 0)}
+          </span>
+        ),
+      },
+      {
+        id: "index_ratio",
+        header: () => t("diagnostics.storage.indexRatio"),
+        cell: ({ row }) => {
+          const total = row.original.total_size_bytes ?? 0;
+          const pct = total > 0 ? ((row.original.indexes_size_bytes ?? 0) / total) * 100 : 0;
+          return (
+            <div className="flex items-center gap-2">
+              <PercentBar pct={pct} className="bg-info" />
+              <span className={`${METRIC} text-muted-foreground`}>{percent(pct)}</span>
+            </div>
+          );
+        },
+      },
+    ],
+    [t, percent]
+  );
+
+  const idxCols = useMemo<ColumnDef<IndexInfo>[]>(
+    () => [
+      {
+        id: "index",
+        accessorFn: (r) => `${r.index_name} ${r.schema_name ?? "public"}.${r.table_name ?? "-"}`,
+        header: () => t("diagnostics.indexes.index"),
+        cell: ({ row }) => (
+          <div>
+            <div className="font-medium">{row.original.index_name}</div>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.schema_name ?? "public"}.{row.original.table_name ?? "-"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "index_size_bytes",
+        header: () => t("diagnostics.indexes.size"),
+        cell: ({ row }) => (
+          <span className={METRIC}>{formatBytes(row.original.index_size_bytes ?? 0)}</span>
+        ),
+      },
+      {
+        accessorKey: "index_scans",
+        header: () => t("diagnostics.indexes.scans"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-success`}>{formatNumber(row.original.index_scans ?? 0)}</span>
+        ),
+      },
+      {
+        accessorKey: "tuples_fetched",
+        header: () => t("diagnostics.indexes.tuples"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-[11px] text-muted-foreground`}>
+            {t("diagnostics.indexes.tuplesValue", {
+              read: formatNumber(row.original.tuples_read ?? 0),
+              fetched: formatNumber(row.original.tuples_fetched ?? 0),
+            })}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "potentially_unused",
+        header: () => t("diagnostics.columns.state"),
+        cell: ({ row }) =>
+          row.original.potentially_unused ? (
+            <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
+              {t("diagnostics.indexes.maybeUnused")}
+            </RiskBadge>
+          ) : (
+            <RiskBadge riskLevel="OK" size="sm" showIcon={false}>
+              {t("diagnostics.indexes.inUse")}
+            </RiskBadge>
+          ),
+      },
+    ],
+    [t, formatNumber]
+  );
+
+  const maintCols = useMemo<ColumnDef<TableMaintenance>[]>(
+    () => [
+      {
+        accessorKey: "table_name",
+        header: () => t("diagnostics.columns.table"),
+        cell: ({ row }) => (
+          <div>
+            <div className="font-medium">{row.original.table_name}</div>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.schema_name ?? "public"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: () => t("diagnostics.columns.state"),
+        cell: ({ row }) => (
+          <RiskBadge riskLevel={severityToRisk(row.original.status)} size="sm" showIcon={false}>
+            {row.original.status}
+          </RiskBadge>
+        ),
+      },
+      {
+        accessorKey: "dead_tuple_percent",
+        header: () => t("diagnostics.maintenance.deadPercent"),
+        cell: ({ row }) => {
+          const pct = row.original.dead_tuple_percent ?? 0;
+          return (
+            <div className="flex items-center gap-2">
+              <PercentBar
+                pct={pct}
+                className={pct > 40 ? "bg-destructive" : pct > 20 ? "bg-warning" : "bg-success"}
+              />
+              <span className={`${METRIC} font-semibold`}>{percent(pct)}</span>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "live_tuples",
+        header: () => t("diagnostics.maintenance.liveDead"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-[11px]`}>
+            <span className="text-success">{formatNumber(row.original.live_tuples ?? 0)}</span>
+            {" / "}
+            <span className="text-destructive">{formatNumber(row.original.dead_tuples ?? 0)}</span>
+          </span>
+        ),
+      },
+      {
+        id: "last_vacuum",
+        accessorFn: (r) => latestDate(r.last_vacuum, r.last_autovacuum) ?? "",
+        header: () => t("diagnostics.maintenance.lastVacuum"),
+        cell: ({ row }) => {
+          const last = latestDate(row.original.last_vacuum, row.original.last_autovacuum);
+          return (
+            <div>
+              <div className={METRIC}>{last ? formatDate(last) : "-"}</div>
+              <div className={`${METRIC} text-[11px] text-muted-foreground`}>
+                {t("diagnostics.maintenance.vacuumCounts", {
+                  auto: formatNumber(row.original.autovacuum_count ?? 0),
+                  manual: formatNumber(row.original.vacuum_count ?? 0),
+                })}
+              </div>
+            </div>
+          );
+        },
+      },
+    ],
+    [t, formatNumber, formatDate, percent]
+  );
+
+  const pgssCols = useMemo<ColumnDef<PgStatStatementsRow>[]>(
+    () => [
+      {
+        accessorKey: "queryid",
+        header: () => "QueryID",
+        cell: ({ row }) =>
+          row.original.queryid ? (
+            <Link
+              href={`/statements/${encodeURIComponent(row.original.queryid)}`}
+              className="font-mono text-[11px] text-info hover:underline"
+            >
+              {row.original.queryid}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        accessorKey: "calls",
+        header: () => t("diagnostics.pgss.calls"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} font-semibold`}>{formatNumber(Number(row.original.calls ?? 0))}</span>
+        ),
+      },
+      {
+        accessorKey: "total_exec_time",
+        header: () => t("diagnostics.pgss.totalTime"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-warning`}>
+            {formatMs(Number(row.original.total_exec_time ?? 0), t, formatNumber)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "mean_exec_time",
+        header: () => t("diagnostics.pgss.meanTime"),
+        cell: ({ row }) => (
+          <span className={METRIC}>
+            {formatMs(Number(row.original.mean_exec_time ?? 0), t, formatNumber)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "rows",
+        header: () => t("diagnostics.pgss.rows"),
+        cell: ({ row }) => (
+          <span className={`${METRIC} text-muted-foreground`}>
+            {formatNumber(Number(row.original.rows ?? 0))}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "query",
+        header: () => t("diagnostics.columns.query"),
+        cell: ({ row }) => {
+          const text = (
+            <pre className={`${PRE} line-clamp-2 max-w-[520px]`}>{String(row.original.query ?? "-")}</pre>
+          );
+          return row.original.queryid ? (
+            <Link
+              href={`/statements/${encodeURIComponent(row.original.queryid)}`}
+              className="block hover:underline"
+            >
+              {text}
+            </Link>
+          ) : (
+            text
+          );
+        },
+      },
+    ],
+    [t, formatNumber]
+  );
+
+  const seqCols = useMemo<ColumnDef<SequenceRow>[]>(
+    () => [
+      {
+        accessorKey: "sequence_name",
+        header: () => t("diagnostics.sequences.sequence"),
+        cell: ({ row }) => (
+          <div>
+            <div className="font-mono font-medium">{row.original.sequence_name}</div>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.schema_name ?? "public"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "last_value",
+        header: () => t("diagnostics.sequences.lastValue"),
+        cell: ({ row }) =>
+          row.original.last_value == null ? (
+            <span className="text-muted-foreground">-</span>
+          ) : (
+            <code className={METRIC}>{formatNumber(Number(row.original.last_value))}</code>
+          ),
+      },
+      {
+        accessorKey: "max_value",
+        header: () => t("diagnostics.sequences.maxValue"),
+        cell: ({ row }) => (
+          <code className={`${METRIC} text-muted-foreground`}>
+            {formatNumber(Number(row.original.max_value ?? 0))}
+          </code>
+        ),
+      },
+      {
+        id: "usage_percent",
+        accessorFn: (r) => sequenceUsage(r),
+        header: () => t("diagnostics.sequences.usage"),
+        cell: ({ row }) => {
+          const pct = sequenceUsage(row.original);
+          return (
+            <div className="flex items-center gap-2">
+              <PercentBar
+                pct={pct}
+                className={pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-success"}
+              />
+              <span className={`${METRIC} font-semibold`}>{percent(pct, 2)}</span>
+              <RiskBadge
+                riskLevel={pct >= 90 ? "DANGEROUS" : pct >= 75 ? "WARNING" : "OK"}
+                size="sm"
+                showIcon={false}
+              />
+            </div>
+          );
+        },
+      },
+    ],
+    [t, formatNumber, percent]
+  );
+
+  const unusedCount = idxData.filter((i) => i.potentially_unused).length;
+  const connSummary = connQ.isError ? undefined : connQ.data?.summary;
+  const lockSummary = locksQ.isError ? undefined : locksQ.data?.summary;
+  const maintSummary = maintQ.isError ? undefined : maintQ.data?.summary;
+
+  return (
+    <div className="space-y-3">
+      <ConfirmDialog />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Activity className="h-4 w-4 text-info" />
+            {t("diagnostics.title")}
+          </h1>
+          <p className="text-xs text-muted-foreground">{t("diagnostics.subtitle")}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() })}
+        >
+          <RefreshCw className="mr-1 h-3.5 w-3.5" />
+          {t("common.refresh")}
+        </Button>
+      </div>
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as TabId)}
+        className="w-full"
+      >
+        <div className="overflow-x-auto">
+          <TabsList className="inline-flex h-auto min-w-max gap-0.5 p-0.5">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <TabsTrigger key={tab.id} value={tab.id} className="h-7 px-2 text-xs">
+                  <Icon className="mr-1 h-3 w-3" />
+                  {t(tab.labelKey)}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </div>
+
+        <TabsContent value="findings" className="mt-2">
+          <DataTable
+            columns={findingsCols}
+            data={findingsData}
+            isLoading={findingsQ.isLoading}
+            isError={findingsQ.isError}
+            error={findingsQ.error}
+            onRetry={() => findingsQ.refetch()}
+            emptyTitle={t("diagnostics.findings.emptyTitle")}
+            emptyDesc={t("diagnostics.findings.emptyDesc")}
+            searchPlaceholder={t("diagnostics.findings.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="connections" className="mt-2">
+          {connSummary && (
+            <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-5">
+              <StatCard label={t("diagnostics.connections.active")} value={formatNumber(connSummary.active)} tone="success" />
+              <StatCard label={t("diagnostics.connections.idle")} value={formatNumber(connSummary.idle)} tone="muted" />
+              <StatCard label={t("diagnostics.connections.idleInTx")} value={formatNumber(connSummary.idle_in_transaction)} tone="warning" />
+              <StatCard label={t("diagnostics.connections.waiting")} value={formatNumber(connSummary.waiting)} tone="destructive" />
+              <StatCard label={t("diagnostics.connections.usage")} value={percent(connSummary.usage_percent)} tone="info" />
+            </div>
+          )}
+          <DataTable
+            columns={connCols}
+            data={connData}
+            isLoading={connQ.isLoading}
+            isError={connQ.isError}
+            error={connQ.error}
+            onRetry={() => connQ.refetch()}
+            emptyTitle={t("diagnostics.connections.emptyTitle")}
+            emptyDesc={t("diagnostics.connections.emptyDesc")}
+            searchPlaceholder={t("diagnostics.connections.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="active" className="mt-2">
+          <DataTable
+            columns={queryCols}
+            data={aqData}
+            isLoading={aqQ.isLoading}
+            isError={aqQ.isError}
+            error={aqQ.error}
+            onRetry={() => aqQ.refetch()}
+            emptyTitle={t("diagnostics.active.emptyTitle")}
+            emptyDesc={t("diagnostics.active.emptyDesc")}
+            searchPlaceholder={t("diagnostics.active.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="long" className="mt-2">
+          {lrQ.data && !lrQ.isError && (
+            <Notice
+              icon={<Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />}
+              title={t("diagnostics.long.title", { minutes: LONG_RUNNING_SECONDS / 60 })}
+              className="border-warning/30 bg-warning/10"
+            >
+              {t("diagnostics.long.desc", { count: lrData.length })}
+            </Notice>
+          )}
+          <DataTable
+            columns={queryCols}
+            data={lrData}
+            isLoading={lrQ.isLoading}
+            isError={lrQ.isError}
+            error={lrQ.error}
+            onRetry={() => lrQ.refetch()}
+            emptyTitle={t("diagnostics.long.emptyTitle")}
+            emptyDesc={t("diagnostics.long.emptyDesc", { minutes: LONG_RUNNING_SECONDS / 60 })}
+            searchPlaceholder={t("diagnostics.active.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="locks" className="mt-2">
+          {lockSummary && (
+            <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+              <StatCard label={t("diagnostics.locks.total")} value={formatNumber(lockSummary.total_locks)} tone="info" />
+              <StatCard label={t("diagnostics.locks.waiting")} value={formatNumber(lockSummary.waiting_locks)} tone="warning" />
+              <StatCard label={t("diagnostics.locks.blockingPairs")} value={formatNumber(lockSummary.blocking_pairs)} tone="destructive" />
+            </div>
+          )}
+          <DataTable
+            columns={lockCols}
+            data={locksData}
+            isLoading={locksQ.isLoading}
+            isError={locksQ.isError}
+            error={locksQ.error}
+            onRetry={() => locksQ.refetch()}
+            emptyTitle={t("diagnostics.locks.emptyTitle")}
+            emptyDesc={t("diagnostics.locks.emptyDesc")}
+            searchPlaceholder={t("diagnostics.locks.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="storage" className="mt-2">
+          <DataTable
+            columns={storageCols}
+            data={storageData}
+            isLoading={storageQ.isLoading}
+            isError={storageQ.isError}
+            error={storageQ.error}
+            onRetry={() => storageQ.refetch()}
+            emptyTitle={t("diagnostics.storage.emptyTitle")}
+            emptyDesc={t("diagnostics.storage.emptyDesc")}
+            searchPlaceholder={t("diagnostics.storage.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="indexes" className="mt-2">
+          {idxQ.data && !idxQ.isError && (
+            <Notice
+              icon={<Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />}
+              title={t("diagnostics.indexes.noticeTitle")}
+            >
+              {t("diagnostics.indexes.noticeDesc", { total: idxData.length, unused: unusedCount })}
+            </Notice>
+          )}
+          <DataTable
+            columns={idxCols}
+            data={idxData}
+            isLoading={idxQ.isLoading}
+            isError={idxQ.isError}
+            error={idxQ.error}
+            onRetry={() => idxQ.refetch()}
+            emptyTitle={t("diagnostics.indexes.emptyTitle")}
+            emptyDesc={t("diagnostics.indexes.emptyDesc")}
+            searchPlaceholder={t("diagnostics.indexes.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="maintenance" className="mt-2">
+          {maintSummary && (
+            <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+              <StatCard label={t("diagnostics.maintenance.liveTuples")} value={formatNumber(maintSummary.total_live_tuples)} tone="success" />
+              <StatCard label={t("diagnostics.maintenance.deadTuples")} value={formatNumber(maintSummary.total_dead_tuples)} tone="destructive" />
+              <StatCard label={t("diagnostics.maintenance.deadPercent")} value={percent(maintSummary.dead_tuple_percent, 2)} tone="warning" />
+              <StatCard label={t("diagnostics.maintenance.neverVacuumed")} value={formatNumber(maintSummary.tables_never_vacuumed)} tone="info" />
+            </div>
+          )}
+          <DataTable
+            columns={maintCols}
+            data={maintData}
+            isLoading={maintQ.isLoading}
+            isError={maintQ.isError}
+            error={maintQ.error}
+            onRetry={() => maintQ.refetch()}
+            emptyTitle={t("diagnostics.maintenance.emptyTitle")}
+            emptyDesc={t("diagnostics.maintenance.emptyDesc")}
+            searchPlaceholder={t("diagnostics.maintenance.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="pgss" className="mt-2">
+          <Notice
+            icon={<ListOrdered className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />}
+            title={t("diagnostics.pgss.noticeTitle")}
+          >
+            {t("diagnostics.pgss.noticeDesc")}
+          </Notice>
+          <DataTable
+            columns={pgssCols}
+            data={pgssData}
+            isLoading={pgssQ.isLoading}
+            isError={pgssQ.isError}
+            error={pgssQ.error}
+            onRetry={() => pgssQ.refetch()}
+            emptyTitle={t("diagnostics.pgss.emptyTitle")}
+            emptyDesc={t("diagnostics.pgss.emptyDesc")}
+            searchPlaceholder={t("diagnostics.pgss.search")}
+          />
+        </TabsContent>
+
+        <TabsContent value="sequences" className="mt-2">
+          <Notice
+            icon={<Hash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />}
+            title={t("diagnostics.sequences.noticeTitle")}
+            className="border-destructive/30 bg-destructive/10"
+          >
+            {t("diagnostics.sequences.noticeDesc")}
+          </Notice>
+          <DataTable
+            columns={seqCols}
+            data={seqData}
+            isLoading={seqQ.isLoading}
+            isError={seqQ.isError}
+            error={seqQ.error}
+            onRetry={() => seqQ.refetch()}
+            emptyTitle={t("diagnostics.sequences.emptyTitle")}
+            emptyDesc={t("diagnostics.sequences.emptyDesc")}
+            searchPlaceholder={t("diagnostics.sequences.search")}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

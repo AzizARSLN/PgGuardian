@@ -164,6 +164,16 @@ def get_connection(
         conn.close()
 
 
+# Marks our own diagnostics so they can be left out of pg_stat_statements analysis.
+INTERNAL_QUERY_TAG = "/* pgguardian */ "
+
+
+def _tagged(query: str | pgsql.SQL | pgsql.Composed) -> str | pgsql.Composed:
+    if isinstance(query, str):
+        return INTERNAL_QUERY_TAG + query
+    return pgsql.SQL(INTERNAL_QUERY_TAG) + query
+
+
 class DbClient:
     """Thin read-only query helper with per-call connections.
 
@@ -191,11 +201,15 @@ class DbClient:
             self._settings, self._cli_connection_string, statement_timeout=self._statement_timeout
         )
 
+    def connection(self) -> AbstractContextManager[psycopg.Connection[dict[str, Any]]]:
+        """Open a connection using this client's resolved target."""
+        return self._connection()
+
     def fetch_all(self, sql: str, params: tuple[object, ...] | None = None) -> list[dict]:
         """Run a read-only SELECT and return rows as plain dicts."""
         with self._connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, params or ())
+                cur.execute(_tagged(sql), params or None)
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
@@ -203,7 +217,7 @@ class DbClient:
         """Run a SELECT expected to return a single row (or None)."""
         with self._connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, params or ())
+                cur.execute(_tagged(sql), params or None)
                 row = cur.fetchone()
                 return dict(row) if row is not None else None
 
@@ -213,7 +227,7 @@ class DbClient:
         """Execute one composed/DDL statement; returns the command status string."""
         with self._connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, params or ())
+                cur.execute(_tagged(query), params or None)
                 return cur.statusmessage or ""
 
     def ping(self) -> tuple[str, int]:

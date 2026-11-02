@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.sql import SQL, Literal
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +19,8 @@ from pgguardian.api.safety import (
 )
 from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
+
+_SETTING_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
 
@@ -96,6 +100,8 @@ def change_setting(
 ) -> DryRunResult | SettingInfo:
     """ALTER SYSTEM SET + report pending_restart (DANGEROUS)."""
     ensure_dangerous_allowed(settings, "config.change")
+    if not _SETTING_NAME.match(name):
+        raise HTTPException(status_code=400, detail="Invalid setting name.")
     query = SQL("ALTER SYSTEM SET {} = {}").format(SQL(name), Literal(body.value))
     if body.dry_run:
         return DryRunResult(

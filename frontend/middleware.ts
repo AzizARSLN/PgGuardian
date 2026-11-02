@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PROTECTED_PATHS = [
   "/dashboard",
+  "/statements",
+  "/databases",
   "/connections",
   "/diagnostics",
   "/sql-editor",
@@ -19,8 +21,6 @@ const PROTECTED_PATHS = [
 ];
 
 const REFRESH_COOKIE_NAME = "pgg_refresh";
-const LEGACY_COOKIE_NAME = "pgguardian_api_token";
-const LEGACY_AUTH_COOKIE = "auth";
 
 export const config = {
   matcher: [
@@ -28,6 +28,8 @@ export const config = {
     "/login",
     "/users/:path*",
     "/dashboard/:path*",
+    "/statements/:path*",
+    "/databases/:path*",
     "/connections/:path*",
     "/diagnostics/:path*",
     "/sql-editor/:path*",
@@ -68,14 +70,11 @@ function getRoleFromJwt(token: string): string | null {
   }
 }
 
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const hasLegacyCookie = Boolean(request.cookies.get(LEGACY_COOKIE_NAME)?.value);
-  const hasLegacyAuthCookie = Boolean(request.cookies.get(LEGACY_AUTH_COOKIE)?.value);
-  const hasEnvToken = Boolean(process.env.NEXT_PUBLIC_PGGUARDIAN_API_TOKEN);
-
-  if (hasLegacyCookie || hasEnvToken || hasLegacyAuthCookie) {
+  if (process.env.NEXT_PUBLIC_PGGUARDIAN_API_TOKEN) {
     return NextResponse.next();
   }
 
@@ -83,16 +82,14 @@ export function middleware(request: NextRequest) {
   const hasRefresh = Boolean(refreshCookie?.value);
 
   if (pathname === "/login") {
-    if (hasRefresh) {
+    // With ?next the app just failed to restore the session from this cookie;
+    // sending it back would loop between the two pages.
+    if (hasRefresh && !request.nextUrl.searchParams.has("next")) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
       url.search = "";
       return NextResponse.redirect(url);
     }
-    return NextResponse.next();
-  }
-
-  if (pathname === "/" || pathname === "") {
     return NextResponse.next();
   }
 
@@ -114,7 +111,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!isProtected(pathname)) {
+  if (!isProtected(pathname) && pathname !== "/") {
     return NextResponse.next();
   }
 

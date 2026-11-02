@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -11,17 +12,15 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
-  type RowSelectionState,
 } from '@tanstack/react-table';
-import { toast } from 'sonner';
 import {
-  Database,
-  Table2,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
   ChevronRight,
-  HardDrive,
-  User,
-  Bug,
+  Database,
+  RotateCcw,
+  Table2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -37,15 +36,21 @@ import {
 } from '@/components/ui/table';
 import { endpoints, type SchemaInfo, type TableSummary } from '@/lib/api/types';
 import { qk } from '@/lib/api/queryKeys';
-import { cn, formatBytes, formatNumber } from '@/lib/utils';
+import { useI18n, useT } from '@/lib/i18n';
+import { cn, formatBytes } from '@/lib/utils';
+
+const TABLE_LIMIT = 1000;
+
+function tableHref(schema: string, table: string): string {
+  return `/schema-browser/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
+}
 
 export default function SchemaBrowserPage() {
+  const t = useT();
+  const { formatNumber } = useI18n();
   const router = useRouter();
   const [selectedSchema, setSelectedSchema] = React.useState<string | null>(null);
-  const [sorting, setSorting] = React.useState<SortingState>([
-    { id: 'table_name', desc: false },
-  ]);
-  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'table_name', desc: false }]);
 
   const schemasQuery = useQuery({
     queryKey: qk.schemas.all(),
@@ -53,17 +58,21 @@ export default function SchemaBrowserPage() {
   });
 
   const tablesQuery = useQuery({
-    queryKey: qk.schemas.tables(selectedSchema ?? '__none__', 1000),
+    queryKey: qk.schemas.tables(selectedSchema ?? '__none__', TABLE_LIMIT),
     queryFn: () =>
-      selectedSchema ? endpoints.listTables(selectedSchema, 1000) : Promise.resolve([]),
+      selectedSchema
+        ? endpoints.listTables(encodeURIComponent(selectedSchema), TABLE_LIMIT)
+        : Promise.resolve([]),
     enabled: !!selectedSchema,
   });
 
+  // Also re-picks when the selected schema is gone, e.g. after a profile switch.
   React.useEffect(() => {
-    if (!selectedSchema && schemasQuery.data && schemasQuery.data.length > 0) {
-      const nonSystem = schemasQuery.data.find((s) => !s.is_system);
-      setSelectedSchema(nonSystem?.name ?? schemasQuery.data[0].name);
-    }
+    const schemas = schemasQuery.data;
+    if (!schemas || schemas.length === 0) return;
+    if (selectedSchema && schemas.some((s) => s.name === selectedSchema)) return;
+    const nonSystem = schemas.find((s) => !s.is_system);
+    setSelectedSchema(nonSystem?.name ?? schemas[0].name);
   }, [schemasQuery.data, selectedSchema]);
 
   const userSchemas = React.useMemo(
@@ -75,101 +84,83 @@ export default function SchemaBrowserPage() {
     [schemasQuery.data]
   );
 
+  const totals = React.useMemo(() => {
+    const rows = tablesQuery.data ?? [];
+    return {
+      size: rows.reduce((sum, r) => sum + (r.total_size_bytes ?? 0), 0),
+      live: rows.reduce((sum, r) => sum + (r.live_tuples ?? 0), 0),
+      dead: rows.reduce((sum, r) => sum + (r.dead_tuples ?? 0), 0),
+    };
+  }, [tablesQuery.data]);
+
   const columns = React.useMemo<ColumnDef<TableSummary>[]>(
     () => [
       {
         accessorKey: 'table_name',
-        header: 'Tablo Adı',
-        cell: ({ getValue }) => (
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500/20 to-emerald-500/20 border border-indigo-500/20 flex items-center justify-center shrink-0">
-              <Table2 className="h-4 w-4 text-gradient" />
-            </div>
-            <span className="font-semibold text-white">{getValue<string>()}</span>
-          </div>
+        header: t('schemaBrowser.columns.table'),
+        cell: ({ row }) => (
+          <Link
+            href={tableHref(row.original.schema_name, row.original.table_name)}
+            onClick={(e) => e.stopPropagation()}
+            className="font-mono font-medium text-foreground hover:underline"
+          >
+            {row.original.table_name}
+          </Link>
         ),
       },
       {
         accessorKey: 'owner',
-        header: 'Sahip',
+        header: t('schemaBrowser.columns.owner'),
         size: 140,
         cell: ({ getValue }) => (
-          <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-            <span className="text-sm text-zinc-300 truncate">
-              {getValue<string | null | undefined>() ?? '-'}
-            </span>
-          </div>
-        ),
-      },
-      {
-        accessorKey: 'total_size_bytes',
-        header: 'Boyut',
-        size: 130,
-        sortingFn: (a, b) =>
-          (a.original.total_size_bytes ?? 0) - (b.original.total_size_bytes ?? 0),
-        cell: ({ getValue }) => (
-          <div className="flex items-center gap-2">
-            <HardDrive className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-            <span className="font-mono text-sm text-zinc-300">
-              {formatBytes(getValue<number>() ?? 0)}
-            </span>
-          </div>
-        ),
-      },
-      {
-        accessorKey: 'live_tuples',
-        header: 'Canlı Satır',
-        size: 140,
-        sortingFn: (a, b) =>
-          (a.original.live_tuples ?? 0) - (b.original.live_tuples ?? 0),
-        cell: ({ getValue }) => (
-          <span className="font-mono text-sm text-zinc-300">
-            {formatNumber(getValue<number>() ?? 0)}
+          <span className="block truncate font-mono text-muted-foreground">
+            {getValue<string | null | undefined>() ?? '-'}
           </span>
         ),
       },
       {
+        accessorKey: 'total_size_bytes',
+        header: t('schemaBrowser.columns.size'),
+        size: 110,
+        cell: ({ getValue }) => (
+          <span className="font-mono text-muted-foreground">{formatBytes(getValue<number>() ?? 0)}</span>
+        ),
+      },
+      {
+        accessorKey: 'live_tuples',
+        header: t('schemaBrowser.columns.liveRows'),
+        size: 110,
+        cell: ({ getValue }) => (
+          <span className="font-mono text-muted-foreground">{formatNumber(getValue<number>() ?? 0)}</span>
+        ),
+      },
+      {
         accessorKey: 'dead_tuple_percent',
-        header: 'Bloat %',
-        size: 130,
-        sortingFn: (a, b) =>
-          (a.original.dead_tuple_percent ?? 0) - (b.original.dead_tuple_percent ?? 0),
+        header: t('schemaBrowser.columns.deadPercent'),
+        size: 110,
         cell: ({ getValue }) => {
           const v = getValue<number>() ?? 0;
-          const critical = v >= 20;
-          const warn = v >= 10 && v < 20;
           return (
-            <Badge
-              variant="outline"
+            <span
               className={cn(
                 'font-mono',
-                critical
-                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
-                  : warn
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400'
-                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                v >= 20 ? 'text-destructive' : v >= 10 ? 'text-warning' : 'text-success'
               )}
             >
-              <Bug className="h-3 w-3 mr-1" />
-              {v.toFixed(1)}%
-            </Badge>
+              {formatNumber(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+            </span>
           );
         },
       },
       {
         id: 'actions',
         header: '',
-        size: 90,
+        size: 32,
         enableSorting: false,
-        cell: () => (
-          <div className="flex justify-end">
-            <ArrowRight className="h-4 w-4 text-muted-foreground" />
-          </div>
-        ),
+        cell: () => <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />,
       },
     ],
-    []
+    [t, formatNumber]
   );
 
   const table = useReactTable({
@@ -179,52 +170,47 @@ export default function SchemaBrowserPage() {
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     onSortingChange: setSorting,
-    onRowSelectionChange: setRowSelection,
-    state: { sorting, rowSelection },
-    initialState: {
-      pagination: { pageSize: 25 },
-    },
+    state: { sorting },
+    initialState: { pagination: { pageSize: 25 } },
   });
 
-  function goToDetail(row: TableSummary) {
-    router.push(`/schema-browser/${encodeURIComponent(row.schema_name)}/${encodeURIComponent(row.table_name)}`);
-  }
+  const rows = table.getRowModel().rows;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <div>
-        <h1 className="text-3xl font-bold text-white">Şema Tarayıcı</h1>
-        <p className="text-muted-foreground mt-1">
-          Şemalar · Tablolar · Bloat · Boyut analizleri
-        </p>
+        <h1 className="text-lg font-semibold text-foreground">{t('schemaBrowser.title')}</h1>
+        <p className="text-xs text-muted-foreground">{t('schemaBrowser.subtitle')}</p>
       </div>
 
-      <div className="grid grid-cols-12 gap-6" style={{ minHeight: 720 }}>
-        <Card className="col-span-12 lg:col-span-3 overflow-hidden flex flex-col">
-          <CardHeader className="!p-5 border-b border-white/10">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Database className="h-5 w-5 text-gradient" />
-              Şemalar
+      <div className="grid grid-cols-12 gap-3">
+        <Card className="col-span-12 flex flex-col overflow-hidden lg:col-span-3">
+          <CardHeader className="border-b border-border !px-3 !py-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Database className="h-3.5 w-3.5 text-info" />
+              {t('schemaBrowser.schemas.title')}
             </CardTitle>
-            <CardDescription>
-              {userSchemas.length} kullanıcı · {systemSchemas.length} sistem
+            <CardDescription className="text-xs">
+              {t('schemaBrowser.schemas.counts', {
+                user: formatNumber(userSchemas.length),
+                system: formatNumber(systemSchemas.length),
+              })}
             </CardDescription>
           </CardHeader>
-          <CardContent className="!p-3 flex-1 overflow-y-auto space-y-3">
+          <CardContent className="max-h-[720px] flex-1 space-y-2 overflow-y-auto !p-1.5">
             {schemasQuery.isLoading && (
-              <div className="text-sm text-muted-foreground p-3">
-                Şemalar yükleniyor...
-              </div>
+              <div className="p-2 text-xs text-muted-foreground">{t('common.loading')}</div>
             )}
-            {schemasQuery.error && (
-              <div className="text-sm text-red-400 p-3">
-                Şemalar yüklenemedi
-              </div>
+            {schemasQuery.isError && (
+              <InlineError error={schemasQuery.error} onRetry={() => schemasQuery.refetch()} />
+            )}
+            {schemasQuery.data?.length === 0 && (
+              <div className="p-2 text-xs text-muted-foreground">{t('common.noData')}</div>
             )}
             {userSchemas.length > 0 && (
-              <div className="space-y-1">
-                <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Kullanıcı Şemaları
+              <div className="space-y-px">
+                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('schemaBrowser.schemas.user')}
                 </div>
                 {userSchemas.map((s) => (
                   <SchemaItem
@@ -237,9 +223,9 @@ export default function SchemaBrowserPage() {
               </div>
             )}
             {systemSchemas.length > 0 && (
-              <div className="space-y-1">
-                <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Sistem Şemaları
+              <div className="space-y-px">
+                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('schemaBrowser.schemas.system')}
                 </div>
                 {systemSchemas.map((s) => (
                   <SchemaItem
@@ -255,115 +241,170 @@ export default function SchemaBrowserPage() {
           </CardContent>
         </Card>
 
-        <Card className="col-span-12 lg:col-span-9 overflow-hidden flex flex-col">
-          <CardHeader className="!p-5 border-b border-white/10 flex flex-row items-center justify-between gap-4 flex-wrap">
-            <div>
-              <CardTitle className="text-lg flex items-center gap-3">
-                <Table2 className="h-5 w-5 text-gradient" />
-                {selectedSchema ? `${selectedSchema} · Tablolar` : 'Tablolar'}
-              </CardTitle>
-              <CardDescription>
-                {(tablesQuery.data?.length ?? 0)} tablo · Detay için satıra tıkla
-              </CardDescription>
-            </div>
-            <div className="text-xs">
+        <div className="col-span-12 flex flex-col gap-3 lg:col-span-9">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <Stat
+              label={t('schemaBrowser.stats.tables')}
+              value={formatNumber(tablesQuery.data?.length ?? 0)}
+            />
+            <Stat label={t('schemaBrowser.stats.size')} value={formatBytes(totals.size)} />
+            <Stat label={t('schemaBrowser.stats.liveRows')} value={formatNumber(totals.live)} />
+            <Stat label={t('schemaBrowser.stats.deadRows')} value={formatNumber(totals.dead)} />
+          </div>
+
+          <Card className="flex flex-col overflow-hidden">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border !px-3 !py-2">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Table2 className="h-3.5 w-3.5 text-info" />
+                  {selectedSchema && <span className="font-mono">{selectedSchema}</span>}
+                  <span>{t('schemaBrowser.tables.title')}</span>
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {tablesQuery.data?.length === TABLE_LIMIT
+                    ? t('schemaBrowser.tables.limitReached', { limit: formatNumber(TABLE_LIMIT) })
+                    : t('schemaBrowser.tables.hint')}
+                </CardDescription>
+              </div>
               {tablesQuery.isFetching && (
-                <Badge variant="outline" className="bg-black/30">
-                  Yükleniyor...
+                <Badge variant="outline" className="text-xs">
+                  {t('common.loading')}
                 </Badge>
               )}
-            </div>
-          </CardHeader>
-          <CardContent className="!p-0 flex-1 flex flex-col overflow-hidden">
-            <div className="overflow-x-auto flex-1">
-              <UITable>
-                <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
-                  {table.getHeaderGroups().map((hg) => (
-                    <TableRow key={hg.id}>
-                      {hg.headers.map((h) => (
-                        <TableHead
-                          key={h.id}
-                          style={{ width: h.getSize() }}
-                          className="text-xs font-semibold whitespace-nowrap"
-                        >
-                          {h.isPlaceholder
-                            ? null
-                            : flexRender(
-                                h.column.columnDef.header,
-                                h.getContext()
-                              )}
-                        </TableHead>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-col overflow-hidden !p-0">
+              {tablesQuery.isError ? (
+                <div className="p-2">
+                  <InlineError error={tablesQuery.error} onRetry={() => tablesQuery.refetch()} />
+                </div>
+              ) : (
+                <div className="flex-1 overflow-x-auto">
+                  <UITable>
+                    <TableHeader className="sticky top-0 z-10 bg-card">
+                      {table.getHeaderGroups().map((hg) => (
+                        <TableRow key={hg.id}>
+                          {hg.headers.map((h) => {
+                            const sorted = h.column.getIsSorted();
+                            return (
+                              <TableHead
+                                key={h.id}
+                                style={{ width: h.getSize() }}
+                                aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
+                                className="h-7 whitespace-nowrap px-2 text-xs font-semibold"
+                              >
+                                {h.column.getCanSort() ? (
+                                  <button
+                                    type="button"
+                                    onClick={h.column.getToggleSortingHandler()}
+                                    className="inline-flex items-center gap-1 hover:text-foreground"
+                                  >
+                                    {flexRender(h.column.columnDef.header, h.getContext())}
+                                    {sorted === 'asc' && <ArrowUp className="h-3 w-3" />}
+                                    {sorted === 'desc' && <ArrowDown className="h-3 w-3" />}
+                                  </button>
+                                ) : (
+                                  flexRender(h.column.columnDef.header, h.getContext())
+                                )}
+                              </TableHead>
+                            );
+                          })}
+                        </TableRow>
                       ))}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {table.getRowModel().rows.map((r) => (
-                    <TableRow
-                      key={r.id}
-                      data-state={r.getIsSelected() && 'selected'}
-                      onClick={() => goToDetail(r.original)}
-                      className="cursor-pointer hover:bg-white/10"
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((r) => (
+                        <TableRow
+                          key={r.id}
+                          onClick={() => router.push(tableHref(r.original.schema_name, r.original.table_name))}
+                          className="cursor-pointer hover:bg-muted"
+                        >
+                          {r.getVisibleCells().map((c) => (
+                            <TableCell
+                              key={c.id}
+                              style={{ width: c.column.getSize() }}
+                              className="px-2 py-1.5 text-xs"
+                            >
+                              {flexRender(c.column.columnDef.cell, c.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                      {rows.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={columns.length} className="py-6 text-center text-xs text-muted-foreground">
+                            {tablesQuery.isLoading
+                              ? t('common.loading')
+                              : selectedSchema
+                                ? t('schemaBrowser.tables.empty')
+                                : t('schemaBrowser.tables.selectSchema')}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </UITable>
+                </div>
+              )}
+              {table.getPageCount() > 1 && (
+                <div className="flex items-center justify-between border-t border-border px-3 py-1.5">
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {t('schemaBrowser.pagination.page', {
+                      page: formatNumber(table.getState().pagination.pageIndex + 1),
+                      total: formatNumber(table.getPageCount()),
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => table.previousPage()}
+                      disabled={!table.getCanPreviousPage()}
                     >
-                      {r.getVisibleCells().map((c) => (
-                        <TableCell
-                          key={c.id}
-                          style={{ width: c.column.getSize() }}
-                          className="py-3.5"
-                        >
-                          {flexRender(
-                            c.column.columnDef.cell,
-                            c.getContext()
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                  {table.getRowModel().rows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={columns.length}
-                        className="text-center py-16 text-muted-foreground"
-                      >
-                        {tablesQuery.isLoading
-                          ? 'Tablolar yükleniyor...'
-                          : selectedSchema
-                            ? 'Şemada tablo bulunamadı'
-                            : 'Lütfen bir şema seçin'}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </UITable>
-            </div>
-            {table.getPageCount() > 1 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-white/10">
-                <div className="text-xs text-muted-foreground">
-                  Sayfa {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+                      {t('schemaBrowser.pagination.previous')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => table.nextPage()}
+                      disabled={!table.getCanNextPage()}
+                    >
+                      {t('schemaBrowser.pagination.next')}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => table.previousPage()}
-                    disabled={!table.getCanPreviousPage()}
-                  >
-                    Önceki
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => table.nextPage()}
-                    disabled={!table.getCanNextPage()}
-                  >
-                    Sonraki
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="font-mono text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function InlineError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-destructive">{t('common.loadFailed')}</span>
+        <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={onRetry}>
+          <RotateCcw className="h-3 w-3" />
+          {t('common.retry')}
+        </Button>
+      </div>
+      {error instanceof Error && error.message && (
+        <p className="mt-1 break-words font-mono text-muted-foreground">{error.message}</p>
+      )}
     </div>
   );
 }
@@ -383,39 +424,28 @@ function SchemaItem({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={selected}
       className={cn(
-        'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors group',
-        selected
-          ? 'bg-gradient-to-r from-indigo-500/20 to-emerald-500/10 border border-indigo-500/30'
-          : 'hover:bg-white/5 border border-transparent'
+        'group flex w-full items-center gap-1.5 rounded border px-2 py-1 text-left transition-colors',
+        selected ? 'border-info/30 bg-info/10' : 'border-transparent hover:bg-muted'
       )}
     >
       <ChevronRight
-        className={cn(
-          'h-4 w-4 shrink-0 transition-transform',
-          selected && 'rotate-90 text-emerald-400'
-        )}
+        className={cn('h-3.5 w-3.5 shrink-0 transition-transform', selected && 'rotate-90 text-success')}
       />
       <Database
-        className={cn(
-          'h-4 w-4 shrink-0',
-          muted ? 'text-zinc-500' : selected ? 'text-indigo-400' : 'text-zinc-400'
-        )}
+        className={cn('h-3.5 w-3.5 shrink-0', !muted && selected ? 'text-info' : 'text-muted-foreground')}
       />
       <span
         className={cn(
-          'text-sm font-medium truncate flex-1',
-          selected
-            ? 'text-white'
-            : muted
-              ? 'text-zinc-500'
-              : 'text-zinc-300 group-hover:text-white'
+          'flex-1 truncate font-mono text-xs font-medium',
+          selected ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'
         )}
       >
         {schema.name}
       </span>
       {schema.owner && !muted && (
-        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[80px]">
+        <span className="max-w-[80px] truncate font-mono text-[10px] text-muted-foreground">
           {schema.owner}
         </span>
       )}

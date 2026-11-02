@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from psycopg.sql import SQL, Identifier, Literal
+
 from pgguardian.database.connection import DbClient
+
+PROFILE_ROW_CAP = 100_000
 
 
 def profile_table(
@@ -25,8 +29,18 @@ def profile_table(
         col_name = str(col.get("column_name"))
         # For each column, get null count and distinct via sampled query
         try:
-            # Use safe quoted identifiers (validated upstream)
-            safe_sql = f'SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE "{col_name}" IS NULL) AS nulls, COUNT(DISTINCT "{col_name}") AS distinct_cnt, AVG(LENGTH("{col_name}"::text))::int AS avg_width FROM "{schema}"."{table}"'
+            # Column names come from the catalog and are attacker-controllable.
+            safe_sql = SQL(
+                "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE {col} IS NULL) AS nulls,"
+                " COUNT(DISTINCT {col}) AS distinct_cnt,"
+                " AVG(LENGTH({col}::text))::int AS avg_width"
+                " FROM (SELECT * FROM {schema}.{table} LIMIT {cap}) AS sampled"
+            ).format(
+                col=Identifier(col_name),
+                schema=Identifier(schema),
+                table=Identifier(table),
+                cap=Literal(PROFILE_ROW_CAP),
+            )
             stats = client.fetch_one(safe_sql)
             if stats:
                 result.append(

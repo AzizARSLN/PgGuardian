@@ -91,16 +91,23 @@ def verify_jwt(
     for required in ("sub", "email", "role", "exp"):
         if required not in decoded:
             raise HTTPException(status_code=401, detail=f"Missing claim: {required}.")
+    if decoded.get("type", "access") != "access":
+        raise HTTPException(status_code=401, detail="Wrong token type.")
     return decoded
+
+
+def _enforce_role(claims: dict[str, Any], allowed_roles: set[str]) -> None:
+    if claims.get("password_must_change"):
+        raise HTTPException(status_code=403, detail="Password change required.")
+    if claims.get("role") not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient role.")
 
 
 def require_role(allowed_roles: set[str]) -> Callable[..., dict[str, Any]]:
     """Higher-order dependency: verify_jwt then enforce role membership. 403 otherwise."""
 
     def _check(claims: dict[str, Any] = Depends(verify_jwt)) -> dict[str, Any]:
-        role = claims.get("role")
-        if role not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Insufficient role.")
+        _enforce_role(claims, allowed_roles)
         return claims
 
     return _check
@@ -112,59 +119,41 @@ def verify_token_OR_jwt(
     settings: ApiSettings = Depends(get_api_settings),
     secret: str = Depends(get_jwt_settings),
 ) -> dict[str, Any] | None:
-    """OR logic: PGGUARDIAN_API_TOKEN is set -> verify_token; else -> verify_jwt.
+    """Authenticate with the static API token or a user JWT.
 
-    Returns JWT claims dict when using JWT, None when using legacy token mode.
-    Open access (no api_token configured + no JWT header) still passes with None.
+    Returns JWT claims for a user session and None for the API token. Requests
+    with no credentials get 401 unless PGGUARDIAN_AUTH_DISABLED is set.
     """
-    if settings.api_token:
-        verify_token(authorization=authorization, settings=settings)
-        return None
-
     if authorization and authorization.startswith("Bearer "):
+        provided = authorization[len("Bearer ") :].strip()
+        if settings.api_token and hmac.compare_digest(provided, settings.api_token):
+            return None
+        if settings.api_token and provided.count(".") != 2:
+            raise HTTPException(status_code=401, detail="Invalid bearer token.")
         return verify_jwt(authorization=authorization, secret=secret)
-
-    return None
+    if settings.auth_disabled and not settings.api_token:
+        return None
+    raise HTTPException(status_code=401, detail="Missing bearer token.")
 
 
 def require_role_OR_open(allowed_roles: set[str]) -> Callable[..., dict[str, Any] | None]:
-    """Backward-compatible role guard.
-
-    Behavior:
-    * PGGUARDIAN_API_TOKEN set (legacy) -> passes (the token already secured it).
-    * No API token + no JWT (open dev mode) -> passes as unrestricted.
-    * JWT claims present -> enforces allowed_roles, 403 otherwise.
-    """
+    """Role guard for user sessions; the API token and auth-disabled mode bypass roles."""
 
     def _check(
         claims_or_none: dict[str, Any] | None = Depends(verify_token_OR_jwt),
-        settings: ApiSettings = Depends(get_api_settings),
     ) -> dict[str, Any] | None:
-        if settings.api_token:
-            return claims_or_none
-        if claims_or_none is None:
-            return claims_or_none
-        role = claims_or_none.get("role")
-        if role not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Insufficient role.")
+        if claims_or_none is not None:
+            _enforce_role(claims_or_none, allowed_roles)
         return claims_or_none
 
     return _check
 
 
-def _resolve_profile_from_store() -> str | None:
-    """Return default (or first saved) profile name if any exist; else None."""
+def _has_saved_profiles() -> bool:
     try:
-        store = ProfileStore()
+        return bool(ProfileStore().list())
     except Exception:
-        return None
-    profiles = store.list()
-    if not profiles:
-        return None
-    for p in profiles:
-        if p.is_default:
-            return p.name
-    return profiles[0].name
+        return False
 
 
 def resolve_client(
@@ -179,10 +168,8 @@ def resolve_client(
       1. Explicit ``profile`` kwarg when called directly (rare).
       2. ``X-Profile-Name`` HTTP header.
       3. ``?profile=`` query string.
-      4. Saved profile with ``is_default=True``.
-      5. First saved profile (any order).
-      6. Environment-based fallback (``PGGUARDIAN_*`` vars), which is the
-         original behavior when zero profiles are saved.
+      4. Environment-based fallback (``PGGUARDIAN_*`` vars), only when zero
+         profiles are saved. With saved profiles and no choice: 409.
     """
     # Header names and values are restricted to latin-1 by the HTTP/1.1 spec.
     # Non-ASCII profile names (e.g. Turkish) are URL-encoded by the client;
@@ -198,8 +185,10 @@ def resolve_client(
         or _decode(x_profile_name)
         or _decode(profile_query)
     )
-    if not chosen_profile_raw:
-        chosen_profile_raw = _resolve_profile_from_store()
+    # A database is never picked on the caller's behalf. Falling back to the
+    # default profile would run queries on a server nobody selected.
+    if not chosen_profile_raw and _has_saved_profiles():
+        raise HTTPException(status_code=409, detail="Select a connection profile first.")
     chosen_profile = chosen_profile_raw
     has_explicit_profile = bool(chosen_profile)
     # When a profile name is actually selected, prefer it over the fallback

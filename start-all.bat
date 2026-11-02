@@ -86,7 +86,7 @@ echo    Debug Mode          : ENABLED ^(auto-reload + verbose logging^)
 echo ============================================================================
 echo    Python   : %PYTHON_EXE%
 echo    Source   : %PYTHONPATH%
-echo    Frontend (Next.js) : http://%API_HOST%:%UI_PORT%
+echo    Frontend (Next.js) : http://localhost:%UI_PORT%
 echo ============================================================================
 echo.
 
@@ -200,7 +200,7 @@ echo.
 echo ============================================================================
 echo  APPLICATION ENDPOINTS  (open these in your browser after startup)
 echo ----------------------------------------------------------------------------
-echo    Dashboard (UI)     :  http://%API_HOST%:%UI_PORT%/ ^(Dashboard^)
+echo    Dashboard (UI)     :  http://localhost:%UI_PORT%/ ^(Dashboard^)
 echo    Scalar Reference   :  http://%API_HOST%:%API_PORT%/reference
 echo    Swagger UI         :  http://%API_HOST%:%API_PORT%/docs
 echo    Health Endpoint    :  http://%API_HOST%:%API_PORT%/api/v1/health

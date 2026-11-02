@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import re
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from pgguardian.api.deps import get_api_settings
+from pgguardian.api.settings import ApiSettings
+from pgguardian.cli import GlobalOptions, build_settings
+from pgguardian.database.connection import DbClient
+from pgguardian.utils.security import sanitize_error
 from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore, PROFILE_NAME_PATTERN
 
+read_router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
+
+# password_env may only reference a dedicated password variable. Without this a
+# profile pointing at a hostile server could exfiltrate any process secret.
+_PASSWORD_ENV_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*(PASS|PASSWORD|PWD)[A-Z0-9_]*$")
+_PASSWORD_ENV_DENIED = re.compile(r"^(PGGUARDIAN_|PGPASSWORD$)")
 
 
 class ProfileCreate(BaseModel):
@@ -35,12 +48,24 @@ class ProfileCreate(BaseModel):
             )
         return value
 
+    @field_validator("password_env")
+    @classmethod
+    def _validate_password_env(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        if not _PASSWORD_ENV_PATTERN.match(value) or _PASSWORD_ENV_DENIED.match(value):
+            raise ValueError(
+                "password_env must name a dedicated password variable such as "
+                "PROD_DB_PASSWORD; PGGUARDIAN_* and PGPASSWORD are not allowed."
+            )
+        return value
+
 
 def _store() -> ProfileStore:
     return ProfileStore()
 
 
-@router.get("", response_model=list[Profile])
+@read_router.get("", response_model=list[Profile])
 def list_profiles() -> list[Profile]:
     """Saved profiles with inline passwords stripped."""
     return [profile.redacted() for profile in _store().list()]
@@ -63,6 +88,21 @@ def get_profile(name: str) -> Profile:
         return _store().get(name).redacted()
     except ProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{name}/test")
+def test_profile(name: str, settings: ApiSettings = Depends(get_api_settings)) -> dict:
+    """Try to connect with a saved profile; failure is a result, not an HTTP error."""
+    try:
+        resolved = build_settings(GlobalOptions(profile=name))
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    resolved.connect_timeout = settings.connect_timeout
+    try:
+        version, _ = DbClient(resolved).ping()
+    except Exception as exc:
+        return {"ok": False, "version": None, "message": sanitize_error(exc)}
+    return {"ok": True, "version": version, "message": None}
 
 
 @router.delete("/{name}")

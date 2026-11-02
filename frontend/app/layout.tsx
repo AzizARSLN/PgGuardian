@@ -1,31 +1,18 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
-import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
+import { cookies } from "next/headers";
 import "./globals.css";
 
-import SidebarNav from "@/components/sidebar-nav";
-import Header from "@/components/header";
+import AppShell from "@/components/app-shell";
 import { Toaster } from "@/components/ui/sonner";
-import { cookies } from "next/headers";
+import { I18nProvider } from "@/lib/i18n";
+import type { Locale } from "@/messages";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "PgGuardian - PostgreSQL Yönetim Paneli",
-  description: "PostgreSQL veritabanı yönetimi, teşhis ve izleme paneli",
+  title: "PgGuardian",
+  description: "PostgreSQL administration and diagnostics for DBAs",
 };
-
-function hasAnyAuth(cookieStore: ReadonlyRequestCookies) {
-  const newAuth = cookieStore.get("pgg_refresh");
-  const legacyToken = cookieStore.get("pgguardian_api_token");
-  const legacyAuth = cookieStore.get("auth");
-  const envToken = process.env.NEXT_PUBLIC_PGGUARDIAN_API_TOKEN;
-  return Boolean(
-    newAuth?.value ||
-    legacyToken?.value ||
-    legacyAuth?.value ||
-    envToken
-  );
-}
 
 export default async function RootLayout({
   children,
@@ -33,33 +20,18 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const showShell = hasAnyAuth(cookieStore);
+  const locale: Locale = cookieStore.get("pgg_locale")?.value === "en" ? "en" : "tr";
 
   return (
-    <html lang="tr" suppressHydrationWarning>
-      <body className={`antialiased min-h-screen`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <Providers>
-            {showShell ? (
-              <div className="flex min-h-screen w-full">
-                <SidebarNav />
-                <div className="flex-1 flex flex-col min-w-0">
-                  <Header />
-                  <main className="flex-1 px-3 py-4 md:px-6 lg:px-8 overflow-x-hidden">{children}</main>
-                </div>
-              </div>
-            ) : (
-              <main className="min-h-screen flex items-center justify-center">
-                {children}
-              </main>
-            )}
-            <Toaster position="top-right" richColors closeButton />
-          </Providers>
+    <html lang={locale} suppressHydrationWarning>
+      <body className="min-h-screen antialiased">
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <I18nProvider initialLocale={locale}>
+            <Providers>
+              <AppShell>{children}</AppShell>
+              <Toaster position="top-right" richColors closeButton />
+            </Providers>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

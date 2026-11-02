@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   endpoints,
@@ -15,13 +15,11 @@ import {
   type GenericDict,
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -29,12 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -45,41 +38,98 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  AlertTriangle,
   ArrowLeft,
-  Shield,
-  CheckCircle2,
-  XCircle,
+  ArrowRight,
   RefreshCw,
-  UserPlus,
-  UserMinus,
   Save,
-  LockKeyhole,
-  KeyRound,
-  Plus,
+  Shield,
   Trash2,
-  Search,
+  Plus,
+  UserMinus,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { IfWriter } from "@/components/role-guard";
 import { useConfirm } from "@/lib/hooks/useConfirm";
+import { useT } from "@/lib/i18n";
 import { useForm } from "react-hook-form";
 
-interface MembershipAddForm {
-  member: string;
-  admin_option: boolean;
+type GrantMode = "grant" | "revoke";
+
+interface AttrForm {
+  password: string;
+  /** Null keeps the current limit; sending a default would silently overwrite it. */
+  connection_limit: number | null;
+  valid_until: string;
+}
+
+const KEEP_LIMIT = "keep";
+const CONNECTION_LIMITS = [1, 5, 10, 20, 50, 100];
+// The only object types POST /roles/grants and /roles/revoke accept.
+const CHANGEABLE_OBJECT_TYPES = new Set(["table", "schema", "database"]);
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function InlineError({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="flex items-center justify-center gap-3 rounded-md border border-destructive/30 px-3 py-3 text-xs text-destructive">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      {t("common.loadFailed")}
+      <Button variant="outline" size="sm" className="h-7" onClick={onRetry}>
+        <RefreshCw className="h-3.5 w-3.5" />
+        {t("common.retry")}
+      </Button>
+    </div>
+  );
+}
+
+function RowsSkeleton({ rows }: { rows: number }) {
+  const t = useT();
+  return (
+    <div className="space-y-1.5" aria-label={t("common.loading")}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-6 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function EmptyNote({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs">
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="mt-0.5 text-muted-foreground">{hint}</p>
+    </div>
+  );
 }
 
 export default function RoleDetailPage() {
+  const t = useT();
   const params = useParams<{ role: string }>();
-  const router = useRouter();
-  const roleName = decodeURIComponent(params.role);
+  const roleName = safeDecode(params.role);
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
 
   const [tab, setTab] = useState("attributes");
   const [membershipDialogOpen, setMembershipDialogOpen] = useState(false);
-  const [grantDialogOpen, setGrantDialogOpen] = useState(false);
-  const [addOrRevokeMode, setAddOrRevokeMode] = useState<"grant" | "revoke">("grant");
+  const [newMember, setNewMember] = useState("");
 
   const {
     register: attrRegister,
@@ -87,850 +137,646 @@ export default function RoleDetailPage() {
     watch: attrWatch,
     setValue: attrSetValue,
     reset: attrReset,
-    formState: { isSubmitting: attrSubmitting, errors: attrErrors },
-  } = useForm<RoleAlter>({
-    defaultValues: {
-      password: "",
-      connection_limit: -1,
-      valid_until: "",
-    },
+    formState: { isSubmitting: attrSubmitting },
+  } = useForm<AttrForm>({
+    defaultValues: { password: "", connection_limit: null, valid_until: "" },
   });
 
-  const {
-    register: memRegister,
-    handleSubmit: memHandleSubmit,
-    watch: memWatch,
-    setValue: memSetValue,
-    reset: memReset,
-  } = useForm<MembershipAddForm>({
-    defaultValues: {
-      member: "",
-      admin_option: false,
-    },
-  });
-
-  const { data: rolesAll, isLoading: rolesAllLoading } = useQuery({
+  const rolesQuery = useQuery({
     queryKey: qk.roles.all(),
     queryFn: () => endpoints.listRoles(),
   });
+  const rolesAll = rolesQuery.data;
 
   const role: RoleInfo | undefined = useMemo(
     () => (rolesAll ?? []).find((r) => r.name === roleName),
     [rolesAll, roleName]
   );
 
-  const { data: roleGrants, isLoading: grantsLoading, refetch: refetchGrants } = useQuery({
+  const grantsQuery = useQuery({
     queryKey: qk.roles.grants(roleName),
     queryFn: () => endpoints.listRoleGrants(roleName),
     enabled: !!roleName,
   });
+  const roleGrants = grantsQuery.data ?? [];
 
-  const {
-    data: memberships,
-    isLoading: membershipsLoading,
-    refetch: refetchMemberships,
-  } = useQuery({
+  const membershipsQuery = useQuery({
     queryKey: qk.roles.memberships(roleName),
     queryFn: () => endpoints.listRoleMemberships(roleName),
     enabled: !!roleName,
   });
+  const memberships = membershipsQuery.data ?? [];
 
-  const {
-    data: members,
-    isLoading: membersLoading,
-    refetch: refetchMembers,
-  } = useQuery({
+  const membersQuery = useQuery({
     queryKey: qk.roles.members(roleName),
     queryFn: () => endpoints.listRoleMembers(roleName),
     enabled: !!roleName,
   });
+  const members = membersQuery.data ?? [];
+
+  const isFetching =
+    rolesQuery.isFetching ||
+    grantsQuery.isFetching ||
+    membershipsQuery.isFetching ||
+    membersQuery.isFetching;
+
+  const refreshAll = () => {
+    rolesQuery.refetch();
+    grantsQuery.refetch();
+    membershipsQuery.refetch();
+    membersQuery.refetch();
+  };
 
   const alterMutation = useMutation({
     mutationFn: (body: RoleAlter) => endpoints.alterRole(roleName, body),
     onSuccess: () => {
-      toast.success("Rol öznitelikleri güncellendi");
+      toast.success(t("roleDetail.toast.altered"));
       queryClient.invalidateQueries({ queryKey: qk.roles.all() });
       attrReset();
     },
-    onError: () => {
-      toast.error("Rol güncellenemedi");
+  });
+
+  // The mode travels with the call: reading it from state here would use the
+  // value from the previous render, so a revoke could run as a grant.
+  const grantMutation = useMutation({
+    mutationFn: ({ mode, body }: { mode: GrantMode; body: GrantChange }) =>
+      mode === "grant" ? endpoints.grantPrivilege(body) : endpoints.revokePrivilege(body),
+    onSuccess: (_, { mode }) => {
+      toast.success(mode === "grant" ? t("roleDetail.toast.granted") : t("roleDetail.toast.revoked"));
+      queryClient.invalidateQueries({ queryKey: qk.roles.grants(roleName) });
     },
   });
 
-  const grantMutation = useMutation({
-    mutationFn: (body: GrantChange) =>
-      addOrRevokeMode === "grant" ? endpoints.grantPrivilege(body) : endpoints.revokePrivilege(body),
-    onSuccess: () => {
-      toast.success(addOrRevokeMode === "grant" ? "Yetki verildi" : "Yetki geri alındı");
-      queryClient.invalidateQueries({ queryKey: qk.roles.grants(roleName) });
-      refetchGrants();
-      setGrantDialogOpen(false);
-    },
-    onError: () => {
-      toast.error("İşlem başarısız");
-    },
-  });
+  const invalidateMemberships = () => {
+    queryClient.invalidateQueries({ queryKey: qk.roles.memberships(roleName) });
+    queryClient.invalidateQueries({ queryKey: qk.roles.members(roleName) });
+  };
 
   const grantMembershipMutation = useMutation({
-    mutationFn: (body: GrantMembershipRequest) =>
-      endpoints.grantMembership(roleName, body),
+    mutationFn: (body: GrantMembershipRequest) => endpoints.grantMembership(roleName, body),
     onSuccess: () => {
-      toast.success("Üyelik verildi");
-      queryClient.invalidateQueries({ queryKey: qk.roles.memberships(roleName) });
-      queryClient.invalidateQueries({ queryKey: qk.roles.members(roleName) });
-      refetchMemberships();
-      refetchMembers();
+      toast.success(t("roleDetail.toast.memberAdded"));
+      invalidateMemberships();
       setMembershipDialogOpen(false);
-      memReset();
-    },
-    onError: () => {
-      toast.error("Üyelik eklenemedi");
+      setNewMember("");
     },
   });
 
   const revokeMembershipMutation = useMutation({
-    mutationFn: (body: GrantMembershipRequest) =>
-      endpoints.revokeMembership(roleName, body),
+    mutationFn: (body: GrantMembershipRequest) => endpoints.revokeMembership(roleName, body),
     onSuccess: () => {
-      toast.success("Üyelik iptal edildi");
-      queryClient.invalidateQueries({ queryKey: qk.roles.memberships(roleName) });
-      queryClient.invalidateQueries({ queryKey: qk.roles.members(roleName) });
-      refetchMemberships();
-      refetchMembers();
-    },
-    onError: () => {
-      toast.error("Üyelik iptal edilemedi");
+      toast.success(t("roleDetail.toast.memberRemoved"));
+      invalidateMemberships();
     },
   });
 
   const onSubmitAttr = attrHandleSubmit(async (data) => {
+    const payload: RoleAlter = {};
+    if (data.password.trim()) payload.password = data.password;
+    if (data.connection_limit !== null) payload.connection_limit = data.connection_limit;
+    if (data.valid_until.trim()) payload.valid_until = data.valid_until;
+
+    if (Object.keys(payload).length === 0) {
+      toast.error(t("roleDetail.toast.nothingToChange"));
+      return;
+    }
+
+    // Failures reach the user through the API client's toast with the backend message.
     try {
-      const payload: RoleAlter = {};
-      if (data.password && data.password.trim()) {
-        payload.password = data.password;
-      }
-      if (data.connection_limit !== undefined && data.connection_limit !== null) {
-        payload.connection_limit = Number(data.connection_limit);
-      }
-      if (data.valid_until && data.valid_until.trim()) {
-        payload.valid_until = data.valid_until;
-      }
-
-      if (!payload.password && payload.connection_limit === undefined && !payload.valid_until) {
-        toast.error("Değiştirilecek bir alan girmediniz");
-        return;
-      }
-
-      const dryRunPayload: RoleAlter = { ...payload, dry_run: true };
-      const dryRunRes = await endpoints.alterRole(roleName, dryRunPayload);
-
-      if (dryRunRes && "sql" in dryRunRes && (dryRunRes as DryRunResult).sql) {
-        const risk = ((dryRunRes as DryRunResult).risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS";
+      const dryRun = await endpoints.alterRole(roleName, { ...payload, dry_run: true });
+      if (dryRun && "sql" in dryRun && (dryRun as DryRunResult).sql) {
+        const plan = dryRun as DryRunResult;
         const ok = await confirm({
-          title: `"${roleName}" öznitelikleri güncellensin mi?`,
-          description:
-            "Rol öznitelikleri (şifre, bağlantı limiti, geçerlilik tarihi vb.) aşağıdaki SQL komutuyla güncellenecek. Onaylıyor musunuz?",
-          risk_level: risk,
-          confirm_label: "Değişiklikleri Uygula",
-          cancel_label: "İptal",
-          sql_preview: (dryRunRes as DryRunResult).sql,
+          title: t("roleDetail.confirmAlter.title", { name: roleName }),
+          description: t("roleDetail.confirmAlter.description"),
+          risk_level: (plan.risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS",
+          confirm_label: t("roleDetail.confirmAlter.confirm"),
+          cancel_label: t("common.cancel"),
+          sql_preview: plan.sql,
         });
         if (!ok) return;
       }
-
       await alterMutation.mutateAsync({ ...payload, confirm: true });
-    } catch (e) {}
+    } catch {
+      // Already reported.
+    }
   });
 
-  const handleGrantRevoke = async (grant: GenericDict, mode: "grant" | "revoke") => {
-    const privilege = String(grant.privilege_type ?? grant.privilege ?? "");
-    const objectType = String(grant.object_type ?? "TABLE");
-    const schemaName = grant.schema_name ? String(grant.schema_name) : null;
-    const objectName = grant.object_name ? String(grant.object_name) : null;
+  const grantObject = (g: GenericDict) => ({
+    privilege: String(g.privilege_type ?? g.privilege ?? ""),
+    objectType: String(g.object_type ?? "table"),
+    schemaName: g.schema_name ? String(g.schema_name) : null,
+    // /roles/{name}/grants names this column table_name, whatever the object is.
+    objectName: g.object_name
+      ? String(g.object_name)
+      : g.table_name
+        ? String(g.table_name)
+        : null,
+  });
 
-    const grantPreview =
-      mode === "grant"
-        ? `GRANT ${privilege} ON ${objectType} ${schemaName ? schemaName + "." : ""}${objectName ?? "???"} TO ${roleName};`
-        : `REVOKE ${privilege} ON ${objectType} ${schemaName ? schemaName + "." : ""}${objectName ?? "???"} FROM ${roleName};`;
+  const handleGrantRevoke = async (grant: GenericDict, mode: GrantMode) => {
+    const { privilege, objectType, schemaName, objectName } = grantObject(grant);
+    const target = `${schemaName ? `${schemaName}.` : ""}${objectName ?? ""}`;
+    const sqlType = objectType.toUpperCase();
+    const vars = { privilege, type: sqlType, target, role: roleName };
 
     const ok = await confirm({
       title:
         mode === "grant"
-          ? `"${privilege}" yetkisi verilsin mi?`
-          : `"${privilege}" yetkisi geri alınsın mı?`,
+          ? t("roleDetail.confirmGrant.title", vars)
+          : t("roleDetail.confirmRevoke.title", vars),
       description:
         mode === "grant"
-          ? `${roleName} rolüne ${objectType} üzerinde ${privilege} yetkisi verilecek.`
-          : `${roleName} rolünden ${objectType} üzerinde ${privilege} yetkisi geri alınacak.`,
+          ? t("roleDetail.confirmGrant.description", vars)
+          : t("roleDetail.confirmRevoke.description", vars),
       risk_level: "MAINTENANCE",
-      confirm_label: mode === "grant" ? "Yetki Ver" : "Geri Al",
-      cancel_label: "İptal",
-      sql_preview: [grantPreview],
+      confirm_label: mode === "grant" ? t("roleDetail.grants.regrant") : t("roleDetail.grants.revoke"),
+      cancel_label: t("common.cancel"),
+      sql_preview: [
+        mode === "grant"
+          ? `GRANT ${privilege} ON ${sqlType} ${target} TO "${roleName}";`
+          : `REVOKE ${privilege} ON ${sqlType} ${target} FROM "${roleName}";`,
+      ],
     });
     if (!ok) return;
 
-    const body: GrantChange = {
-      role: roleName,
-      privilege,
-      object_type: objectType,
-      schema_name: schemaName,
-      object_name: objectName,
-      confirm: true,
-    };
-    setAddOrRevokeMode(mode);
-    await grantMutation.mutateAsync(body);
+    grantMutation.mutate({
+      mode,
+      body: {
+        role: roleName,
+        privilege,
+        object_type: objectType,
+        schema_name: schemaName,
+        object_name: objectName,
+        confirm: true,
+      },
+    });
   };
 
-  const onSubmitMembership = memHandleSubmit(async (data) => {
-    try {
-      if (!data.member) {
-        toast.error("Üye rolü seçmek zorunludur");
-        return;
-      }
-      const preview = `GRANT "${roleName}" TO "${data.member}"${data.admin_option ? " WITH ADMIN OPTION" : ""};`;
-      const ok = await confirm({
-        title: `"${data.member}" rolüne "${roleName}" üyeliği verilsin mi?`,
-        description: `"${data.member}" rolü artık "${roleName}" üyesi olacak ve tüm izinlerini devralacak.${
-          data.admin_option ? " ADMIN OPTION ile (üyelik dağıtabilir)." : ""
-        }`,
-        risk_level: "MAINTENANCE",
-        confirm_label: "Üyeliği Ver",
-        cancel_label: "İptal",
-        sql_preview: [preview],
-      });
-      if (!ok) return;
-
-      await grantMembershipMutation.mutateAsync({ member: data.member, confirm: true });
-    } catch (e) {}
-  });
+  const onSubmitMembership = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMember) {
+      toast.error(t("roleDetail.members.memberRequired"));
+      return;
+    }
+    const ok = await confirm({
+      title: t("roleDetail.confirmAddMember.title", { member: newMember, role: roleName }),
+      description: t("roleDetail.confirmAddMember.description", { member: newMember, role: roleName }),
+      risk_level: "MAINTENANCE",
+      confirm_label: t("roleDetail.members.add"),
+      cancel_label: t("common.cancel"),
+      sql_preview: [`GRANT "${roleName}" TO "${newMember}";`],
+    });
+    if (ok) grantMembershipMutation.mutate({ member: newMember, confirm: true });
+  };
 
   const handleRevokeMembership = async (membership: RoleMembership) => {
-    const preview = `REVOKE "${roleName}" FROM "${membership.member}";`;
+    const vars = { member: membership.member, role: roleName };
     const ok = await confirm({
-      title: `"${membership.member}" üyeliği iptal edilsin mi?`,
-      description: `"${membership.member}" rolünden "${roleName}" üyeliği kaldırılacak. Artık bu rolün izinlerini devralmayacak.`,
+      title: t("roleDetail.confirmRemoveMember.title", vars),
+      description: t("roleDetail.confirmRemoveMember.description", vars),
       risk_level: "MAINTENANCE",
-      confirm_label: "Üyeliği İptal Et",
-      cancel_label: "İptal",
+      confirm_label: t("roleDetail.members.remove"),
+      cancel_label: t("common.cancel"),
       confirm_name_required: true,
       confirm_name_value: membership.member,
-      sql_preview: [preview],
+      confirm_name_placeholder: t("roleDetail.confirmRemoveMember.placeholder", {
+        member: membership.member,
+      }),
+      sql_preview: [`REVOKE "${roleName}" FROM "${membership.member}";`],
     });
-    if (!ok) return;
-    await revokeMembershipMutation.mutateAsync({ member: membership.member, confirm: true });
+    if (ok) revokeMembershipMutation.mutate({ member: membership.member, confirm: true });
   };
 
-  const isSuperuser = role?.superuser;
-  const candidatesForMembership = (rolesAll ?? []).filter(
-    (r) =>
-      r.name !== roleName &&
-      !(members ?? []).some((m) => m.member === r.name)
+  const candidates = (rolesAll ?? []).filter(
+    (r) => r.name !== roleName && !members.some((m) => m.member === r.name)
   );
 
+  const yesNo = (value: boolean) => (value ? t("roleDetail.yes") : t("roleDetail.no"));
+  const roleMissing = !rolesQuery.isLoading && !rolesQuery.isError && !role;
+
+  const attributeTiles = [
+    { label: "SUPERUSER", val: role?.superuser, risk: "DANGEROUS" },
+    { label: "CREATEDB", val: role?.createdb, risk: "MAINTENANCE" },
+    { label: "CREATEROLE", val: role?.createrole, risk: "MAINTENANCE" },
+    { label: "LOGIN", val: role?.can_login, risk: "OK" },
+  ] as const;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push("/roles")}
-            className="h-10 rounded-full"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Rollere Dön
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/roles">
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {t("roleDetail.back")}
+            </Link>
           </Button>
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                <Shield className="h-8 w-8 text-emerald-400" />
-                {roleName}
-              </h1>
-              {isSuperuser && (
-                <RiskBadge riskLevel="DANGEROUS" size="md">
+            <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-foreground">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              {roleName}
+              {role?.superuser && (
+                <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false}>
                   SUPERUSER
                 </RiskBadge>
               )}
-              {role?.can_login && !isSuperuser && (
-                <RiskBadge riskLevel="OK" size="md">
-                  LOGIN
-                </RiskBadge>
-              )}
-            </div>
-            <p className="text-muted-foreground mt-1">
-              Rol detayları: öznitelikler, yetkiler ve üyelikler
-            </p>
+            </h1>
+            <p className="text-xs text-muted-foreground">{t("roleDetail.subtitle")}</p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            queryClient.invalidateQueries({ queryKey: qk.roles.all() });
-            refetchGrants();
-            refetchMemberships();
-            refetchMembers();
-            toast.success("Veriler yenilendi");
-          }}
-          className="h-12 px-6 rounded-full"
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Tümünü Yenile
+        <Button variant="outline" size="sm" onClick={refreshAll} disabled={isFetching}>
+          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+          {t("roleDetail.refreshAll")}
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-        {rolesAllLoading ? (
-          [0, 1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <Skeleton className="h-3 w-24 mb-3" />
-                <Skeleton className="h-8 w-16" />
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          [
-            {
-              label: "SUPERUSER",
-              val: role?.superuser,
-              icon: Shield,
-              risk: "DANGEROUS",
-            },
-            {
-              label: "CREATEDB",
-              val: role?.createdb,
-              icon: KeyRound,
-              risk: "MAINTENANCE",
-            },
-            {
-              label: "CREATEROLE",
-              val: role?.createrole,
-              icon: UserPlus,
-              risk: "MAINTENANCE",
-            },
-            {
-              label: "CAN LOGIN",
-              val: role?.can_login,
-              icon: LockKeyhole,
-              risk: "OK",
-            },
-          ].map((m) => (
-            <Card key={m.label} className="overflow-hidden relative">
-              <div
-                className={cn(
-                  "absolute inset-0 opacity-10 pointer-events-none bg-gradient-to-br",
-                  m.val ? "from-emerald-500 to-teal-500" : "from-zinc-500 to-zinc-600"
-                )}
-              />
-              <CardContent className="p-6 relative">
-                <div className="flex items-center gap-3 mb-3">
-                  <div
-                    className={cn(
-                      "h-10 w-10 rounded-xl flex items-center justify-center",
-                      m.val
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : "bg-white/5 text-muted-foreground"
-                    )}
-                  >
-                    <m.icon className="h-5 w-5" />
-                  </div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {m.label}
-                  </span>
-                </div>
-                {m.val ? (
-                  <RiskBadge riskLevel={m.risk as "OK" | "MAINTENANCE" | "DANGEROUS"} size="md">
-                    <CheckCircle2 className="h-3 w-3" />
-                    AKTİF
+      {rolesQuery.isError ? (
+        <InlineError onRetry={() => rolesQuery.refetch()} />
+      ) : roleMissing ? (
+        <EmptyNote
+          title={t("roleDetail.notFound.title", { name: roleName })}
+          hint={t("roleDetail.notFound.hint")}
+        />
+      ) : (
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {attributeTiles.map((m) => (
+            <div key={m.label} className="rounded-md border border-border bg-card px-3 py-2">
+              <p className="font-mono text-xs text-muted-foreground">{m.label}</p>
+              {rolesQuery.isLoading ? (
+                <Skeleton className="mt-1 h-5 w-12" />
+              ) : (
+                <div className="mt-1">
+                  <RiskBadge riskLevel={m.val ? m.risk : "INFO"} size="sm" showIcon={false}>
+                    {m.val ? t("roleDetail.on") : t("roleDetail.off")}
                   </RiskBadge>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-md border border-border bg-card px-3 py-2">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="attributes">{t("roleDetail.tabs.attributes")}</TabsTrigger>
+            <TabsTrigger value="grants">
+              {t("roleDetail.tabs.grants", { count: roleGrants.length })}
+            </TabsTrigger>
+            <TabsTrigger value="memberships">
+              {t("roleDetail.tabs.memberships", { count: members.length + memberships.length })}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="attributes" className="mt-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-sm font-medium">{t("roleDetail.attributes.current")}</h3>
+                {rolesQuery.isLoading ? (
+                  <RowsSkeleton rows={7} />
+                ) : !role ? (
+                  <p className="text-xs text-muted-foreground">{t("common.noData")}</p>
                 ) : (
-                  <RiskBadge riskLevel="INFO" size="md">
-                    <XCircle className="h-3 w-3" />
-                    PASİF
-                  </RiskBadge>
-                )}
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardContent className="!p-0">
-          <div className="p-6 border-b border-white/5">
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList>
-                <TabsTrigger value="attributes">Öznitelikler</TabsTrigger>
-                <TabsTrigger value="grants">
-                  Yetkiler ({(roleGrants ?? []).length})
-                </TabsTrigger>
-                <TabsTrigger value="memberships">
-                  Üyelikler ({(members ?? []).length + (memberships ?? []).length})
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="attributes" className="mt-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <Save className="h-5 w-5 text-indigo-400" />
-                      Değiştirilebilir Öznitelikler
-                    </h3>
-                    <form onSubmit={onSubmitAttr} className="space-y-5">
-                      <div className="space-y-2">
-                        <Label>Yeni Şifre</Label>
-                        <Input
-                          type="password"
-                          {...attrRegister("password")}
-                          placeholder="•••••••• (değiştirmek istemiyorsanız boş bırakın)"
-                          className={cn(attrErrors.password && "border-red-500/50")}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Şifreyi yalnızca değiştirmek istiyorsanız doldurun
-                        </p>
+                  <dl className="divide-y divide-border rounded-md border border-border text-xs">
+                    {[
+                      [t("roleDetail.attributes.name"), role.name],
+                      [
+                        t("roleDetail.attributes.connectionLimit"),
+                        role.connection_limit === -1 || role.connection_limit === null
+                          ? t("roleDetail.attributes.unlimited")
+                          : String(role.connection_limit),
+                      ],
+                      [
+                        t("roleDetail.attributes.validUntil"),
+                        role.valid_until
+                          ? role.valid_until.split(/[T ]/)[0]
+                          : t("roleDetail.attributes.noExpiry"),
+                      ],
+                      ["SUPERUSER", yesNo(role.superuser)],
+                      ["CREATEDB", yesNo(role.createdb)],
+                      ["CREATEROLE", yesNo(role.createrole)],
+                      ["LOGIN", yesNo(role.can_login)],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">{k}</dt>
+                        <dd className="font-mono">{v}</dd>
                       </div>
-
-                      <div className="space-y-2">
-                        <Label>Bağlantı Limiti</Label>
-                        <Select
-                          value={String(attrWatch("connection_limit") ?? "-1")}
-                          onValueChange={(v) => attrSetValue("connection_limit", Number(v))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="-1">Sınırsız (∞)</SelectItem>
-                            <SelectItem value="1">1 bağlantı</SelectItem>
-                            <SelectItem value="5">5 bağlantı</SelectItem>
-                            <SelectItem value="10">10 bağlantı</SelectItem>
-                            <SelectItem value="20">20 bağlantı</SelectItem>
-                            <SelectItem value="50">50 bağlantı</SelectItem>
-                            <SelectItem value="100">100 bağlantı</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Şifre Geçerlilik Tarihi</Label>
-                        <Input
-                          type="date"
-                          {...attrRegister("valid_until")}
-                          placeholder="YYYY-MM-DD"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Şifrenin süresi ne zaman bitsin? (boş = süresiz)
-                        </p>
-                      </div>
-
-                      <Button
-                        type="submit"
-                        disabled={attrSubmitting || alterMutation.isPending}
-                        className="h-12 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 w-full"
-                      >
-                        {attrSubmitting || alterMutation.isPending ? (
-                          <>
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                            Kaydediliyor…
-                          </>
-                        ) : (
-                          <>
-                            <Save className="h-4 w-4 mr-2" />
-                            Değişiklikleri Kaydet
-                          </>
-                        )}
-                      </Button>
-                    </form>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <Shield className="h-5 w-5 text-emerald-400" />
-                      Mevcut Durum
-                    </h3>
-                    {rolesAllLoading || !role ? (
-                      <div className="space-y-3">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                          <Skeleton key={i} className="h-11 w-full" />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {[
-                          ["Rol Adı", role.name],
-                          [
-                            "Bağlantı Limiti",
-                            role.connection_limit === -1 || role.connection_limit === null
-                              ? "∞ (sınırsız)"
-                              : String(role.connection_limit),
-                          ],
-                          [
-                            "Şifre Geçerlilik",
-                            role.valid_until
-                              ? role.valid_until.split("T")[0]
-                              : "Süresiz (infinity)",
-                          ],
-                          ["SUPERUSER", role.superuser ? "EVET" : "HAYIR"],
-                          ["CREATEDB", role.createdb ? "EVET" : "HAYIR"],
-                          ["CREATEROLE", role.createrole ? "EVET" : "HAYIR"],
-                          ["LOGIN", role.can_login ? "EVET" : "HAYIR"],
-                        ].map(([k, v]) => (
-                          <div
-                            key={k}
-                            className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5"
-                          >
-                            <span className="text-sm font-medium text-muted-foreground">
-                              {k}
-                            </span>
-                            <code className="text-sm font-mono bg-black/30 px-3 py-1 rounded-full">
-                              {v}
-                            </code>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="grants" className="mt-6">
-                <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
-                  <h3 className="text-lg font-semibold">
-                    Rolün Sahip Olduğu Yetkiler
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {(roleGrants ?? []).length} adet yetki kaydı
-                  </p>
-                </div>
-
-                {grantsLoading ? (
-                  <div className="space-y-3">
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <Skeleton key={i} className="h-16 w-full" />
                     ))}
-                  </div>
-                ) : (roleGrants ?? []).length === 0 ? (
-                  <div className="p-12 text-center rounded-3xl border border-dashed border-white/10">
-                    <Shield className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                    <p className="font-semibold text-lg">Henüz yetki yok</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Bu role doğrudan atanmış bir yetki bulunmuyor. (Rol üyelikleri üzerinden yetki alabilir)
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[520px] overflow-y-auto pr-2">
-                    {(roleGrants ?? []).map((g, idx) => {
-                      const privilege = String(g.privilege_type ?? g.privilege ?? "");
-                      const objectType = String(g.object_type ?? g.kind ?? "TABLE");
-                      const schema = g.schema_name ? String(g.schema_name) : null;
-                      const objName = g.object_name ? String(g.object_name) : null;
-                      const grantor = g.grantor ? String(g.grantor) : null;
-                      const isGrante = Boolean(g.is_grantable ?? g.grantable);
+                  </dl>
+                )}
+              </div>
 
+              <IfWriter>
+                <div>
+                  <h3 className="mb-2 text-sm font-medium">{t("roleDetail.attributes.editable")}</h3>
+                  <form onSubmit={onSubmitAttr} className="space-y-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="alter-password">{t("roleDetail.attributes.newPassword")}</Label>
+                      <Input
+                        id="alter-password"
+                        type="password"
+                        autoComplete="new-password"
+                        {...attrRegister("password")}
+                        placeholder={t("roleDetail.attributes.newPasswordPlaceholder")}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>{t("roleDetail.attributes.connectionLimit")}</Label>
+                      <Select
+                        value={String(attrWatch("connection_limit") ?? KEEP_LIMIT)}
+                        onValueChange={(v) =>
+                          attrSetValue("connection_limit", v === KEEP_LIMIT ? null : Number(v))
+                        }
+                      >
+                        <SelectTrigger aria-label={t("roleDetail.attributes.connectionLimit")}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={KEEP_LIMIT}>{t("roleDetail.attributes.keep")}</SelectItem>
+                          <SelectItem value="-1">{t("roleDetail.attributes.unlimited")}</SelectItem>
+                          {CONNECTION_LIMITS.map((n) => (
+                            <SelectItem key={n} value={String(n)}>
+                              {t("roleDetail.attributes.connections", { count: n })}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="alter-valid-until">{t("roleDetail.attributes.validUntil")}</Label>
+                      <Input
+                        id="alter-valid-until"
+                        type="date"
+                        className="font-mono"
+                        {...attrRegister("valid_until")}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("roleDetail.attributes.validUntilHelp")}
+                      </p>
+                    </div>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={attrSubmitting || alterMutation.isPending}
+                    >
+                      {attrSubmitting || alterMutation.isPending ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" />
+                      )}
+                      {attrSubmitting || alterMutation.isPending
+                        ? t("roleDetail.attributes.saving")
+                        : t("roleDetail.attributes.save")}
+                    </Button>
+                  </form>
+                </div>
+              </IfWriter>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="grants" className="mt-3">
+            {grantsQuery.isLoading ? (
+              <RowsSkeleton rows={8} />
+            ) : grantsQuery.isError ? (
+              <InlineError onRetry={() => grantsQuery.refetch()} />
+            ) : roleGrants.length === 0 ? (
+              <EmptyNote title={t("roleDetail.grants.emptyTitle")} hint={t("roleDetail.grants.emptyHint")} />
+            ) : (
+              <div className="max-h-[520px] overflow-y-auto rounded-md border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("roleDetail.grants.privilege")}</TableHead>
+                      <TableHead>{t("roleDetail.grants.type")}</TableHead>
+                      <TableHead>{t("roleDetail.grants.object")}</TableHead>
+                      <TableHead className="text-right">{t("roleDetail.grants.actions")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {roleGrants.map((g, idx) => {
+                      const { privilege, objectType, schemaName, objectName } = grantObject(g);
+                      const changeable =
+                        CHANGEABLE_OBJECT_TYPES.has(objectType.toLowerCase()) && Boolean(objectName);
                       return (
-                        <div
-                          key={`grant-${idx}-${privilege}-${objName}`}
-                          className="rounded-2xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition-colors"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap mb-2">
-                                <RiskBadge riskLevel="OK" size="sm" showIcon={false}>
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  {privilege}
-                                </RiskBadge>
-                                <RiskBadge riskLevel="INFO" size="sm" showIcon={false}>
-                                  {objectType}
-                                </RiskBadge>
-                                {isGrante && (
-                                  <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
-                                    WITH GRANT OPTION
-                                  </RiskBadge>
-                                )}
-                              </div>
-                              <p className="font-semibold text-sm">
-                                {schema && (
-                                  <span className="text-muted-foreground font-normal">
-                                    {schema}
-                                    <span className="text-muted-foreground">.</span>
-                                  </span>
-                                )}
-                                <span>{objName ?? "(tümü)"}</span>
-                              </p>
-                              {grantor && (
-                                <p className="text-xs text-muted-foreground mt-1 font-mono">
-                                  Veren: {grantor}
-                                </p>
+                        <TableRow key={`grant-${idx}-${privilege}-${objectName}`}>
+                          <TableCell className="font-mono font-medium">{privilege}</TableCell>
+                          <TableCell className="font-mono text-muted-foreground">
+                            {objectType.toUpperCase()}
+                          </TableCell>
+                          <TableCell className="font-mono">
+                            {schemaName && <span className="text-muted-foreground">{schemaName}.</span>}
+                            {objectName ?? "-"}
+                          </TableCell>
+                          <TableCell>
+                            <IfWriter>
+                              {changeable && (
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2"
+                                    disabled={grantMutation.isPending}
+                                    onClick={() => handleGrantRevoke(g, "grant")}
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    {t("roleDetail.grants.regrant")}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    disabled={grantMutation.isPending}
+                                    onClick={() => handleGrantRevoke(g, "revoke")}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    {t("roleDetail.grants.revoke")}
+                                  </Button>
+                                </div>
                               )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 rounded-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                                onClick={() => handleGrantRevoke(g, "grant")}
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                                Tekrar Ver
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 rounded-full border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                onClick={() => handleGrantRevoke(g, "revoke")}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Geri Al
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
+                            </IfWriter>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </div>
-                )}
-              </TabsContent>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </TabsContent>
 
-              <TabsContent value="memberships" className="mt-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div>
-                    <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <UserPlus className="h-5 w-5 text-emerald-400" />
-                        Bu Rolün Üyeleri
-                        <span className="text-xs font-normal text-muted-foreground">
-                          (
-                          {(members ?? []).length} kişi &quot;{roleName}&quot; rolünü kullanabilir)
-                        </span>
-                      </h3>
-                      <Dialog
-                        open={membershipDialogOpen}
-                        onOpenChange={setMembershipDialogOpen}
-                      >
-                        <DialogTrigger asChild>
-                          <Button
-                            size="sm"
-                            className="h-10 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
-                          >
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Yeni Üye Ekle
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-lg">
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                              <UserPlus className="h-5 w-5 text-emerald-400" />
-                              &quot;{roleName}&quot; Rolüne Yeni Üye Ekle
-                            </DialogTitle>
-                            <DialogDescription>
-                              Seçtiğiniz rol artık &quot;{roleName}&quot; üyesi olacak
-                            </DialogDescription>
-                          </DialogHeader>
-                          <form onSubmit={onSubmitMembership} className="space-y-5">
-                            <div className="space-y-2">
-                              <Label>Üye Olacak Rol *</Label>
-                              <Select
-                                value={memWatch("member")}
-                                onValueChange={(v) => memSetValue("member", v)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Rol seç..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {candidatesForMembership.length === 0 ? (
-                                    <SelectItem value="none" disabled>
-                                      Eklenecek uygun rol yok
-                                    </SelectItem>
-                                  ) : (
-                                    candidatesForMembership.map((c) => (
-                                      <SelectItem key={c.name} value={c.name}>
-                                        {c.name}
-                                        {c.superuser ? " (SUPERUSER)" : ""}
-                                      </SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                              <Checkbox
-                                id="admin-option"
-                                checked={memWatch("admin_option")}
-                                onCheckedChange={(v) =>
-                                  memSetValue("admin_option", typeof v === "boolean" ? v : false)
-                                }
-                              />
-                              <div>
-                                <label
-                                  htmlFor="admin-option"
-                                  className="text-sm font-medium cursor-pointer text-amber-400"
-                                >
-                                  ADMIN OPTION
-                                </label>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  Üye, bu üyeliği başkalarına da dağıtabilir
-                                </p>
-                              </div>
-                            </div>
-
-                            <DialogFooter>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                  setMembershipDialogOpen(false);
-                                  memReset();
-                                }}
-                                className="h-11 rounded-full"
-                              >
-                                İptal
-                              </Button>
-                              <Button
-                                type="submit"
-                                disabled={grantMembershipMutation.isPending}
-                                className="h-11 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
-                              >
-                                {grantMembershipMutation.isPending ? (
-                                  <>
-                                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                    Ekleniyor…
-                                  </>
+          <TabsContent value="memberships" className="mt-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium">
+                    {t("roleDetail.members.title", { count: members.length })}
+                  </h3>
+                  <IfWriter>
+                    <Dialog
+                      open={membershipDialogOpen}
+                      onOpenChange={(open) => {
+                        setMembershipDialogOpen(open);
+                        if (!open) setNewMember("");
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button size="sm" className="h-7 px-2">
+                          <UserPlus className="h-3.5 w-3.5" />
+                          {t("roleDetail.members.addNew")}
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-lg">
+                        <DialogHeader>
+                          <DialogTitle>
+                            {t("roleDetail.members.dialogTitle", { role: roleName })}
+                          </DialogTitle>
+                          <DialogDescription>
+                            {t("roleDetail.members.dialogDescription", { role: roleName })}
+                          </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={onSubmitMembership} className="space-y-3">
+                          <div className="space-y-1">
+                            <Label>{t("roleDetail.members.memberLabel")}</Label>
+                            <Select value={newMember} onValueChange={setNewMember}>
+                              <SelectTrigger aria-label={t("roleDetail.members.memberLabel")}>
+                                <SelectValue placeholder={t("roleDetail.members.memberPlaceholder")} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {candidates.length === 0 ? (
+                                  <SelectItem value="none" disabled>
+                                    {t("roleDetail.members.noCandidates")}
+                                  </SelectItem>
                                 ) : (
-                                  <>
-                                    <UserPlus className="h-4 w-4 mr-2" />
-                                    Üyeyi Ekle
-                                  </>
+                                  candidates.map((c) => (
+                                    <SelectItem key={c.name} value={c.name} className="font-mono">
+                                      {c.name}
+                                      {c.superuser ? " (SUPERUSER)" : ""}
+                                    </SelectItem>
+                                  ))
                                 )}
-                              </Button>
-                            </DialogFooter>
-                          </form>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-
-                    {membersLoading ? (
-                      <div className="space-y-3">
-                        {Array.from({ length: 4 }).map((_, i) => (
-                          <Skeleton key={i} className="h-16 w-full" />
-                        ))}
-                      </div>
-                    ) : (members ?? []).length === 0 ? (
-                      <div className="p-10 text-center rounded-3xl border border-dashed border-white/10">
-                        <UserMinus className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                        <p className="font-semibold">Henüz üye yok</p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          &quot;Yeni Üye Ekle&quot; butonuna tıklayarak başka rolleri bu rolün üyesi yapın
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {(members ?? []).map((m, idx) => (
-                          <div
-                            key={`member-${idx}-${m.member}`}
-                            className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4"
-                          >
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="h-10 w-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
-                                <UserPlus className="h-5 w-5 text-emerald-400" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-semibold text-sm truncate">{m.member}</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-xs text-muted-foreground">
-                                    Rol: &quot;{roleName}&quot; üyesi
-                                  </span>
-                                  {m.admin_option && (
-                                    <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
-                                      ADMIN OPTION
-                                    </RiskBadge>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <DialogFooter>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => handleRevokeMembership(m)}
-                              disabled={revokeMembershipMutation.isPending}
-                              className={cn(
-                                "h-9 rounded-full shrink-0 text-red-400 border-red-500/30 hover:bg-red-500/10"
-                              )}
+                              onClick={() => {
+                                setMembershipDialogOpen(false);
+                                setNewMember("");
+                              }}
                             >
-                              <UserMinus className="h-3.5 w-3.5" />
-                              Çıkar
+                              {t("common.cancel")}
                             </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-semibold flex items-center gap-2 mb-5">
-                      <Shield className="h-5 w-5 text-indigo-400" />
-                      Bu Rolün Üye Olduğu Gruplar
-                      <span className="text-xs font-normal text-muted-foreground">
-                        ({(memberships ?? []).length} grup)
-                      </span>
-                    </h3>
-
-                    {membershipsLoading ? (
-                      <div className="space-y-3">
-                        {Array.from({ length: 4 }).map((_, i) => (
-                          <Skeleton key={i} className="h-16 w-full" />
-                        ))}
-                      </div>
-                    ) : (memberships ?? []).length === 0 ? (
-                      <div className="p-10 text-center rounded-3xl border border-dashed border-white/10">
-                        <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                        <p className="font-semibold">Üye olunan grup yok</p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          &quot;{roleName}&quot; rolü henüz başka bir rolün üyesi değil
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {(memberships ?? []).map((m, idx) => (
-                          <Link
-                            key={`membership-${idx}-${m.role}`}
-                            href={`/roles/${encodeURIComponent(m.role)}`}
-                            className="block rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors group"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-xl bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                <Shield className="h-5 w-5 text-indigo-400" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-semibold text-sm truncate group-hover:text-emerald-400 transition-colors">
-                                  {m.role}
-                                </p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-xs text-muted-foreground">
-                                    &quot;{roleName}&quot; bu grubun üyesi
-                                  </span>
-                                  {m.admin_option && (
-                                    <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
-                                      ADMIN OPTION
-                                    </RiskBadge>
-                                  )}
-                                </div>
-                              </div>
-                              <ArrowLeft className="h-4 w-4 text-muted-foreground rotate-180 group-hover:text-emerald-400 transition-colors shrink-0" />
-                            </div>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                            <Button
+                              type="submit"
+                              size="sm"
+                              disabled={grantMembershipMutation.isPending || !newMember}
+                            >
+                              {grantMembershipMutation.isPending ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <UserPlus className="h-3.5 w-3.5" />
+                              )}
+                              {grantMembershipMutation.isPending
+                                ? t("roleDetail.members.adding")
+                                : t("roleDetail.members.add")}
+                            </Button>
+                          </DialogFooter>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </IfWriter>
                 </div>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </CardContent>
-      </Card>
+
+                {membersQuery.isLoading ? (
+                  <RowsSkeleton rows={4} />
+                ) : membersQuery.isError ? (
+                  <InlineError onRetry={() => membersQuery.refetch()} />
+                ) : members.length === 0 ? (
+                  <EmptyNote
+                    title={t("roleDetail.members.emptyTitle")}
+                    hint={t("roleDetail.members.emptyHint")}
+                  />
+                ) : (
+                  <ul className="divide-y divide-border rounded-md border border-border text-xs">
+                    {members.map((m) => (
+                      <li key={m.member} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Link
+                            href={`/roles/${encodeURIComponent(m.member)}`}
+                            className="truncate font-mono font-medium hover:text-info"
+                          >
+                            {m.member}
+                          </Link>
+                          {m.admin_option && (
+                            <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
+                              ADMIN OPTION
+                            </RiskBadge>
+                          )}
+                        </span>
+                        <IfWriter>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 shrink-0 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => handleRevokeMembership(m)}
+                            disabled={revokeMembershipMutation.isPending}
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                            {t("roleDetail.members.remove")}
+                          </Button>
+                        </IfWriter>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <h3 className="mb-2 flex h-7 items-center text-sm font-medium">
+                  {t("roleDetail.memberOf.title", { count: memberships.length })}
+                </h3>
+                {membershipsQuery.isLoading ? (
+                  <RowsSkeleton rows={4} />
+                ) : membershipsQuery.isError ? (
+                  <InlineError onRetry={() => membershipsQuery.refetch()} />
+                ) : memberships.length === 0 ? (
+                  <EmptyNote
+                    title={t("roleDetail.memberOf.emptyTitle")}
+                    hint={t("roleDetail.memberOf.emptyHint", { role: roleName })}
+                  />
+                ) : (
+                  <ul className="divide-y divide-border rounded-md border border-border text-xs">
+                    {memberships.map((m) => (
+                      <li key={m.role}>
+                        <Link
+                          href={`/roles/${encodeURIComponent(m.role)}`}
+                          className="group flex items-center justify-between gap-2 px-3 py-1.5 transition-colors hover:bg-muted"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-mono font-medium">{m.role}</span>
+                            {m.admin_option && (
+                              <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
+                                ADMIN OPTION
+                              </RiskBadge>
+                            )}
+                          </span>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

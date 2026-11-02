@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 export interface ProfileState {
   selectedProfileName: string | null;
@@ -16,6 +16,9 @@ export const useProfileStore = create<ProfileState>()(
     }),
     {
       name: "pgguardian-selected-profile",
+      // Survives a reload but not a new browser session: connecting to a server
+      // is always an explicit choice, never something remembered from last week.
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         selectedProfileName: state.selectedProfileName,
       }),

@@ -9,8 +9,10 @@ def collect_pg_stat_statements(client: DbClient, limit: int = 20) -> list[dict]:
     """Top queries by total_time from pg_stat_statements, or empty if unavailable."""
     # Use parameterized limit, handle missing extension gracefully
     sql = """
-    SELECT query, calls, total_exec_time, mean_exec_time, rows
-    FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT %s
+    SELECT queryid::text AS queryid, query, calls, total_exec_time, mean_exec_time, rows
+    FROM pg_stat_statements
+    WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+    ORDER BY total_exec_time DESC LIMIT %s
     """
     # Fallback for older pg_stat_statements column names (total_time vs total_exec_time)
     try:
@@ -18,8 +20,11 @@ def collect_pg_stat_statements(client: DbClient, limit: int = 20) -> list[dict]:
     except Exception:
         try:
             fallback = """
-            SELECT query, calls, total_time AS total_exec_time, mean_time AS mean_exec_time, rows
-            FROM pg_stat_statements ORDER BY total_time DESC LIMIT %s
+            SELECT queryid::text AS queryid, query, calls, total_time AS total_exec_time,
+                   mean_time AS mean_exec_time, rows
+            FROM pg_stat_statements
+            WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+            ORDER BY total_time DESC LIMIT %s
             """
             return client.fetch_all(fallback, (limit,))
         except Exception:

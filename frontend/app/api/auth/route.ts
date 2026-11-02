@@ -53,7 +53,7 @@ export async function POST(request: Request) {
           clearTimeout(timeoutId);
         }
       } catch {
-        valid = true;
+        valid = false;
       }
 
       if (!valid) {

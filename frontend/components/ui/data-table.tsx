@@ -15,6 +15,7 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp, ChevronRight, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,16 +57,17 @@ export function DataTable<TData, TValue>({
   columns,
   data,
   isLoading = false,
-  emptyTitle = "Veri yok",
-  emptyDesc = "Görüntülenecek kayıt bulunamadı.",
+  emptyTitle,
+  emptyDesc,
   defaultPageSize = 25,
   globalFilter: externalGlobalFilter,
   setGlobalFilter: externalSetGlobalFilter,
-  searchPlaceholder = "Ara...",
+  searchPlaceholder,
   mobilePrimaryColumnIds,
   mobileSecondaryColumnIds,
   className,
 }: DataTableProps<TData, TValue>) {
+  const t = useT();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
@@ -135,7 +137,7 @@ export function DataTable<TData, TValue>({
             setGlobalFilter(String(e.target.value));
             table.setGlobalFilter(String(e.target.value));
           }}
-          placeholder={searchPlaceholder}
+          placeholder={searchPlaceholder ?? t("table.search")}
           className="pl-12 h-11"
         />
       </div>
@@ -146,17 +148,17 @@ export function DataTable<TData, TValue>({
             Array.from({ length: 5 }).map((_, i) => (
               <Card key={i} className="overflow-hidden">
                 <CardContent className="p-4 space-y-3">
-                  <div className="h-4 w-1/3 bg-white/5 rounded animate-pulse" />
-                  <div className="h-5 w-2/3 bg-white/5 rounded animate-pulse" />
-                  <div className="h-3 w-1/2 bg-white/5 rounded animate-pulse" />
+                  <div className="h-4 w-1/3 bg-card rounded animate-pulse" />
+                  <div className="h-5 w-2/3 bg-card rounded animate-pulse" />
+                  <div className="h-3 w-1/2 bg-card rounded animate-pulse" />
                 </CardContent>
               </Card>
             ))
           ) : table.getRowModel().rows.length === 0 ? (
             <Card className="overflow-hidden">
               <CardContent className="p-12 text-center">
-                <p className="font-semibold">{emptyTitle}</p>
-                <p className="text-sm text-muted-foreground mt-1">{emptyDesc}</p>
+                <p className="font-semibold">{emptyTitle ?? t("table.emptyTitle")}</p>
+                <p className="text-sm text-muted-foreground mt-1">{emptyDesc ?? t("table.emptyDesc")}</p>
               </CardContent>
             </Card>
           ) : (
@@ -167,7 +169,7 @@ export function DataTable<TData, TValue>({
                   <CardContent className="p-0">
                     <button
                       onClick={() => toggleRow(row.id)}
-                      className="w-full text-left p-4 flex items-start gap-3 hover:bg-white/5 transition-colors"
+                      className="w-full text-left p-4 flex items-start gap-3 hover:bg-card transition-colors"
                     >
                       <div className="flex-1 min-w-0 space-y-1.5">
                         {primaryIds.map((pid) => {
@@ -200,7 +202,7 @@ export function DataTable<TData, TValue>({
                       />
                     </button>
                     {expanded && secondaryIds.length > 0 && (
-                      <div className="border-t border-white/5 p-4 space-y-3 bg-white/[0.02]">
+                      <div className="border-t border-border p-4 space-y-3 bg-card">
                         {secondaryIds.map((sid) => {
                           const cell = getCellByColId(row, sid);
                           const col = colById(sid);
@@ -231,7 +233,7 @@ export function DataTable<TData, TValue>({
           )}
         </div>
       ) : (
-        <div className="rounded-3xl overflow-hidden">
+        <div className="rounded-lg overflow-hidden">
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((hg) => (
@@ -272,7 +274,7 @@ export function DataTable<TData, TValue>({
                   <TableCell colSpan={desktopCols.length} className="p-6">
                     <div className="space-y-3">
                       {Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="h-14 w-full bg-white/5 rounded animate-pulse" />
+                        <div key={i} className="h-8 w-full bg-card rounded animate-pulse" />
                       ))}
                     </div>
                   </TableCell>
@@ -280,8 +282,8 @@ export function DataTable<TData, TValue>({
               ) : table.getRowModel().rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={desktopCols.length} className="p-16 text-center">
-                    <p className="font-semibold">{emptyTitle}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{emptyDesc}</p>
+                    <p className="font-semibold">{emptyTitle ?? t("table.emptyTitle")}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{emptyDesc ?? t("table.emptyDesc")}</p>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -307,17 +309,15 @@ export function DataTable<TData, TValue>({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3 text-sm flex-wrap">
             <p className="text-muted-foreground">
-              Sayfa{" "}
-              <span className="font-semibold text-foreground">
-                {currentPage + 1}
-              </span>{" "}
-              / {Math.max(1, pageCount)} · Toplam{" "}
-              <span className="font-semibold text-foreground">{data.length}</span>{" "}
-              kayıt
+              {t("table.summary", {
+                page: currentPage + 1,
+                pages: Math.max(1, pageCount),
+                total: data.length,
+              })}
             </p>
-            <div className="h-6 w-px bg-white/10" />
+            <div className="h-6 w-px bg-muted" />
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Sayfa başına:</span>
+              <span className="text-xs text-muted-foreground">{t("table.perPage")}</span>
               <Select
                 value={String(pageSize)}
                 onValueChange={(v) => {
@@ -326,7 +326,7 @@ export function DataTable<TData, TValue>({
                   table.setPageSize(n);
                 }}
               >
-                <SelectTrigger className="h-9 w-[88px] rounded-full">
+                <SelectTrigger className="h-9 w-[88px] rounded-md">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -345,18 +345,18 @@ export function DataTable<TData, TValue>({
               size="sm"
               onClick={() => table.previousPage()}
               disabled={!canPrev}
-              className="h-9 rounded-full"
+              className="h-9 rounded-md"
             >
-              Önceki
+              {t("table.previous")}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => table.nextPage()}
               disabled={!canNext}
-              className="h-9 rounded-full"
+              className="h-9 rounded-md"
             >
-              Sonraki
+              {t("table.next")}
             </Button>
           </div>
         </div>

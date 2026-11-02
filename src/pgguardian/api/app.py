@@ -24,6 +24,7 @@ from pgguardian.api.routers import roles as roles_router
 from pgguardian.api.routers import schemas as schemas_router
 from pgguardian.api.routers import snapshots as snapshots_router
 from pgguardian.api.routers import sql as sql_router
+from pgguardian.api.routers import statements as statements_router
 from pgguardian.api.routers import table_io as table_io_router
 from pgguardian.api.routers import users as users_router
 from pgguardian.api.routers.auth import bootstrap_admin_if_needed
@@ -113,12 +114,15 @@ def create_app() -> FastAPI:
     app.include_router(users_router.router)
     app.include_router(events_router.router, dependencies=guarded_or_jwt)
     app.include_router(diagnostics_router.router, dependencies=viewer_allowed)
+    app.include_router(statements_router.router, dependencies=viewer_allowed)
     app.include_router(schemas_router.router, dependencies=viewer_allowed)
-    app.include_router(databases_router.router, dependencies=viewer_allowed)
+    app.include_router(databases_router.read_router, dependencies=viewer_allowed)
+    app.include_router(databases_router.router, dependencies=writer_allowed)
     app.include_router(replication_router.router, dependencies=viewer_allowed)
     app.include_router(snapshots_router.router, dependencies=writer_allowed)
     app.include_router(backups_router.router, dependencies=writer_allowed)
     app.include_router(sql_router.router, dependencies=writer_allowed)
+    app.include_router(profiles_router.read_router, dependencies=viewer_allowed)
     app.include_router(profiles_router.router, dependencies=writer_allowed)
     app.include_router(roles_router.router, dependencies=writer_allowed)
     app.include_router(querymgmt_router.router, dependencies=writer_allowed)

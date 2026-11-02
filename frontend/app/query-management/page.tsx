@@ -11,23 +11,13 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { toast } from 'sonner';
-import {
-  Activity,
-  Clock,
-  Users,
-  AlertTriangle,
-  Power,
-  Skull,
-  RefreshCw,
-  User,
-  Server,
-  CircleDot,
-} from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Power, RefreshCw, Skull } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RiskBadge } from '@/components/ui/risk-badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { IfWriter } from '@/components/role-guard';
 import {
   Table as UITable,
   TableBody,
@@ -36,53 +26,71 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { endpoints, type QueryInfo, type QueryReport, type DryRunResult, type BackendActionResult } from '@/lib/api/types';
+import {
+  endpoints,
+  type BackendActionResult,
+  type DryRunResult,
+  type QueryInfo,
+  type QueryReport,
+} from '@/lib/api/types';
 import { qk } from '@/lib/api/queryKeys';
-import { cn, formatInterval, formatDate, formatDuration } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useI18n, useT, type TFunction } from '@/lib/i18n';
+import { useUIPrefsStore } from '@/store/useUIPrefsStore';
 
 interface EnrichedQuery extends QueryInfo {
   from_long_running?: boolean;
 }
 
-const POLL_INTERVAL = 5000;
-const LONG_RUNNING_THRESHOLD_SEC = 300; // 5 dakika
+const LONG_RUNNING_MIN_SECONDS = 60;
+const DANGEROUS_SECONDS = 300;
+const METRIC = 'font-mono tabular-nums';
+
+function formatSeconds(seconds: number, t: TFunction): string {
+  if (!Number.isFinite(seconds) || seconds < 1) return t('liveQueries.units.second', { n: '<1' });
+  const s = Math.floor(seconds);
+  const values = [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
+  const labels = [
+    t('liveQueries.units.day', { n: values[0] }),
+    t('liveQueries.units.hour', { n: values[1] }),
+    t('liveQueries.units.minute', { n: values[2] }),
+    t('liveQueries.units.second', { n: values[3] }),
+  ];
+  const first = values.findIndex((v) => v > 0);
+  return labels.slice(first, first + 2).join(' ');
+}
 
 function mergeQueries(active?: QueryReport, longRunning?: QueryReport): EnrichedQuery[] {
   const map = new Map<number, EnrichedQuery>();
-  if (active?.queries) {
-    for (const q of active.queries) {
-      if (q.pid) map.set(q.pid, { ...q });
-    }
+  for (const q of active?.queries ?? []) {
+    if (q.pid) map.set(q.pid, { ...q });
   }
-  if (longRunning?.queries) {
-    for (const q of longRunning.queries) {
-      const existing = map.get(q.pid);
-      if (existing) {
-        map.set(q.pid, { ...existing, ...q, from_long_running: true });
-      } else if (q.pid) {
-        map.set(q.pid, { ...q, from_long_running: true });
-      }
-    }
+  for (const q of longRunning?.queries ?? []) {
+    if (q.pid) map.set(q.pid, { ...map.get(q.pid), ...q, from_long_running: true });
   }
-  return Array.from(map.values()).sort((a, b) => {
-    const aDur = a.duration_seconds ?? 0;
-    const bDur = b.duration_seconds ?? 0;
-    return bDur - aDur;
-  });
+  return Array.from(map.values());
 }
 
-function stateVariant(state?: string | null) {
-  const s = (state ?? '').toLowerCase();
+function stateVariant(state: string): 'OK' | 'WARNING' | 'INFO' {
+  const s = state.toLowerCase();
+  if (s === 'idle in transaction' || s.includes('aborted')) return 'WARNING';
   if (s.includes('active')) return 'OK';
-  if (s.includes('idle')) return 'INFO';
-  if (s.includes('wait') || s.includes('block')) return 'WARNING';
   return 'INFO';
 }
 
+function isActionResult(data: DryRunResult | BackendActionResult): data is BackendActionResult {
+  return 'signal_sent' in data;
+}
+
 export default function QueryManagementPage() {
+  const t = useT();
+  const { formatNumber } = useI18n();
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
+  const pollInterval = useUIPrefsStore((s) => s.pollInterval);
+  const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
+  const refetchInterval = autoRefresh ? pollInterval : false;
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'duration_seconds', desc: true },
   ]);
@@ -90,14 +98,14 @@ export default function QueryManagementPage() {
   const activeQuery = useQuery({
     queryKey: qk.diagnostics.queries.active(100),
     queryFn: () => endpoints.getActiveQueries(100),
-    refetchInterval: POLL_INTERVAL,
+    refetchInterval,
     refetchOnWindowFocus: true,
   });
 
   const longRunningQuery = useQuery({
-    queryKey: qk.diagnostics.queries.longRunning(60, 100),
-    queryFn: () => endpoints.getLongRunningQueries(60, 100),
-    refetchInterval: POLL_INTERVAL,
+    queryKey: qk.diagnostics.queries.longRunning(LONG_RUNNING_MIN_SECONDS, 100),
+    queryFn: () => endpoints.getLongRunningQueries(LONG_RUNNING_MIN_SECONDS, 100),
+    refetchInterval,
     refetchOnWindowFocus: true,
   });
 
@@ -106,103 +114,104 @@ export default function QueryManagementPage() {
     [activeQuery.data, longRunningQuery.data]
   );
 
-  const counts = React.useMemo(() => {
-    const total = rows.length;
-    const longRunningCount = rows.filter(
-      (r) => (r.duration_seconds ?? 0) >= LONG_RUNNING_THRESHOLD_SEC
-    ).length;
-    const activeCount = rows.filter((r) =>
-      (r.state ?? '').toLowerCase().includes('active')
-    ).length;
-    return { total, longRunningCount, activeCount };
-  }, [rows]);
+  const counts = React.useMemo(
+    () => ({
+      total: rows.length,
+      active: rows.filter((r) => (r.state ?? '').toLowerCase() === 'active').length,
+      longRunning: rows.filter((r) => (r.duration_seconds ?? 0) >= LONG_RUNNING_MIN_SECONDS).length,
+      dangerous: rows.filter((r) => (r.duration_seconds ?? 0) >= DANGEROUS_SECONDS).length,
+    }),
+    [rows]
+  );
 
-  const cancelMutation = useMutation({
-    mutationFn: (pid: number) =>
-      endpoints.cancelBackend(pid, { confirm: true }),
-    onSuccess: (data, pid) => {
-      queryClient.invalidateQueries({ queryKey: ['diagnostics', 'queries'] as unknown[] });
-      if (data && 'signal_sent' in data) {
-        const r = data as BackendActionResult;
-        toast.success(r.signal_sent ? 'Cancel sinyali gönderildi' : 'Cancel başarılı', {
-          description: `PID ${r.pid}`,
-        });
-      } else if (data && 'risk' in data) {
-        const d = data as DryRunResult;
-        toast.info(`Dry Run: ${d.risk}`, { description: d.note });
-      }
-    },
+  const notifyResult = (
+    data: DryRunResult | BackendActionResult,
+    pid: number,
+    sentKey: string
+  ) => {
+    queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() });
+    if (isActionResult(data) && !data.signal_sent) {
+      toast.warning(t('liveQueries.toast.notSent', { pid }));
+    } else if (isActionResult(data)) {
+      toast.success(t(sentKey), { description: `PID ${pid}` });
+    } else {
+      toast.info(t('liveQueries.toast.dryRun', { risk: data.risk }), { description: data.note });
+    }
+  };
+
+  // Failures are toasted by the API client.
+  const { mutate: cancelBackend, isPending: cancelling } = useMutation({
+    mutationFn: (pid: number) => endpoints.cancelBackend(pid, { confirm: true }),
+    onSuccess: (data, pid) => notifyResult(data, pid, 'liveQueries.toast.cancelSent'),
   });
 
-  const terminateMutation = useMutation({
+  // The backend rejects terminate unless confirm_name equals the PID.
+  const { mutate: terminateBackend, isPending: terminating } = useMutation({
     mutationFn: (pid: number) =>
-      endpoints.terminateBackend(pid, { confirm: true }),
-    onSuccess: (data, pid) => {
-      queryClient.invalidateQueries({ queryKey: ['diagnostics', 'queries'] as unknown[] });
-      if (data && 'signal_sent' in data) {
-        const r = data as BackendActionResult;
-        toast.success(r.signal_sent ? 'Terminate sinyali gönderildi' : 'Terminate başarılı', {
-          description: `PID ${r.pid}`,
-        });
-      } else if (data && 'risk' in data) {
-        const d = data as DryRunResult;
-        toast.info(`Dry Run: ${d.risk}`, { description: d.note });
-      }
-    },
+      endpoints.terminateBackend(pid, { confirm: true, confirm_name: String(pid) }),
+    onSuccess: (data, pid) => notifyResult(data, pid, 'liveQueries.toast.terminateSent'),
   });
 
-  const handleCancel = React.useCallback(async function handleCancel(row: EnrichedQuery) {
-    const ok = await confirm({
-      title: `Sorgu iptal edilsin mi? PID ${row.pid}`,
-      description: `SIGINT gönderilecektir. İşlem: "${(row.query ?? '').slice(0, 140)}${(row.query ?? '').length > 140 ? '...' : ''}"`,
-      risk_level: 'MAINTENANCE',
-      confirm_label: 'Cancel Gönder',
-      cancel_label: 'Vazgeç',
-    });
-    if (ok) cancelMutation.mutate(row.pid);
-  }, [confirm, cancelMutation]);
+  const handleCancel = React.useCallback(
+    async (row: EnrichedQuery) => {
+      const sql = row.query ?? '';
+      const ok = await confirm({
+        title: t('liveQueries.confirm.cancelTitle', { pid: row.pid }),
+        description: t('liveQueries.confirm.cancelDesc', {
+          query: sql.length > 140 ? `${sql.slice(0, 140)}...` : sql,
+        }),
+        risk_level: 'MAINTENANCE',
+        confirm_label: t('liveQueries.actions.cancel'),
+        cancel_label: t('common.cancel'),
+        sql_preview: [`SELECT pg_cancel_backend(${row.pid});`],
+      });
+      if (ok) cancelBackend(row.pid);
+    },
+    [confirm, cancelBackend, t]
+  );
 
-  const handleTerminate = React.useCallback(async function handleTerminate(row: EnrichedQuery) {
-    const ok = await confirm({
-      title: `Sorgu sonlandırılsın mı? PID ${row.pid}`,
-      description: `SIGTERM gönderilecektir. Bu işlem bağlantıyı keser ve aktif transaction'ı rollback eder. Geri alınamaz.`,
-      risk_level: 'DANGEROUS',
-      confirm_name_required: true,
-      confirm_name_value: String(row.pid),
-      confirm_label: 'Terminate Et',
-      cancel_label: 'Vazgeç',
-    });
-    if (ok) terminateMutation.mutate(row.pid);
-  }, [confirm, terminateMutation]);
+  const handleTerminate = React.useCallback(
+    async (row: EnrichedQuery) => {
+      const ok = await confirm({
+        title: t('liveQueries.confirm.terminateTitle', { pid: row.pid }),
+        description: t('liveQueries.confirm.terminateDesc'),
+        risk_level: 'DANGEROUS',
+        confirm_name_required: true,
+        confirm_name_value: String(row.pid),
+        confirm_name_placeholder: t('liveQueries.confirm.typePid', { pid: row.pid }),
+        confirm_label: t('liveQueries.actions.terminate'),
+        cancel_label: t('common.cancel'),
+        sql_preview: [`SELECT pg_terminate_backend(${row.pid});`],
+      });
+      if (ok) terminateBackend(row.pid);
+    },
+    [confirm, terminateBackend, t]
+  );
 
   const columns = React.useMemo<ColumnDef<EnrichedQuery>[]>(
     () => [
       {
         accessorKey: 'pid',
-        header: 'PID',
-        size: 90,
-        cell: ({ getValue }) => (
-          <span className="font-mono font-semibold text-white">
-            {String(getValue<number>())}
-          </span>
+        header: () => 'PID',
+        size: 70,
+        cell: ({ row }) => (
+          <span className={`${METRIC} font-semibold text-foreground`}>{row.original.pid}</span>
         ),
       },
       {
         accessorKey: 'query',
-        header: 'Sorgu',
-        cell: ({ getValue, row }) => {
-          const q = getValue<string | null | undefined>() ?? '';
-          const dangerous =
-            (row.original.duration_seconds ?? 0) >= LONG_RUNNING_THRESHOLD_SEC;
+        header: () => t('liveQueries.columns.query'),
+        cell: ({ row }) => {
+          const dangerous = (row.original.duration_seconds ?? 0) >= DANGEROUS_SECONDS;
           return (
-            <div className="flex items-start gap-2 max-w-[440px]">
+            <div className="flex max-w-[560px] items-start gap-1.5">
               {dangerous && (
-                <RiskBadge riskLevel="DANGEROUS" size="sm" className="shrink-0 mt-0.5">
-                  5dk+
+                <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false} className="mt-0.5 shrink-0">
+                  {t('liveQueries.dangerousBadge')}
                 </RiskBadge>
               )}
-              <code className="text-xs font-mono text-zinc-300 whitespace-pre-wrap line-clamp-2 hover:line-clamp-none transition-all">
-                {q || '<boş sorgu>'}
+              <code className="line-clamp-2 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground hover:line-clamp-none">
+                {row.original.query || t('liveQueries.emptyQuery')}
               </code>
             </div>
           );
@@ -210,126 +219,92 @@ export default function QueryManagementPage() {
       },
       {
         accessorKey: 'duration_seconds',
-        header: 'Süre',
-        size: 120,
+        header: () => t('liveQueries.columns.duration'),
+        size: 90,
         sortingFn: (a, b) =>
           (a.original.duration_seconds ?? 0) - (b.original.duration_seconds ?? 0),
         cell: ({ row }) => {
           const s = row.original.duration_seconds ?? 0;
-          const dangerous = s >= LONG_RUNNING_THRESHOLD_SEC;
           return (
             <Badge
               variant="outline"
               className={cn(
-                'font-mono',
-                dangerous
-                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
-                  : s >= 60
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400'
-                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                `${METRIC} px-1.5 py-0 text-[11px]`,
+                s >= DANGEROUS_SECONDS
+                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                  : s >= LONG_RUNNING_MIN_SECONDS
+                    ? 'border-warning/40 bg-warning/10 text-warning'
+                    : 'border-success/30 bg-success/10 text-success'
               )}
             >
-              <Clock className="h-3 w-3 mr-1" />
-              {formatInterval(s)}
+              {formatSeconds(s, t)}
             </Badge>
           );
         },
       },
       {
         accessorKey: 'state',
-        header: 'Durum',
-        size: 130,
-        cell: ({ getValue }) => {
-          const s = getValue<string | null | undefined>() ?? 'unknown';
+        header: () => t('liveQueries.columns.state'),
+        size: 120,
+        cell: ({ row }) => {
+          const state = row.original.state ?? 'unknown';
           return (
-            <div className="flex items-center gap-2">
-              <CircleDot
-                className={cn(
-                  'h-3 w-3 shrink-0',
-                  s.toLowerCase().includes('active')
-                    ? 'text-emerald-400 animate-pulse'
-                    : s.toLowerCase().includes('wait')
-                      ? 'text-amber-400'
-                      : 'text-zinc-500'
-                )}
-              />
-              <RiskBadge riskLevel={stateVariant(s) as any} size="sm" showIcon={false}>
-                {s}
-              </RiskBadge>
-            </div>
+            <RiskBadge riskLevel={stateVariant(state)} size="sm" showIcon={false}>
+              {state}
+            </RiskBadge>
           );
         },
       },
       {
-        accessorKey: 'client_address',
-        header: 'İstemci',
-        size: 140,
-        cell: ({ getValue }) => (
-          <div className="flex items-center gap-2">
-            <Server className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="font-mono text-xs text-zinc-300">
-              {getValue<string | null | undefined>() ?? '-'}
-            </span>
-          </div>
+        accessorKey: 'database',
+        header: () => t('liveQueries.columns.database'),
+        size: 110,
+        cell: ({ row }) => (
+          <span className="font-mono text-muted-foreground">{row.original.database ?? '-'}</span>
         ),
       },
       {
         accessorKey: 'user',
-        header: 'Kullanıcı',
-        size: 130,
-        cell: ({ getValue }) => (
-          <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-violet-400" />
-            <span className="text-sm text-zinc-300 truncate">
-              {getValue<string | null | undefined>() ?? '-'}
-            </span>
-          </div>
+        header: () => t('liveQueries.columns.user'),
+        size: 110,
+        cell: ({ row }) => (
+          <span className="font-mono text-muted-foreground">{row.original.user ?? '-'}</span>
         ),
       },
       {
-        accessorKey: 'query_start',
-        header: 'Başlangıç',
-        size: 150,
-        cell: () => {
-          // query_start QueryInfo tipinde yok, duration'dan hesapla
-          return null;
-        },
-      },
-      {
         id: 'actions',
-        header: 'İşlemler',
+        header: () => <IfWriter>{t('liveQueries.columns.actions')}</IfWriter>,
         size: 170,
         enableSorting: false,
-        cell: ({ row }) => {
-          const r = row.original;
-          return (
-            <div className="flex items-center gap-2">
+        cell: ({ row }) => (
+          <IfWriter>
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleCancel(r)}
-                disabled={cancelMutation.isPending}
-                className="h-9 px-3 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                onClick={() => handleCancel(row.original)}
+                disabled={cancelling}
+                className="h-6 border-warning/40 px-1.5 text-[11px] text-warning hover:bg-warning/10"
               >
-                <Power className="h-3.5 w-3.5 mr-1" />
-                Cancel
+                <Power className="mr-1 h-3 w-3" />
+                {t('liveQueries.actions.cancel')}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleTerminate(r)}
-                disabled={terminateMutation.isPending}
-                className="h-9 px-3 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+                onClick={() => handleTerminate(row.original)}
+                disabled={terminating}
+                className="h-6 border-destructive/40 px-1.5 text-[11px] text-destructive hover:bg-destructive/10"
               >
-                <Skull className="h-3.5 w-3.5 mr-1" />
-                Terminate
+                <Skull className="mr-1 h-3 w-3" />
+                {t('liveQueries.actions.terminate')}
               </Button>
             </div>
-          );
-        },
+          </IfWriter>
+        ),
       },
     ],
-    [handleCancel, handleTerminate, cancelMutation.isPending, terminateMutation.isPending]
+    [handleCancel, handleTerminate, cancelling, terminating, t]
   );
 
   const table = useReactTable({
@@ -341,188 +316,152 @@ export default function QueryManagementPage() {
     state: { sorting },
   });
 
+  const isFetching = activeQuery.isFetching || longRunningQuery.isFetching;
+  const isLoading = activeQuery.isLoading || longRunningQuery.isLoading;
+  const failed = activeQuery.isError ? activeQuery : longRunningQuery.isError ? longRunningQuery : null;
+  const refetchAll = () => {
+    activeQuery.refetch();
+    longRunningQuery.refetch();
+  };
+  const failedMessage = failed?.error instanceof Error ? failed.error.message : '';
+
+  const tiles = [
+    { label: t('liveQueries.tiles.total'), value: counts.total, tone: 'text-foreground' },
+    { label: t('liveQueries.tiles.active'), value: counts.active, tone: 'text-success' },
+    { label: t('liveQueries.tiles.longRunning'), value: counts.longRunning, tone: 'text-warning' },
+    { label: t('liveQueries.tiles.dangerous'), value: counts.dangerous, tone: 'text-destructive' },
+  ];
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-white">Canlı Sorgu Yönetimi</h1>
-          <p className="text-muted-foreground mt-1">
-            Aktif sorgular · 5sn poll · Cancel / Terminate işlemleri
-          </p>
+          <h1 className="text-lg font-semibold text-foreground">{t('liveQueries.title')}</h1>
+          <p className="text-xs text-muted-foreground">{t('liveQueries.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className="px-4 py-2 text-sm bg-black/30 gap-2"
-          >
-            <RefreshCw
-              className={cn(
-                'h-3.5 w-3.5',
-                activeQuery.isFetching || longRunningQuery.isFetching
-                  ? 'animate-spin text-emerald-400'
-                  : 'text-muted-foreground'
-              )}
-            />
-            5sn polling
-          </Badge>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="overflow-hidden">
-          <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 mb-4" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Toplam</p>
-                <p className="text-3xl font-bold text-white">{counts.total}</p>
-              </div>
-              <Activity className="h-8 w-8 text-indigo-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 mb-4" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Aktif</p>
-                <p className="text-3xl font-bold text-white">{counts.activeCount}</p>
-              </div>
-              <Users className="h-8 w-8 text-emerald-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 mb-4" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">
-                  Uzun Çalışan (1dk+)
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {longRunningQuery.data?.queries?.length ?? 0}
-                </p>
-              </div>
-              <Clock className="h-8 w-8 text-amber-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardContent className="p-6">
-            <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-red-500 to-rose-500 mb-4" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">
-                  DANGEROUS (5dk+)
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {counts.longRunningCount}
-                </p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-red-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
-          <div>
-            <CardTitle className="flex items-center gap-3">
-              <Activity className="h-6 w-6 text-gradient" />
-              pg_stat_activity
-            </CardTitle>
-            <CardDescription>
-              En uzun süreden kısa süreyiye sıralı · Aktif bağlantılar
-            </CardDescription>
-          </div>
+          <span className={`${METRIC} text-[11px] text-muted-foreground`}>
+            {autoRefresh
+              ? t('liveQueries.polling', { seconds: formatNumber(pollInterval / 1000) })
+              : t('liveQueries.pollingOff')}
+          </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              activeQuery.refetch();
-              longRunningQuery.refetch();
-            }}
+            onClick={refetchAll}
+            disabled={isFetching}
+            className="h-7 px-2 text-xs"
           >
-            <RefreshCw
-              className={cn(
-                'h-4 w-4 mr-1.5',
-                activeQuery.isFetching && 'animate-spin'
-              )}
-            />
-            Yenile
+            <RefreshCw className={cn('mr-1 h-3.5 w-3.5', isFetching && 'animate-spin')} />
+            {t('common.refresh')}
           </Button>
-        </CardHeader>
-        <CardContent className="!p-0">
-          <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
-            <UITable>
-              <TableHeader className="sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="rounded-md border border-border bg-card px-3 py-2">
+            <p className="text-[11px] text-muted-foreground">{tile.label}</p>
+            {isLoading ? (
+              <Skeleton className="mt-1 h-5 w-12" />
+            ) : (
+              <p className={cn(METRIC, 'text-base font-semibold', failed ? 'text-muted-foreground' : tile.tone)}>
+                {failed ? '-' : formatNumber(tile.value)}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <section className="overflow-hidden rounded-md border border-border bg-card">
+        <header className="flex flex-wrap items-baseline gap-2 border-b border-border px-3 py-2">
+          <h2 className="font-mono text-xs font-semibold text-foreground">pg_stat_activity</h2>
+          <p className="text-[11px] text-muted-foreground">{t('liveQueries.tableHint')}</p>
+        </header>
+        {failed ? (
+          <div role="alert" className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            <span className="font-medium text-foreground">{t('common.loadFailed')}</span>
+            {failedMessage && (
+              <span className="min-w-0 truncate text-muted-foreground">{failedMessage}</span>
+            )}
+            <Button variant="outline" size="sm" onClick={refetchAll} className="h-6 px-2 text-xs">
+              {t('common.retry')}
+            </Button>
+          </div>
+        ) : isLoading ? (
+          <div className="space-y-1.5 p-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">{t('liveQueries.empty')}</p>
+        ) : (
+          <div className="max-h-[70vh] overflow-auto">
+            <UITable className="text-xs">
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 {table.getHeaderGroups().map((hg) => (
-                  <TableRow key={hg.id}>
-                    {hg.headers.map((h) => (
-                      <TableHead
-                        key={h.id}
-                        style={{ width: h.getSize() }}
-                        className="text-xs font-semibold whitespace-nowrap"
-                      >
-                        {h.isPlaceholder
-                          ? null
-                          : flexRender(
-                              h.column.columnDef.header,
-                              h.getContext()
-                            )}
-                      </TableHead>
-                    ))}
+                  <TableRow key={hg.id} className="hover:bg-transparent">
+                    {hg.headers.map((h) => {
+                      const sorted = h.column.getIsSorted();
+                      const label = h.isPlaceholder
+                        ? null
+                        : flexRender(h.column.columnDef.header, h.getContext());
+                      return (
+                        <TableHead
+                          key={h.id}
+                          style={{ width: h.getSize() }}
+                          aria-sort={
+                            sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined
+                          }
+                          className="h-8 whitespace-nowrap px-2 py-1.5 text-xs font-semibold"
+                        >
+                          {h.column.getCanSort() ? (
+                            <button
+                              type="button"
+                              onClick={h.column.getToggleSortingHandler()}
+                              className="inline-flex items-center gap-1 hover:text-foreground"
+                            >
+                              {label}
+                              {sorted === 'asc' && <ArrowUp className="h-3 w-3" />}
+                              {sorted === 'desc' && <ArrowDown className="h-3 w-3" />}
+                            </button>
+                          ) : (
+                            label
+                          )}
+                        </TableHead>
+                      );
+                    })}
                   </TableRow>
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows.map((r) => {
-                  const isDangerous =
-                    (r.original.duration_seconds ?? 0) >= LONG_RUNNING_THRESHOLD_SEC;
-                  return (
-                    <TableRow
-                      key={r.id}
-                      className={cn(
-                        isDangerous &&
-                          'border-l-4 border-l-red-500/60 bg-red-500/5'
-                      )}
-                    >
-                      {r.getVisibleCells().map((c) => (
-                        <TableCell
-                          key={c.id}
-                          style={{ width: c.column.getSize() }}
-                          className="py-4"
-                        >
-                          {flexRender(
-                            c.column.columnDef.cell,
-                            c.getContext()
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  );
-                })}
-                {table.getRowModel().rows.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      className="text-center py-16 text-muted-foreground"
-                    >
-                      {activeQuery.isLoading || longRunningQuery.isLoading
-                        ? 'Yükleniyor...'
-                        : 'Aktif sorgu bulunamadı'}
-                    </TableCell>
+                {table.getRowModel().rows.map((r) => (
+                  <TableRow
+                    key={r.id}
+                    className={cn(
+                      (r.original.duration_seconds ?? 0) >= DANGEROUS_SECONDS &&
+                        'border-l-2 border-l-destructive/60 bg-destructive/5'
+                    )}
+                  >
+                    {r.getVisibleCells().map((c) => (
+                      <TableCell
+                        key={c.id}
+                        style={{ width: c.column.getSize() }}
+                        className="px-2 py-1.5 text-xs"
+                      >
+                        {flexRender(c.column.columnDef.cell, c.getContext())}
+                      </TableCell>
+                    ))}
                   </TableRow>
-                )}
+                ))}
               </TableBody>
             </UITable>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </section>
     </div>
   );
 }

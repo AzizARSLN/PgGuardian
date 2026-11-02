@@ -1,83 +1,141 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
 import {
-  endpoints,
-  type VacuumRequest,
-  type AnalyzeRequest,
-  type ReindexRequest,
-  type DryRunResult,
-  type MaintenanceActionResult,
-  type TableMaintenance,
-} from "@/lib/api/types";
-import { qk } from "@/lib/api/queryKeys";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Wrench,
-  Trash2,
-  RefreshCw,
+  AlertCircle,
   Database,
+  PlayCircle,
+  RefreshCw,
   Search,
   Sparkles,
-  PlayCircle,
-  AlertTriangle,
-  CheckCircle2,
   TerminalSquare,
+  Trash2,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn, formatNumber, formatPercent, formatBytes } from "@/lib/utils";
+
+import { api } from "@/lib/api/client";
+import {
+  endpoints,
+  type AnalyzeRequest,
+  type DryRunResult,
+  type MaintenanceActionResult,
+  type MutationRequest,
+  type ReindexRequest,
+  type TableMaintenance,
+  type VacuumRequest,
+} from "@/lib/api/types";
+import { qk } from "@/lib/api/queryKeys";
 import { useConfirm } from "@/lib/hooks/useConfirm";
-import { useForm } from "react-hook-form";
+import { useI18n, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { IfWriter } from "@/components/role-guard";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// VACUUM and REINDEX outlive the default 30s client timeout on large tables.
+const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
+const REPORT_LIMIT = 100;
+
+const CELL = "px-2 py-1.5 text-xs";
+const HEAD = "h-8 px-2 text-xs";
+const PANEL = "rounded-md border border-border bg-card";
+const ACTION_BUTTON = "h-8 flex-1 text-xs";
 
 interface VacuumForm {
-  schema_name?: string;
-  table_name?: string;
+  schema_name: string;
+  table_name: string;
   full: boolean;
   analyze: boolean;
   freeze: boolean;
-  verbose: boolean;
 }
 
 interface AnalyzeForm {
-  schema_name?: string;
-  table_name?: string;
+  schema_name: string;
+  table_name: string;
 }
 
 interface ReindexForm {
-  schema_name?: string;
-  table_name?: string;
-  index_name?: string;
+  schema_name: string;
+  table_name: string;
+  index_name: string;
   concurrently: boolean;
 }
 
 type MaintenancePreview = {
   sql: string[];
   risk: "MAINTENANCE" | "DANGEROUS";
-  action: string;
 } | null;
 
-export default function MaintenancePage() {
+function toPreview(result: DryRunResult): MaintenancePreview {
+  return {
+    sql: result.sql,
+    risk: result.risk === "DANGEROUS" ? "DANGEROUS" : "MAINTENANCE",
+  };
+}
+
+function latestTimestamp(a?: string | null, b?: string | null): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
+}
+
+function severityToRisk(status: TableMaintenance["status"]): RiskLevel {
+  if (status === "CRITICAL") return "DANGEROUS";
+  if (status === "WARNING") return "WARNING";
+  if (status === "OK") return "OK";
+  return "INFO";
+}
+
+function deadTone(percent: number): string {
+  if (percent > 10) return "text-destructive";
+  if (percent > 3) return "text-warning";
+  return "text-success";
+}
+
+function useMaintenanceAction<TBody extends MutationRequest>(
+  path: "vacuum" | "analyze" | "reindex",
+  command: string,
+  onDone: () => void
+) {
+  const t = useT();
   const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TBody) =>
+      api.post<MaintenanceActionResult>(`/maintenance/${path}`, body, {
+        timeout: LONG_ACTION_TIMEOUT_MS,
+      }),
+    onSuccess: (result) => {
+      toast.success(t("maintenance.toast.done", { command }), {
+        description: result?.command_status,
+      });
+      queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance(REPORT_LIMIT) });
+      onDone();
+    },
+    onError: () => {
+      toast.error(t("maintenance.toast.failed", { command }));
+    },
+  });
+}
+
+export default function MaintenancePage() {
+  const t = useT();
+  const { formatNumber, formatDate } = useI18n();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const [tab, setTab] = useState("vacuum");
 
@@ -85,997 +143,736 @@ export default function MaintenancePage() {
   const [analyzePreview, setAnalyzePreview] = useState<MaintenancePreview>(null);
   const [reindexPreview, setReindexPreview] = useState<MaintenancePreview>(null);
 
-  const {
-    register: vacRegister,
-    handleSubmit: vacHandleSubmit,
-    watch: vacWatch,
-    setValue: vacSetValue,
-    reset: vacReset,
-    formState: { isSubmitting: vacSubmitting },
-  } = useForm<VacuumForm>({
-    defaultValues: {
-      schema_name: "",
-      table_name: "",
-      full: false,
-      analyze: false,
-      freeze: false,
-      verbose: false,
-    },
+  const vacuumForm = useForm<VacuumForm>({
+    defaultValues: { schema_name: "", table_name: "", full: false, analyze: false, freeze: false },
+  });
+  const analyzeForm = useForm<AnalyzeForm>({
+    defaultValues: { schema_name: "", table_name: "" },
+  });
+  const reindexForm = useForm<ReindexForm>({
+    defaultValues: { schema_name: "", table_name: "", index_name: "", concurrently: true },
   });
 
-  const {
-    register: anaRegister,
-    handleSubmit: anaHandleSubmit,
-    watch: anaWatch,
-    reset: anaReset,
-    formState: { isSubmitting: anaSubmitting },
-  } = useForm<AnalyzeForm>({
-    defaultValues: {
-      schema_name: "",
-      table_name: "",
-    },
+  // A preview describes the options it was generated from. Dropping it on any
+  // change stops Apply from running SQL the user never saw.
+  useEffect(() => {
+    const subscription = vacuumForm.watch(() => setVacuumPreview(null));
+    return () => subscription.unsubscribe();
+  }, [vacuumForm]);
+  useEffect(() => {
+    const subscription = analyzeForm.watch(() => setAnalyzePreview(null));
+    return () => subscription.unsubscribe();
+  }, [analyzeForm]);
+  useEffect(() => {
+    const subscription = reindexForm.watch(() => setReindexPreview(null));
+    return () => subscription.unsubscribe();
+  }, [reindexForm]);
+
+  const report = useQuery({
+    queryKey: qk.diagnostics.maintenance(REPORT_LIMIT),
+    queryFn: () => endpoints.getMaintenance(REPORT_LIMIT),
   });
 
-  const {
-    register: reiRegister,
-    handleSubmit: reiHandleSubmit,
-    watch: reiWatch,
-    setValue: reiSetValue,
-    reset: reiReset,
-    formState: { isSubmitting: reiSubmitting },
-  } = useForm<ReindexForm>({
-    defaultValues: {
-      schema_name: "",
-      table_name: "",
-      index_name: "",
-      concurrently: true,
-    },
+  const vacuumMutation = useMaintenanceAction<VacuumRequest>("vacuum", "VACUUM", () => {
+    setVacuumPreview(null);
+    vacuumForm.reset();
+  });
+  const analyzeMutation = useMaintenanceAction<AnalyzeRequest>("analyze", "ANALYZE", () => {
+    setAnalyzePreview(null);
+    analyzeForm.reset();
+  });
+  const reindexMutation = useMaintenanceAction<ReindexRequest>("reindex", "REINDEX", () => {
+    setReindexPreview(null);
+    reindexForm.reset();
   });
 
-  const { data: maintenanceReport, isLoading: reportLoading } = useQuery({
-    queryKey: qk.diagnostics.maintenance(100),
-    queryFn: () => endpoints.getMaintenance(100),
-  });
+  const vacuumPayload = (): VacuumRequest => {
+    const v = vacuumForm.getValues();
+    return {
+      schema_name: v.schema_name.trim() || null,
+      table_name: v.table_name.trim() || null,
+      full: v.full,
+      analyze: v.analyze,
+      freeze: v.freeze,
+    };
+  };
+  const analyzePayload = (): AnalyzeRequest => {
+    const v = analyzeForm.getValues();
+    return {
+      schema_name: v.schema_name.trim() || null,
+      table_name: v.table_name.trim() || null,
+    };
+  };
+  const reindexPayload = (): ReindexRequest => {
+    const v = reindexForm.getValues();
+    return {
+      schema_name: v.schema_name.trim() || null,
+      table_name: v.table_name.trim() || null,
+      index_name: v.index_name.trim() || null,
+      concurrently: v.concurrently,
+    };
+  };
 
-  const vacuumMutation = useMutation({
-    mutationFn: (body: VacuumRequest) => endpoints.runVacuum(body),
-    onSuccess: (res) => {
-      const r = res as MaintenanceActionResult;
-      if (r && "command_status" in r) {
-        toast.success("VACUUM tamamlandı", {
-          description: r.command_status,
-        });
-      } else {
-        toast.success("VACUUM başarıyla çalıştırıldı");
-      }
-      queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance() });
-      setVacuumPreview(null);
-      vacReset();
-    },
-    onError: () => {
-      toast.error("VACUUM başarısız oldu");
-    },
-  });
+  /** The API takes schema + table together, or neither for the whole database. */
+  const validPair = (schema?: string | null, table?: string | null) => {
+    if (Boolean(schema) === Boolean(table)) return true;
+    toast.error(t("maintenance.errors.scopePair"));
+    return false;
+  };
 
-  const analyzeMutation = useMutation({
-    mutationFn: (body: AnalyzeRequest) => endpoints.runAnalyze(body),
-    onSuccess: (res) => {
-      const r = res as MaintenanceActionResult;
-      if (r && "command_status" in r) {
-        toast.success("ANALYZE tamamlandı", {
-          description: r.command_status,
-        });
-      } else {
-        toast.success("ANALYZE başarıyla çalıştırıldı");
-      }
-      queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance() });
-      setAnalyzePreview(null);
-      anaReset();
-    },
-    onError: () => {
-      toast.error("ANALYZE başarısız oldu");
-    },
-  });
-
-  const reindexMutation = useMutation({
-    mutationFn: (body: ReindexRequest) => endpoints.runReindex(body),
-    onSuccess: (res) => {
-      const r = res as MaintenanceActionResult;
-      if (r && "command_status" in r) {
-        toast.success("REINDEX tamamlandı", {
-          description: r.command_status,
-        });
-      } else {
-        toast.success("REINDEX başarıyla çalıştırıldı");
-      }
-      queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance() });
-      setReindexPreview(null);
-      reiReset();
-    },
-    onError: () => {
-      toast.error("REINDEX başarısız oldu");
-    },
-  });
-
-  const handleVacuumDryRun = vacHandleSubmit(async (data) => {
+  const runDryRun = async (
+    path: "vacuum" | "analyze" | "reindex",
+    body: MutationRequest,
+    apply: (preview: MaintenancePreview) => void
+  ) => {
     try {
-      const payload: VacuumRequest = {
-        schema_name: data.schema_name?.trim() || null,
-        table_name: data.table_name?.trim() || null,
-        full: data.full,
-        analyze: data.analyze,
-        freeze: data.freeze,
+      const result = await api.post<DryRunResult>(`/maintenance/${path}`, {
+        ...body,
         dry_run: true,
-      };
-      const res = (await endpoints.runVacuum(payload)) as DryRunResult;
-      if (res && res.sql) {
-        setVacuumPreview({
-          sql: res.sql,
-          risk: (res.risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS",
-          action: res.action,
-        });
+      });
+      if (result?.sql) {
+        apply(toPreview(result));
       } else {
-        toast.info("Dry Run sonucu dönmedi");
+        toast.info(t("maintenance.toast.noDryRun"));
       }
-    } catch (e) {}
-  });
+    } catch {
+      // The API client has already shown the error.
+    }
+  };
+
+  const handleVacuumDryRun = () => {
+    const body = vacuumPayload();
+    if (validPair(body.schema_name, body.table_name)) {
+      void runDryRun("vacuum", body, setVacuumPreview);
+    }
+  };
+  const handleAnalyzeDryRun = () => {
+    const body = analyzePayload();
+    if (validPair(body.schema_name, body.table_name)) {
+      void runDryRun("analyze", body, setAnalyzePreview);
+    }
+  };
+  const handleReindexDryRun = () => {
+    const body = reindexPayload();
+    if (!body.schema_name || Boolean(body.table_name) === Boolean(body.index_name)) {
+      toast.error(t("maintenance.errors.reindexScope"));
+      return;
+    }
+    void runDryRun("reindex", body, setReindexPreview);
+  };
 
   const handleVacuumApply = async () => {
     if (!vacuumPreview) return;
-    const data = {
-      schema_name: vacWatch("schema_name"),
-      table_name: vacWatch("table_name"),
-      full: vacWatch("full"),
-      analyze: vacWatch("analyze"),
-      freeze: vacWatch("freeze"),
-    };
     const ok = await confirm({
-      title: "VACUUM işlemini çalıştır?",
-      description: vacuumPreview.risk === "DANGEROUS"
-        ? "VACUUM FULL çalıştırılacak. Bu işlem tabloyu kilitleyebilir (ACCESS EXCLUSIVE LOCK) ve yoğun I/O üretebilir. Düşük trafik saatlerinde çalıştırmanız önerilir."
-        : "Standart VACUUM çalıştırılacak. Bu işlem tabloyu kilitlemez ancak I/O yoğunluğu yaratabilir.",
+      title: t("maintenance.confirm.title", { command: "VACUUM" }),
+      description: t(
+        vacuumPreview.risk === "DANGEROUS"
+          ? "maintenance.confirm.vacuumFull"
+          : "maintenance.confirm.vacuum"
+      ),
       risk_level: vacuumPreview.risk,
       sql_preview: vacuumPreview.sql,
-      confirm_label: "VACUUM Çalıştır",
-      cancel_label: "İptal",
+      confirm_label: t("maintenance.confirm.run", { command: "VACUUM" }),
+      cancel_label: t("common.cancel"),
     });
-    if (!ok) return;
-
-    await vacuumMutation.mutateAsync({
-      schema_name: data.schema_name?.trim() || null,
-      table_name: data.table_name?.trim() || null,
-      full: data.full,
-      analyze: data.analyze,
-      freeze: data.freeze,
-      confirm: true,
-    });
+    if (ok) vacuumMutation.mutate({ ...vacuumPayload(), confirm: true });
   };
-
-  const handleAnalyzeDryRun = anaHandleSubmit(async (data) => {
-    try {
-      const payload: AnalyzeRequest = {
-        schema_name: data.schema_name?.trim() || null,
-        table_name: data.table_name?.trim() || null,
-        dry_run: true,
-      };
-      const res = (await endpoints.runAnalyze(payload)) as DryRunResult;
-      if (res && res.sql) {
-        setAnalyzePreview({
-          sql: res.sql,
-          risk: (res.risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS",
-          action: res.action,
-        });
-      }
-    } catch (e) {}
-  });
 
   const handleAnalyzeApply = async () => {
     if (!analyzePreview) return;
-    const data = {
-      schema_name: anaWatch("schema_name"),
-      table_name: anaWatch("table_name"),
-    };
     const ok = await confirm({
-      title: "ANALYZE işlemini çalıştır?",
-      description:
-        "Tablo istatistikleri güncellenecek. Sorgu planlayıcısının daha iyi kararlar almasını sağlar. Okunmuş bir kilitle çalışır.",
+      title: t("maintenance.confirm.title", { command: "ANALYZE" }),
+      description: t("maintenance.confirm.analyze"),
       risk_level: analyzePreview.risk,
       sql_preview: analyzePreview.sql,
-      confirm_label: "ANALYZE Çalıştır",
-      cancel_label: "İptal",
+      confirm_label: t("maintenance.confirm.run", { command: "ANALYZE" }),
+      cancel_label: t("common.cancel"),
     });
-    if (!ok) return;
-
-    await analyzeMutation.mutateAsync({
-      schema_name: data.schema_name?.trim() || null,
-      table_name: data.table_name?.trim() || null,
-      confirm: true,
-    });
+    if (ok) analyzeMutation.mutate({ ...analyzePayload(), confirm: true });
   };
-
-  const handleReindexDryRun = reiHandleSubmit(async (data) => {
-    try {
-      const payload: ReindexRequest = {
-        schema_name: data.schema_name?.trim() || null,
-        table_name: data.table_name?.trim() || null,
-        index_name: data.index_name?.trim() || null,
-        concurrently: data.concurrently,
-        dry_run: true,
-      };
-      const res = (await endpoints.runReindex(payload)) as DryRunResult;
-      if (res && res.sql) {
-        setReindexPreview({
-          sql: res.sql,
-          risk: (res.risk ?? "MAINTENANCE") as "MAINTENANCE" | "DANGEROUS",
-          action: res.action,
-        });
-      }
-    } catch (e) {}
-  });
 
   const handleReindexApply = async () => {
     if (!reindexPreview) return;
-    const data = {
-      schema_name: reiWatch("schema_name"),
-      table_name: reiWatch("table_name"),
-      index_name: reiWatch("index_name"),
-      concurrently: reiWatch("concurrently"),
-    };
+    const body = reindexPayload();
     const ok = await confirm({
-      title: "REINDEX işlemini çalıştır?",
-      description: data.concurrently
-        ? "CONCURRENTLY modunda REINDEX çalıştırılacak. Bu işlem tabloyu kilitlemez ancak daha uzun sürebilir ve CPU/I/O yoğunluğu yaratır."
-        : "Standart REINDEX çalıştırılacak. Bu işlem ilgili indeks için SHARE LOCK alabilir. INDEX yazımını geçici olarak engelleyebilir.",
+      title: t("maintenance.confirm.title", { command: "REINDEX" }),
+      description: t(
+        body.concurrently ? "maintenance.confirm.reindexConcurrent" : "maintenance.confirm.reindex"
+      ),
       risk_level: reindexPreview.risk,
       sql_preview: reindexPreview.sql,
-      confirm_label: "REINDEX Çalıştır",
-      cancel_label: "İptal",
+      confirm_label: t("maintenance.confirm.run", { command: "REINDEX" }),
+      cancel_label: t("common.cancel"),
     });
-    if (!ok) return;
-
-    await reindexMutation.mutateAsync({
-      schema_name: data.schema_name?.trim() || null,
-      table_name: data.table_name?.trim() || null,
-      index_name: data.index_name?.trim() || null,
-      concurrently: data.concurrently,
-      confirm: true,
-    });
+    if (ok) reindexMutation.mutate({ ...body, confirm: true });
   };
 
-  const summary = maintenanceReport?.summary;
-  const tables = maintenanceReport?.tables ?? [];
-  const totalTables = summary?.tables_total ?? 0;
+  const handleRefresh = async () => {
+    const result = await report.refetch();
+    if (!result.isError) toast.success(t("maintenance.toast.refreshed"));
+  };
+
+  const summary = report.data?.summary;
+  const tables = report.data?.tables ?? [];
   const neverVacuumed = summary?.tables_never_vacuumed ?? 0;
   const neverAnalyzed = summary?.tables_never_analyzed ?? 0;
   const deadPercent = summary?.dead_tuple_percent ?? 0;
 
+  const formatPercent = (value: number) =>
+    formatNumber(value / 100, { style: "percent", maximumFractionDigits: 1 });
+  const formatWhen = (value: string | null) => (value ? formatDate(value) : t("maintenance.never"));
+
   const tablesByStatus = {
-    ok: tables.filter((t) => t.status === "OK").length,
-    warning: tables.filter((t) => t.status === "WARNING").length,
-    critical: tables.filter((t) => t.status === "CRITICAL").length,
+    ok: tables.filter((row) => row.status === "OK").length,
+    warning: tables.filter((row) => row.status === "WARNING").length,
+    critical: tables.filter((row) => row.status === "CRITICAL").length,
   };
 
+  const runningLabel = (
+    <>
+      <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+      {t("maintenance.running")}
+    </>
+  );
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       <ConfirmDialog />
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Wrench className="h-8 w-8 text-amber-400" />
-            Veritabanı Bakımı
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Wrench className="h-4 w-4 text-warning" />
+            {t("maintenance.title")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            VACUUM · ANALYZE · REINDEX işlemlerini kurallı ve güvenli bir şekilde çalıştırın
-          </p>
+          <p className="text-xs text-muted-foreground">{t("maintenance.subtitle")}</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance() });
-            toast.success("Bakım durumu yenilendi");
-          }}
-          className="h-12 px-6 rounded-full"
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Durumu Yenile
+        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleRefresh}>
+          <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", report.isFetching && "animate-spin")} />
+          {t("maintenance.refresh")}
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
-        {reportLoading ? (
-          [0, 1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <Skeleton className="h-3 w-24 mb-3" />
-                <Skeleton className="h-9 w-20" />
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          [
-            {
-              label: "Toplam Tablo",
-              val: formatNumber(totalTables),
-              icon: Database,
-              from: "from-indigo-500",
-              to: "to-blue-500",
-              risk: null as RiskLevel | null,
-            },
-            {
-              label: "Canlı/Ölü Oranı",
-              val: `%${deadPercent.toFixed(1)}`,
-              icon: Trash2,
-              from:
-                deadPercent > 10 ? "from-red-500" : deadPercent > 3 ? "from-amber-500" : "from-emerald-500",
-              to: deadPercent > 10 ? "to-orange-500" : deadPercent > 3 ? "to-yellow-500" : "to-teal-500",
-              risk:
-                deadPercent > 10 ? "DANGEROUS" : deadPercent > 3 ? "WARNING" : "OK",
-            },
-            {
-              label: "Vacuum İhtiyacı",
-              val: neverVacuumed,
-              icon: Wrench,
-              from: neverVacuumed > 0 ? "from-red-500" : "from-emerald-500",
-              to: neverVacuumed > 0 ? "to-orange-500" : "to-teal-500",
-              risk: neverVacuumed > 3 ? "DANGEROUS" : neverVacuumed > 0 ? "WARNING" : "OK",
-            },
-            {
-              label: "Analyze İhtiyacı",
-              val: neverAnalyzed,
-              icon: Sparkles,
-              from: neverAnalyzed > 0 ? "from-amber-500" : "from-emerald-500",
-              to: neverAnalyzed > 0 ? "to-orange-500" : "to-teal-500",
-              risk: neverAnalyzed > 3 ? "WARNING" : neverAnalyzed > 0 ? "INFO" : "OK",
-            },
-            {
-              label: "Autovacuum Worker",
-              val: summary?.autovacuum_workers ?? 0,
-              icon: PlayCircle,
-              from: "from-purple-500",
-              to: "to-pink-500",
-              risk: null as RiskLevel | null,
-            },
-          ].map((m) => (
-            <Card
-              key={m.label}
-              className={cn(
-                "relative overflow-hidden",
-                m.risk === "DANGEROUS" && "border-red-500/30",
-                m.risk === "WARNING" && "border-amber-500/30"
-              )}
-            >
-              <div
-                className={cn(
-                  "absolute inset-0 bg-gradient-to-br opacity-10 pointer-events-none",
-                  m.from,
-                  m.to
+      {!report.isError && (
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+          {report.isLoading
+            ? [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[54px] w-full rounded-md" />)
+            : [
+                {
+                  label: t("maintenance.stats.tables"),
+                  value: formatNumber(summary?.tables_total ?? 0),
+                  icon: Database,
+                  tone: "text-foreground",
+                },
+                {
+                  label: t("maintenance.stats.deadRatio"),
+                  value: formatPercent(deadPercent),
+                  icon: Trash2,
+                  tone: deadTone(deadPercent),
+                },
+                {
+                  label: t("maintenance.stats.neverVacuumed"),
+                  value: formatNumber(neverVacuumed),
+                  icon: Wrench,
+                  tone:
+                    neverVacuumed > 3
+                      ? "text-destructive"
+                      : neverVacuumed > 0
+                        ? "text-warning"
+                        : "text-success",
+                },
+                {
+                  label: t("maintenance.stats.neverAnalyzed"),
+                  value: formatNumber(neverAnalyzed),
+                  icon: Sparkles,
+                  tone: neverAnalyzed > 0 ? "text-warning" : "text-success",
+                },
+                {
+                  label: t("maintenance.stats.autovacuumWorkers"),
+                  value: formatNumber(summary?.autovacuum_workers ?? 0),
+                  icon: PlayCircle,
+                  tone: "text-foreground",
+                },
+              ].map((stat) => <StatTile key={stat.label} {...stat} />)}
+        </div>
+      )}
+
+      <div className={cn(PANEL, "p-3")}>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="vacuum">VACUUM</TabsTrigger>
+            <TabsTrigger value="analyze">ANALYZE</TabsTrigger>
+            <TabsTrigger value="reindex">REINDEX</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="vacuum" className="mt-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="space-y-3">
+                <SectionTitle
+                  icon={<Trash2 className="h-3.5 w-3.5 text-warning" />}
+                  text={t("maintenance.options", { command: "VACUUM" })}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label={t("maintenance.fields.schemaOptional")}>
+                    <Input
+                      {...vacuumForm.register("schema_name")}
+                      placeholder="public"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
+                  <Field label={t("maintenance.fields.tableOptional")}>
+                    <Input
+                      {...vacuumForm.register("table_name")}
+                      placeholder="orders"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("maintenance.scopeHint", { command: "VACUUM" })}
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <OptionCheck
+                    id="vac-full"
+                    label="FULL"
+                    hint={t("maintenance.hints.full")}
+                    tone="danger"
+                    checked={vacuumForm.watch("full")}
+                    onChange={(v) => vacuumForm.setValue("full", v)}
+                  />
+                  <OptionCheck
+                    id="vac-analyze"
+                    label="ANALYZE"
+                    hint={t("maintenance.hints.analyze")}
+                    checked={vacuumForm.watch("analyze")}
+                    onChange={(v) => vacuumForm.setValue("analyze", v)}
+                  />
+                  <OptionCheck
+                    id="vac-freeze"
+                    label="FREEZE"
+                    hint={t("maintenance.hints.freeze")}
+                    checked={vacuumForm.watch("freeze")}
+                    onChange={(v) => vacuumForm.setValue("freeze", v)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={ACTION_BUTTON}
+                    onClick={handleVacuumDryRun}
+                  >
+                    <TerminalSquare className="mr-1.5 h-3.5 w-3.5" />
+                    {t("maintenance.dryRun")}
+                  </Button>
+                  <IfWriter>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={vacuumForm.watch("full") ? "destructive" : "default"}
+                      className={ACTION_BUTTON}
+                      onClick={handleVacuumApply}
+                      disabled={!vacuumPreview || vacuumMutation.isPending}
+                    >
+                      {vacuumMutation.isPending ? (
+                        runningLabel
+                      ) : (
+                        <>
+                          <PlayCircle className="mr-1.5 h-3.5 w-3.5" />
+                          {t("maintenance.apply", { command: "VACUUM" })}
+                        </>
+                      )}
+                    </Button>
+                  </IfWriter>
+                </div>
+              </div>
+              <SqlPreview
+                preview={vacuumPreview}
+                note={t(
+                  vacuumPreview?.risk === "DANGEROUS"
+                    ? "maintenance.notes.vacuumFull"
+                    : "maintenance.notes.vacuum"
                 )}
               />
-              <CardContent className="p-6 relative">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                      {m.label}
-                    </p>
-                    <p
-                      className={cn(
-                        "text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-br",
-                        m.from,
-                        m.to
-                      )}
-                    >
-                      {m.val}
-                    </p>
-                  </div>
-                  <div
-                    className={cn(
-                      "h-11 w-11 rounded-2xl bg-gradient-to-br flex items-center justify-center",
-                      m.from,
-                      m.to
-                    )}
-                    style={{ opacity: 0.85 }}
-                  >
-                    <m.icon className="h-5 w-5 text-white" />
-                  </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="analyze" className="mt-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="space-y-3">
+                <SectionTitle
+                  icon={<Sparkles className="h-3.5 w-3.5 text-info" />}
+                  text={t("maintenance.options", { command: "ANALYZE" })}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label={t("maintenance.fields.schemaOptional")}>
+                    <Input
+                      {...analyzeForm.register("schema_name")}
+                      placeholder="public"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
+                  <Field label={t("maintenance.fields.tableOptional")}>
+                    <Input
+                      {...analyzeForm.register("table_name")}
+                      placeholder="orders"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
                 </div>
-                {m.risk && (
-                  <div className="mt-4">
-                    <RiskBadge riskLevel={m.risk as "OK" | "INFO" | "WARNING" | "MAINTENANCE" | "DANGEROUS"} size="sm" className="w-full justify-center" />
-                  </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("maintenance.scopeHint", { command: "ANALYZE" })}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={ACTION_BUTTON}
+                    onClick={handleAnalyzeDryRun}
+                  >
+                    <TerminalSquare className="mr-1.5 h-3.5 w-3.5" />
+                    {t("maintenance.dryRun")}
+                  </Button>
+                  <IfWriter>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={ACTION_BUTTON}
+                      onClick={handleAnalyzeApply}
+                      disabled={!analyzePreview || analyzeMutation.isPending}
+                    >
+                      {analyzeMutation.isPending ? (
+                        runningLabel
+                      ) : (
+                        <>
+                          <PlayCircle className="mr-1.5 h-3.5 w-3.5" />
+                          {t("maintenance.apply", { command: "ANALYZE" })}
+                        </>
+                      )}
+                    </Button>
+                  </IfWriter>
+                </div>
+              </div>
+              <SqlPreview preview={analyzePreview} note={t("maintenance.notes.analyze")} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="reindex" className="mt-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="space-y-3">
+                <SectionTitle
+                  icon={<Database className="h-3.5 w-3.5 text-success" />}
+                  text={t("maintenance.options", { command: "REINDEX" })}
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <Field label={t("maintenance.fields.schema")}>
+                    <Input
+                      {...reindexForm.register("schema_name")}
+                      placeholder="public"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
+                  <Field label={t("maintenance.fields.table")}>
+                    <Input
+                      {...reindexForm.register("table_name")}
+                      placeholder="orders"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
+                  <Field label={t("maintenance.fields.index")}>
+                    <Input
+                      {...reindexForm.register("index_name")}
+                      placeholder="idx_orders_date"
+                      className="h-8 font-mono text-xs"
+                    />
+                  </Field>
+                </div>
+                <p className="text-xs text-muted-foreground">{t("maintenance.reindexHint")}</p>
+                <OptionCheck
+                  id="rei-concurrent"
+                  label="CONCURRENTLY"
+                  hint={t("maintenance.hints.concurrently")}
+                  tone="success"
+                  checked={reindexForm.watch("concurrently")}
+                  onChange={(v) => reindexForm.setValue("concurrently", v)}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={ACTION_BUTTON}
+                    onClick={handleReindexDryRun}
+                  >
+                    <TerminalSquare className="mr-1.5 h-3.5 w-3.5" />
+                    {t("maintenance.dryRun")}
+                  </Button>
+                  <IfWriter>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={ACTION_BUTTON}
+                      onClick={handleReindexApply}
+                      disabled={!reindexPreview || reindexMutation.isPending}
+                    >
+                      {reindexMutation.isPending ? (
+                        runningLabel
+                      ) : (
+                        <>
+                          <PlayCircle className="mr-1.5 h-3.5 w-3.5" />
+                          {t("maintenance.apply", { command: "REINDEX" })}
+                        </>
+                      )}
+                    </Button>
+                  </IfWriter>
+                </div>
+              </div>
+              <SqlPreview
+                preview={reindexPreview}
+                note={t(
+                  reindexForm.watch("concurrently")
+                    ? "maintenance.notes.reindexConcurrent"
+                    : "maintenance.notes.reindex"
                 )}
-              </CardContent>
-            </Card>
-          ))
-        )}
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
-      <Card className="overflow-hidden">
-        <CardContent className="!p-0">
-          <div className="p-6 border-b border-white/5">
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList>
-                <TabsTrigger value="vacuum">VACUUM</TabsTrigger>
-                <TabsTrigger value="analyze">ANALYZE</TabsTrigger>
-                <TabsTrigger value="reindex">REINDEX</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="vacuum" className="mt-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="space-y-6">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-5">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Trash2 className="h-5 w-5 text-amber-400" />
-                        VACUUM Seçenekleri
-                      </h3>
-                      <form className="space-y-5">
-                        <div className="grid grid-cols-2 gap-5">
-                          <div className="space-y-2">
-                            <Label>Şema (isteğe bağlı)</Label>
-                            <Input
-                              {...vacRegister("schema_name")}
-                              placeholder="public"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Tablo (isteğe bağlı)</Label>
-                            <Input
-                              {...vacRegister("table_name")}
-                              placeholder="orders"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground -mt-2">
-                          İkisini de boş bırakırsanız tüm veritabanında VACUUM çalışır
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="flex items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
-                            <Checkbox
-                              id="vac-full"
-                              checked={vacWatch("full")}
-                              onCheckedChange={(v) =>
-                                vacSetValue("full", typeof v === "boolean" ? v : false)
-                              }
-                            />
-                            <div>
-                              <label
-                                htmlFor="vac-full"
-                                className="text-sm font-medium cursor-pointer text-red-400"
-                              >
-                                FULL
-                              </label>
-                              <p className="text-xs text-muted-foreground">
-                                ACCESS EXCLUSIVE LOCK · Yer açar ama kilitler
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <Checkbox
-                              id="vac-analyze"
-                              checked={vacWatch("analyze")}
-                              onCheckedChange={(v) =>
-                                vacSetValue("analyze", typeof v === "boolean" ? v : false)
-                              }
-                            />
-                            <div>
-                              <label
-                                htmlFor="vac-analyze"
-                                className="text-sm font-medium cursor-pointer"
-                              >
-                                ANALYZE
-                              </label>
-                              <p className="text-xs text-muted-foreground">
-                                Vacuum sonrası istatistikleri güncelle
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <Checkbox
-                              id="vac-freeze"
-                              checked={vacWatch("freeze")}
-                              onCheckedChange={(v) =>
-                                vacSetValue("freeze", typeof v === "boolean" ? v : false)
-                              }
-                            />
-                            <div>
-                              <label
-                                htmlFor="vac-freeze"
-                                className="text-sm font-medium cursor-pointer"
-                              >
-                                FREEZE
-                              </label>
-                              <p className="text-xs text-muted-foreground">
-                                Transaction ID wraparound koruması
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <Checkbox
-                              id="vac-verbose"
-                              checked={vacWatch("verbose")}
-                              onCheckedChange={(v) =>
-                                vacSetValue("verbose", typeof v === "boolean" ? v : false)
-                              }
-                            />
-                            <div>
-                              <label
-                                htmlFor="vac-verbose"
-                                className="text-sm font-medium cursor-pointer"
-                              >
-                                VERBOSE
-                              </label>
-                              <p className="text-xs text-muted-foreground">
-                                Detaylı çıktı (log) üret
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleVacuumDryRun}
-                            disabled={vacSubmitting}
-                            className="h-12 flex-1 rounded-full"
-                          >
-                            <TerminalSquare className="h-4 w-4 mr-2" />
-                            Dry Run (SQL Önizleme)
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={handleVacuumApply}
-                            disabled={!vacuumPreview || vacuumMutation.isPending}
-                            className={cn(
-                              "h-12 flex-1 rounded-full font-bold",
-                              vacWatch("full")
-                                ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600"
-                                : "bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
-                            )}
-                          >
-                            {vacuumMutation.isPending ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                Çalışıyor…
-                              </>
-                            ) : (
-                              <>
-                                <PlayCircle className="h-4 w-4 mr-2" />
-                                VACUUM Uygula
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    {vacuumPreview ? (
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
-                        <div className="flex items-center justify-between flex-wrap gap-3">
-                          <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <TerminalSquare className="h-5 w-5 text-emerald-400" />
-                            SQL Önizlemesi
-                          </h3>
-                          <RiskBadge riskLevel={vacuumPreview.risk} size="md" />
-                        </div>
-                        <div className="space-y-2">
-                          {vacuumPreview.sql.map((sql, idx) => (
-                            <pre
-                              key={idx}
-                              className="text-sm font-mono text-emerald-300 whitespace-pre-wrap break-all bg-black/40 rounded-2xl p-4 border border-white/5"
-                            >
-                              {sql}
-                            </pre>
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground italic border-t border-white/5 pt-4">
-                          {vacuumPreview.risk === "DANGEROUS"
-                            ? "Bu işlem ACCESS EXCLUSIVE LOCK alabilir. Düşük trafikte çalıştırın."
-                            : "Standart VACUUM, tablo kilitlenmeden arka planda çalışır."}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="rounded-3xl border border-dashed border-white/10 p-10 text-center">
-                        <TerminalSquare className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                        <p className="font-semibold text-lg">SQL Önizlemesi</p>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Önce seçenekleri ayarlayıp {"\""}Dry Run{"\""} butonuna tıklayın
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="analyze" className="mt-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="space-y-6">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-5">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-indigo-400" />
-                        ANALYZE Seçenekleri
-                      </h3>
-                      <form className="space-y-5">
-                        <div className="grid grid-cols-2 gap-5">
-                          <div className="space-y-2">
-                            <Label>Şema (isteğe bağlı)</Label>
-                            <Input
-                              {...anaRegister("schema_name")}
-                              placeholder="public"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Tablo (isteğe bağlı)</Label>
-                            <Input
-                              {...anaRegister("table_name")}
-                              placeholder="orders"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground -mt-2">
-                          İkisini de boş bırakırsanız tüm veritabanında ANALYZE çalışır
-                        </p>
-
-                        <div className="flex items-center gap-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleAnalyzeDryRun}
-                            disabled={anaSubmitting}
-                            className="h-12 flex-1 rounded-full"
-                          >
-                            <TerminalSquare className="h-4 w-4 mr-2" />
-                            Dry Run (SQL Önizleme)
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={handleAnalyzeApply}
-                            disabled={!analyzePreview || analyzeMutation.isPending}
-                            className="h-12 flex-1 rounded-full font-bold bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600"
-                          >
-                            {analyzeMutation.isPending ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                Çalışıyor…
-                              </>
-                            ) : (
-                              <>
-                                <PlayCircle className="h-4 w-4 mr-2" />
-                                ANALYZE Uygula
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    {analyzePreview ? (
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
-                        <div className="flex items-center justify-between flex-wrap gap-3">
-                          <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <TerminalSquare className="h-5 w-5 text-emerald-400" />
-                            SQL Önizlemesi
-                          </h3>
-                          <RiskBadge riskLevel={analyzePreview.risk} size="md" />
-                        </div>
-                        <div className="space-y-2">
-                          {analyzePreview.sql.map((sql, idx) => (
-                            <pre
-                              key={idx}
-                              className="text-sm font-mono text-emerald-300 whitespace-pre-wrap break-all bg-black/40 rounded-2xl p-4 border border-white/5"
-                            >
-                              {sql}
-                            </pre>
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground italic border-t border-white/5 pt-4">
-                          ANALYZE sadece okuma kilidi alır ve sorgu planlayıcıya yardım eder.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="rounded-3xl border border-dashed border-white/10 p-10 text-center">
-                        <TerminalSquare className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                        <p className="font-semibold text-lg">SQL Önizlemesi</p>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Önce seçenekleri ayarlayıp {"\""}Dry Run{"\""} butonuna tıklayın
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="reindex" className="mt-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="space-y-6">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-5">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Database className="h-5 w-5 text-emerald-400" />
-                        REINDEX Seçenekleri
-                      </h3>
-                      <form className="space-y-5">
-                        <div className="grid grid-cols-3 gap-5">
-                          <div className="space-y-2">
-                            <Label>Şema</Label>
-                            <Input
-                              {...reiRegister("schema_name")}
-                              placeholder="public"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Tablo</Label>
-                            <Input
-                              {...reiRegister("table_name")}
-                              placeholder="orders"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>İndeks (ops.)</Label>
-                            <Input
-                              {...reiRegister("index_name")}
-                              placeholder="idx_orders_date"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground -mt-2">
-                          Hedefi daraltmak için soldan sağa doldurun; boş = tüm kapsam
-                        </p>
-
-                        <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                          <Checkbox
-                            id="rei-concurrent"
-                            checked={reiWatch("concurrently")}
-                            onCheckedChange={(v) =>
-                              reiSetValue("concurrently", typeof v === "boolean" ? v : true)
-                            }
-                          />
-                          <div>
-                            <label
-                              htmlFor="rei-concurrent"
-                              className="text-sm font-medium cursor-pointer text-emerald-400"
-                            >
-                              CONCURRENTLY
-                            </label>
-                            <p className="text-xs text-muted-foreground">
-                              Tabloyu kilitlemeden indeksi yeniden oluştur (önerilen)
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleReindexDryRun}
-                            disabled={reiSubmitting}
-                            className="h-12 flex-1 rounded-full"
-                          >
-                            <TerminalSquare className="h-4 w-4 mr-2" />
-                            Dry Run (SQL Önizleme)
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={handleReindexApply}
-                            disabled={!reindexPreview || reindexMutation.isPending}
-                            className="h-12 flex-1 rounded-full font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
-                          >
-                            {reindexMutation.isPending ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                Çalışıyor…
-                              </>
-                            ) : (
-                              <>
-                                <PlayCircle className="h-4 w-4 mr-2" />
-                                REINDEX Uygula
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    {reindexPreview ? (
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4">
-                        <div className="flex items-center justify-between flex-wrap gap-3">
-                          <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <TerminalSquare className="h-5 w-5 text-emerald-400" />
-                            SQL Önizlemesi
-                          </h3>
-                          <RiskBadge riskLevel={reindexPreview.risk} size="md" />
-                        </div>
-                        <div className="space-y-2">
-                          {reindexPreview.sql.map((sql, idx) => (
-                            <pre
-                              key={idx}
-                              className="text-sm font-mono text-emerald-300 whitespace-pre-wrap break-all bg-black/40 rounded-2xl p-4 border border-white/5"
-                            >
-                              {sql}
-                            </pre>
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground italic border-t border-white/5 pt-4">
-                          {reiWatch("concurrently")
-                            ? "CONCURRENTLY mod: yazma işlemlerini engellemez ama daha uzun sürer."
-                            : "Standart REINDEX: ilgili nesneleri geçici olarak kilitleyebilir."}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="rounded-3xl border border-dashed border-white/10 p-10 text-center">
-                        <TerminalSquare className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-                        <p className="font-semibold text-lg">SQL Önizlemesi</p>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Önce seçenekleri ayarlayıp {"\""}Dry Run{"\""} butonuna tıklayın
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
+      <div className={cn(PANEL, "overflow-hidden")}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <div>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <Search className="h-3.5 w-3.5 text-info" />
+              {t("maintenance.table.title")}
+            </h2>
+            <p className="text-xs text-muted-foreground">{t("maintenance.table.subtitle")}</p>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Search className="h-5 w-5 text-indigo-400" />
-                Tablo Bakım Durumu
-              </CardTitle>
-              <CardDescription>
-                Dead tuple, vacuum/analyze geçmişi ve bloat riski
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <RiskBadge riskLevel="OK" size="sm">
-                OK: {tablesByStatus.ok}
-              </RiskBadge>
-              <RiskBadge riskLevel="WARNING" size="sm">
-                WARNING: {tablesByStatus.warning}
-              </RiskBadge>
-              <RiskBadge riskLevel="DANGEROUS" size="sm">
-                CRITICAL: {tablesByStatus.critical}
-              </RiskBadge>
-            </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <RiskBadge riskLevel="OK" size="sm">
+              <span className="font-mono">OK: {formatNumber(tablesByStatus.ok)}</span>
+            </RiskBadge>
+            <RiskBadge riskLevel="WARNING" size="sm">
+              <span className="font-mono">WARNING: {formatNumber(tablesByStatus.warning)}</span>
+            </RiskBadge>
+            <RiskBadge riskLevel="DANGEROUS" size="sm">
+              <span className="font-mono">CRITICAL: {formatNumber(tablesByStatus.critical)}</span>
+            </RiskBadge>
           </div>
-        </CardHeader>
-        <CardContent className="!p-0">
-          {reportLoading ? (
-            <div className="p-6 space-y-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
-          ) : tables.length === 0 ? (
-            <div className="p-12 text-center">
-              <Database className="h-14 w-14 mx-auto text-muted-foreground mb-4" />
-              <p className="font-semibold text-lg">Tablo bulunamadı</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Bu veritabanında henüz tablo yok
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/5 max-h-[520px] overflow-y-auto">
-              {tables.map((t: TableMaintenance, idx) => (
-                <div
-                  key={`${t.schema_name ?? "public"}.${t.table_name}-${idx}`}
-                  className="p-5 hover:bg-white/5 transition-colors"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                      <RiskBadge
-                        riskLevel={
-                          t.status === "CRITICAL"
-                            ? "DANGEROUS"
-                            : t.status === "WARNING"
-                            ? "WARNING"
-                            : "OK"
-                        }
-                        size="sm"
-                        className="shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">
-                          {t.schema_name ? (
-                            <span className="text-muted-foreground font-normal">
-                              {t.schema_name}.
-                            </span>
-                          ) : null}
-                          <span>{t.table_name}</span>
-                        </p>
-                        <div className="flex items-center gap-4 mt-1 flex-wrap">
-                          <span className="text-xs text-muted-foreground">
-                            Canlı:{" "}
-                            <span className="font-mono text-foreground">
-                              {formatNumber(t.live_tuples)}
-                            </span>
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Ölü:{" "}
-                            <span
-                              className={cn(
-                                "font-mono",
-                                t.dead_tuple_percent > 10
-                                  ? "text-red-400"
-                                  : t.dead_tuple_percent > 3
-                                  ? "text-amber-400"
-                                  : "text-foreground"
-                              )}
-                            >
-                              {formatNumber(t.dead_tuples)}
-                            </span>
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Bloat:{" "}
-                            <span
-                              className={cn(
-                                "font-mono font-semibold",
-                                t.dead_tuple_percent > 10
-                                  ? "text-red-400"
-                                  : t.dead_tuple_percent > 3
-                                  ? "text-amber-400"
-                                  : "text-emerald-400"
-                              )}
-                            >
-                              %{t.dead_tuple_percent.toFixed(1)}
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                      <div className="w-40 h-2 rounded-full bg-white/10 overflow-hidden">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            t.dead_tuple_percent > 10
-                              ? "bg-gradient-to-r from-red-500 to-orange-500"
-                              : t.dead_tuple_percent > 3
-                              ? "bg-gradient-to-r from-amber-500 to-yellow-500"
-                              : "bg-gradient-to-r from-emerald-500 to-teal-500"
-                          )}
-                          style={{
-                            width: `${Math.min(100, t.dead_tuple_percent * 5)}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="text-right space-y-1">
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                          Son VACUUM
-                        </p>
-                        <p className="text-xs font-mono truncate max-w-[140px]">
-                          {t.last_autovacuum ?? t.last_vacuum ?? "HIÇ"}
-                        </p>
-                      </div>
-                      <div className="text-right space-y-1">
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                          Son ANALYZE
-                        </p>
-                        <p className="text-xs font-mono truncate max-w-[140px]">
-                          {t.last_autoanalyze ?? t.last_analyze ?? "HIÇ"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+        </div>
+        {report.isError ? (
+          <QueryError onRetry={() => report.refetch()} />
+        ) : report.isLoading ? (
+          <div className="space-y-1.5 p-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+          </div>
+        ) : tables.length === 0 ? (
+          <div className="px-3 py-6 text-center">
+            <p className="text-sm font-medium">{t("maintenance.table.emptyTitle")}</p>
+            <p className="text-xs text-muted-foreground">{t("maintenance.table.emptyHint")}</p>
+          </div>
+        ) : (
+          <div className="max-h-[520px] overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={HEAD}>{t("maintenance.table.status")}</TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.table.table")}</TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("maintenance.table.live")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("maintenance.table.dead")}
+                  </TableHead>
+                  <TableHead className={cn(HEAD, "text-right")}>
+                    {t("maintenance.table.deadPercent")}
+                  </TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.table.lastVacuum")}</TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.table.lastAnalyze")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tables.map((row) => (
+                  <TableRow key={`${row.schema_name ?? ""}.${row.table_name}`}>
+                    <TableCell className={CELL}>
+                      <RiskBadge riskLevel={severityToRisk(row.status)} size="sm" />
+                    </TableCell>
+                    <TableCell className={cn(CELL, "font-mono")}>
+                      {row.schema_name && (
+                        <span className="text-muted-foreground">{row.schema_name}.</span>
+                      )}
+                      {row.table_name}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono")}>
+                      {formatNumber(row.live_tuples)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono")}>
+                      {formatNumber(row.dead_tuples)}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        CELL,
+                        "text-right font-mono font-semibold",
+                        deadTone(row.dead_tuple_percent)
+                      )}
+                    >
+                      {formatPercent(row.dead_tuple_percent)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "whitespace-nowrap font-mono")}>
+                      {formatWhen(latestTimestamp(row.last_vacuum, row.last_autovacuum))}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "whitespace-nowrap font-mono")}>
+                      {formatWhen(latestTimestamp(row.last_analyze, row.last_autoanalyze))}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  icon: ComponentType<{ className?: string }>;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className={cn("font-mono text-base font-semibold", tone)}>{value}</div>
+    </div>
+  );
+}
+
+function SectionTitle({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+      {icon}
+      {text}
+    </h3>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function OptionCheck({
+  id,
+  label,
+  hint,
+  tone,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  tone?: "danger" | "success";
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 rounded-md border border-border px-2.5 py-2",
+        tone === "danger" && "border-destructive/30 bg-destructive/5",
+        tone === "success" && "border-success/30 bg-success/5"
+      )}
+    >
+      <Checkbox
+        id={id}
+        className="mt-0.5"
+        checked={checked}
+        onCheckedChange={(value) => onChange(value === true)}
+      />
+      <div className="min-w-0">
+        <label
+          htmlFor={id}
+          className={cn(
+            "cursor-pointer font-mono text-xs font-medium",
+            tone === "danger" && "text-destructive",
+            tone === "success" && "text-success"
           )}
-        </CardContent>
-      </Card>
+        >
+          {label}
+        </label>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+    </div>
+  );
+}
+
+function SqlPreview({ preview, note }: { preview: MaintenancePreview; note: string }) {
+  const t = useT();
+  if (!preview) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4">
+        <TerminalSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div>
+          <p className="text-sm font-medium">{t("maintenance.preview.title")}</p>
+          <p className="text-xs text-muted-foreground">{t("maintenance.preview.empty")}</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+          <TerminalSquare className="h-3.5 w-3.5 text-success" />
+          {t("maintenance.preview.title")}
+        </h3>
+        <RiskBadge riskLevel={preview.risk} size="sm" />
+      </div>
+      {preview.sql.map((sql, index) => (
+        <pre
+          key={index}
+          className="whitespace-pre-wrap break-all rounded-md border border-border bg-muted px-2.5 py-2 font-mono text-xs text-foreground"
+        >
+          {sql}
+        </pre>
+      ))}
+      <p className="text-xs text-muted-foreground">{note}</p>
+    </div>
+  );
+}
+
+function QueryError({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-3" role="alert">
+      <span className="flex items-center gap-1.5 text-xs text-destructive">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+        {t("common.loadFailed")}
+      </span>
+      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onRetry}>
+        <RefreshCw className="mr-1.5 h-3 w-3" />
+        {t("common.retry")}
+      </Button>
     </div>
   );
 }
