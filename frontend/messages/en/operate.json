@@ -72,6 +72,12 @@
       "all": "All",
       "label": "Filter by status"
     },
+    "pagination": {
+      "summary": "Page {page} / {pages} · {total} tables",
+      "pageSize": "{size} per page",
+      "previous": "Previous",
+      "next": "Next"
+    },
     "table": {
       "title": "Table maintenance status",
       "subtitle": "Dead tuple ratio with VACUUM and ANALYZE history",
@@ -121,6 +127,8 @@
       "loading": "Loading…",
       "empty": "No tables found in this schema.",
       "summary": "{tables} tables · {size}",
+      "indexSizeTotal": "Total index size",
+      "unusedSizeTotal": "Unused index size",
       "columns": {
         "table": "Table",
         "total": "Total",
