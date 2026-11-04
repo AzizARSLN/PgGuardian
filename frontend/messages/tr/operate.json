@@ -112,6 +112,44 @@
       "summary": "{ok} tamamlandı · {failed} hatalı",
       "stoppedToast": "İşlem durduruldu · {ok} tamamlandı · {failed} hatalı",
       "clearResults": "Kapat"
+    },
+    "health": {
+      "tab": "Tablo sağlığı",
+      "schema": "Şema",
+      "schemaPlaceholder": "Şema seçin",
+      "noSchema": "Görüntülemek için bir şema seçin.",
+      "loading": "Yükleniyor…",
+      "empty": "Bu şemada tablo bulunamadı.",
+      "summary": "{tables} tablo · {size}",
+      "columns": {
+        "table": "Tablo",
+        "total": "Toplam",
+        "tableSize": "Tablo",
+        "indexSize": "İndeks",
+        "live": "Canlı",
+        "dead": "Ölü",
+        "deadPercent": "Ölü %",
+        "inserted": "Eklenen",
+        "updated": "Güncellenen",
+        "deleted": "Silinen",
+        "unused": "Kullanılmayan indeks"
+      },
+      "selected": "Seçili tablo",
+      "clear": "Seçimi kaldır",
+      "pickHint": "İşlem yapmak için listeden bir tablo seçin.",
+      "actions": {
+        "vacuum": "VACUUM",
+        "vacuumFull": "VACUUM FULL",
+        "analyze": "ANALYZE",
+        "reindex": "REINDEX TABLE"
+      },
+      "unused": {
+        "title": "Kullanılmayan indeksler",
+        "subtitle": "idx_scan = 0",
+        "empty": "Kullanılmayan indeks yok.",
+        "scans": "Tarama",
+        "reindex": "REINDEX INDEX"
+      }
     }
   },
   "backups": {
