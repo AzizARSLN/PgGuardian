@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from pgguardian.api.deps import mapped_errors, resolve_client
+from pgguardian.api.ops import op_application_name, validate_op_id
 from pgguardian.database.connection import DbClient
 from pgguardian.sqlexec.executor import DEFAULT_MAX_ROWS, HARD_MAX_ROWS, run_sql
 from pgguardian.toolkit.catalog import catalog_payload, get_query, render_sql
@@ -59,6 +60,7 @@ def get_catalog() -> dict[str, Any]:
 @router.post("/run", response_model=ToolkitRunResult)
 def run_toolkit_query(
     body: ToolkitRunRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
 ) -> ToolkitRunResult:
     """Execute one catalogue query inside a READ ONLY transaction."""
@@ -71,6 +73,10 @@ def run_toolkit_query(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    tracked = validate_op_id(op_id) if op_id else None
+    run_client = (
+        client.clone(application_name=op_application_name(tracked)) if tracked else client
+    )
     settings = client.settings
     with mapped_errors(settings):
         if query.requires_extension:
@@ -85,7 +91,7 @@ def run_toolkit_query(
                         f"'{query.requires_extension}' eklentisi bu veritabanında kurulu değil."
                     ),
                 )
-        result = run_sql(client, sql, None, max_rows=min(body.max_rows, query.max_rows))
+        result = run_sql(run_client, sql, None, max_rows=min(body.max_rows, query.max_rows))
 
     return ToolkitRunResult(
         id=query.id,

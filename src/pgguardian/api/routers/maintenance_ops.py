@@ -16,6 +16,7 @@ from psycopg.sql import SQL, Identifier, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
+from pgguardian.api.ops import op_application_name, validate_op_id
 from pgguardian.api.safety import (
     DryRunResult,
     MutationRequest,
@@ -111,17 +112,23 @@ def _table_target(schema: str | None, table: str | None) -> tuple[object | None,
     return None, "database"
 
 
-def _untimed(client: DbClient) -> DbClient:
-    return DbClient(client.settings, statement_timeout=False)
+def _untimed(client: DbClient, op_id: str | None = None) -> DbClient:
+    """A no-statement-timeout client; ``op_id`` tags the backend so it can be cancelled."""
+    return client.clone(
+        statement_timeout=False,
+        application_name=op_application_name(op_id) if op_id else None,
+    )
 
 
 @router.post("/vacuum", response_model=DryRunResult | MaintenanceActionResult)
 def run_vacuum(
     body: VacuumRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DryRunResult | MaintenanceActionResult:
     """VACUUM [FULL] [ANALYZE] — FULL is DANGEROUS."""
+    tracked = validate_op_id(op_id) if op_id else None
     if body.full:
         ensure_dangerous_allowed(settings, "maintenance.vacuum")
         risk = RiskLevel.DANGEROUS
@@ -147,7 +154,7 @@ def run_vacuum(
     require_confirm(body, "maintenance.vacuum")
     with mapped_errors(settings):
         client.ping()
-        status = _untimed(client).execute_raw(query)
+        status = _untimed(client, tracked).execute_raw(query)
     audit("maintenance.vacuum", target, risk, settings)
     return MaintenanceActionResult(action="vacuum", target=target, command_status=status)
 
@@ -155,10 +162,12 @@ def run_vacuum(
 @router.post("/analyze", response_model=DryRunResult | MaintenanceActionResult)
 def run_analyze(
     body: AnalyzeRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DryRunResult | MaintenanceActionResult:
     """ANALYZE a table or the whole database (MAINTENANCE)."""
+    tracked = validate_op_id(op_id) if op_id else None
     ensure_writes_allowed(settings, "maintenance.analyze")
     target_sql, target = _table_target(body.schema_name, body.table_name)
     query = SQL("ANALYZE {}").format(target_sql) if target_sql is not None else SQL("ANALYZE")
@@ -172,7 +181,7 @@ def run_analyze(
     require_confirm(body, "maintenance.analyze")
     with mapped_errors(settings):
         client.ping()
-        status = _untimed(client).execute_raw(query)
+        status = _untimed(client, tracked).execute_raw(query)
     audit("maintenance.analyze", target, RiskLevel.MAINTENANCE, settings)
     return MaintenanceActionResult(action="analyze", target=target, command_status=status)
 
@@ -180,10 +189,12 @@ def run_analyze(
 @router.post("/reindex", response_model=DryRunResult | MaintenanceActionResult)
 def run_reindex(
     body: ReindexRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DryRunResult | MaintenanceActionResult:
     """REINDEX an index or table (DANGEROUS)."""
+    tracked = validate_op_id(op_id) if op_id else None
     ensure_dangerous_allowed(settings, "maintenance.reindex")
     if body.index_name and body.table_name:
         raise HTTPException(
@@ -214,7 +225,7 @@ def run_reindex(
     require_confirm(body, "maintenance.reindex")
     with mapped_errors(settings):
         client.ping()
-        status = _untimed(client).execute_raw(query)
+        status = _untimed(client, tracked).execute_raw(query)
     audit("maintenance.reindex", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="reindex", target=target, command_status=status)
 
@@ -222,10 +233,12 @@ def run_reindex(
 @router.post("/drop-index", response_model=DryRunResult | MaintenanceActionResult)
 def run_drop_index(
     body: DropIndexRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DryRunResult | MaintenanceActionResult:
     """DROP INDEX CONCURRENTLY — removes a redundant/unused index (DANGEROUS)."""
+    tracked = validate_op_id(op_id) if op_id else None
     ensure_dangerous_allowed(settings, "maintenance.drop_index")
     index_name = validate_identifier(body.index_name, what="index name")
     if body.schema_name:
@@ -249,7 +262,7 @@ def run_drop_index(
     require_confirm(body, "maintenance.drop_index", body.index_name)
     with mapped_errors(settings):
         client.ping()
-        status = _untimed(client).execute_raw(query)
+        status = _untimed(client, tracked).execute_raw(query)
     audit("maintenance.drop_index", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="drop_index", target=target, command_status=status)
 
@@ -257,6 +270,7 @@ def run_drop_index(
 @router.post("/sequence-maxvalue", response_model=DryRunResult | MaintenanceActionResult)
 def raise_sequence_max_value(
     body: RaiseSequenceMaxValueRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> DryRunResult | MaintenanceActionResult:
@@ -266,6 +280,7 @@ def raise_sequence_max_value(
     ``last_value``, so existing primary keys cannot collide. A raise beyond the
     sequence's own integer type is rejected: that case needs a wider column.
     """
+    tracked = validate_op_id(op_id) if op_id else None
     ensure_dangerous_allowed(settings, "maintenance.sequence_maxvalue")
     schema_name = validate_identifier(body.schema_name, what="schema name")
     sequence_name = validate_identifier(body.sequence_name, what="sequence name")
@@ -314,6 +329,6 @@ def raise_sequence_max_value(
     require_confirm(body, "maintenance.sequence_maxvalue", sequence_name)
     with mapped_errors(settings):
         client.ping()
-        status = _untimed(client).execute_raw(query)
+        status = _untimed(client, tracked).execute_raw(query)
     audit("maintenance.sequence_maxvalue", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="sequence_maxvalue", target=target, command_status=status)
