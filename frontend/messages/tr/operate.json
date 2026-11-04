@@ -72,6 +72,12 @@
       "all": "Tümü",
       "label": "Duruma göre filtrele"
     },
+    "pagination": {
+      "summary": "Sayfa {page} / {pages} · {total} tablo",
+      "pageSize": "Sayfa başına {size}",
+      "previous": "Önceki",
+      "next": "Sonraki"
+    },
     "table": {
       "title": "Tablo bakım durumu",
       "subtitle": "Ölü tuple oranı ile VACUUM ve ANALYZE geçmişi",
@@ -121,6 +127,8 @@
       "loading": "Yükleniyor…",
       "empty": "Bu şemada tablo bulunamadı.",
       "summary": "{tables} tablo · {size}",
+      "indexSizeTotal": "Toplam indeks boyutu",
+      "unusedSizeTotal": "Kullanılmayan indeks boyutu",
       "columns": {
         "table": "Tablo",
         "total": "Toplam",
