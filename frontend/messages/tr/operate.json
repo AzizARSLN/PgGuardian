@@ -1,4 +1,11 @@
 {
+  "op": {
+    "stop": "Durdur",
+    "stopping": "Durduruluyor…",
+    "stopped": "İşlem durduruldu",
+    "blocked": "İşlem, {pids} numaralı oturum tarafından kilitlenmiş.",
+    "killBlockers": "Kilidi aç ve devam et"
+  },
   "maintenance": {
     "title": "Veritabanı Bakımı",
     "subtitle": "VACUUM, ANALYZE ve REINDEX işlemlerini önizleme ve onayla çalıştırın",
@@ -61,6 +68,10 @@
       "neverAnalyzed": "Hiç ANALYZE görmemiş",
       "autovacuumWorkers": "Autovacuum worker"
     },
+    "filter": {
+      "all": "Tümü",
+      "label": "Duruma göre filtrele"
+    },
     "table": {
       "title": "Tablo bakım durumu",
       "subtitle": "Ölü tuple oranı ile VACUUM ve ANALYZE geçmişi",
@@ -72,7 +83,9 @@
       "lastVacuum": "Son VACUUM",
       "lastAnalyze": "Son ANALYZE",
       "emptyTitle": "Tablo bulunamadı",
-      "emptyHint": "Bu veritabanında henüz tablo yok."
+      "emptyHint": "Bu veritabanında henüz tablo yok.",
+      "noMatchTitle": "Filtreye uyan tablo yok",
+      "noMatchHint": "Durum filtresini \"Tümü\" yapmayı deneyin."
     },
     "batch": {
       "selected": "Seçili: {count}",
@@ -83,6 +96,7 @@
       "targetsHint": "VACUUM seçili tablolara uygulanır. FULL / ANALYZE / FREEZE seçenekleri VACUUM sekmesinden alınır.",
       "andMore": "+{count} tablo daha",
       "apply": "Seçilenlere VACUUM uygula",
+      "stop": "Durdur",
       "running": "Uygulanıyor · {done}/{total}",
       "noSelection": "Önce listeden en az bir tablo seçin.",
       "confirmTitle": "{count} tabloda VACUUM çalıştırılsın mı?",
@@ -94,7 +108,9 @@
       "statusRunning": "Çalışıyor",
       "statusOk": "Tamamlandı",
       "statusFailed": "Hatalı",
+      "statusStopped": "Durduruldu",
       "summary": "{ok} tamamlandı · {failed} hatalı",
+      "stoppedToast": "İşlem durduruldu · {ok} tamamlandı · {failed} hatalı",
       "clearResults": "Kapat"
     }
   },
@@ -112,7 +128,8 @@
       "queued": "Kuyrukta",
       "running": "Çalışıyor",
       "done": "Tamamlandı",
-      "failed": "Hatalı"
+      "failed": "Hatalı",
+      "cancelled": "Durduruldu"
     },
     "toast": {
       "backupQueued": "Yedekleme işi başlatıldı",
@@ -121,7 +138,13 @@
       "restoreFailed": "Geri yükleme başlatılamadı",
       "downloadPreparing": "Dosya hazırlanıyor...",
       "downloadStarted": "İndirme başladı",
-      "downloadFailed": "İndirme başarısız"
+      "downloadFailed": "İndirme başarısız",
+      "cancelQueued": "İş durduruldu",
+      "cancelFailed": "İş durdurulamadı"
+    },
+    "actions": {
+      "cancel": "Durdur",
+      "cancelHint": "Çalışan yedekleme/geri yükleme işini durdur"
     },
     "confirm": {
       "restore": "#{id} yedeği \"{database}\" veritabanına geri yüklenecek. Mevcut nesnelerle çakışabilir. Bu işlem DANGEROUS seviyesindedir.",

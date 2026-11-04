@@ -1,4 +1,11 @@
 {
+  "op": {
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "stopped": "Operation stopped",
+    "blocked": "The operation is blocked by session {pids}.",
+    "killBlockers": "Clear lock and continue"
+  },
   "maintenance": {
     "title": "Database Maintenance",
     "subtitle": "Run VACUUM, ANALYZE and REINDEX with a preview and confirmation",
@@ -61,6 +68,10 @@
       "neverAnalyzed": "Never analyzed",
       "autovacuumWorkers": "Autovacuum workers"
     },
+    "filter": {
+      "all": "All",
+      "label": "Filter by status"
+    },
     "table": {
       "title": "Table maintenance status",
       "subtitle": "Dead tuple ratio with VACUUM and ANALYZE history",
@@ -72,7 +83,9 @@
       "lastVacuum": "Last VACUUM",
       "lastAnalyze": "Last ANALYZE",
       "emptyTitle": "No tables found",
-      "emptyHint": "This database has no tables yet."
+      "emptyHint": "This database has no tables yet.",
+      "noMatchTitle": "No tables match the filter",
+      "noMatchHint": "Try setting the status filter back to \"All\"."
     },
     "batch": {
       "selected": "Selected: {count}",
@@ -83,6 +96,7 @@
       "targetsHint": "VACUUM runs on the selected tables. FULL / ANALYZE / FREEZE come from the VACUUM tab.",
       "andMore": "+{count} more tables",
       "apply": "VACUUM selected tables",
+      "stop": "Stop",
       "running": "Applying · {done}/{total}",
       "noSelection": "Select at least one table from the list first.",
       "confirmTitle": "Run VACUUM on {count} tables?",
@@ -94,7 +108,9 @@
       "statusRunning": "Running",
       "statusOk": "Completed",
       "statusFailed": "Failed",
+      "statusStopped": "Stopped",
       "summary": "{ok} completed · {failed} failed",
+      "stoppedToast": "Run stopped · {ok} completed · {failed} failed",
       "clearResults": "Close"
     }
   },
@@ -112,7 +128,8 @@
       "queued": "Queued",
       "running": "Running",
       "done": "Finished",
-      "failed": "Failed"
+      "failed": "Failed",
+      "cancelled": "Stopped"
     },
     "toast": {
       "backupQueued": "Backup job started",
@@ -121,7 +138,13 @@
       "restoreFailed": "Could not start the restore",
       "downloadPreparing": "Preparing file...",
       "downloadStarted": "Download started",
-      "downloadFailed": "Download failed"
+      "downloadFailed": "Download failed",
+      "cancelQueued": "Job stopped",
+      "cancelFailed": "Could not stop the job"
+    },
+    "actions": {
+      "cancel": "Stop",
+      "cancelHint": "Stop the running backup/restore job"
     },
     "confirm": {
       "restore": "Backup #{id} will be restored into \"{database}\". It may conflict with existing objects. This is a DANGEROUS action.",

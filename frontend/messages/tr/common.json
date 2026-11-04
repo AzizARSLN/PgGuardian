@@ -185,6 +185,7 @@
     "batchConfirmNameDesc": "Devam etmek için etkilenecek hedef sayısını ({count}) yazın.",
     "batchApplied": "Toplu işlem tamamlandı",
     "batchSummary": "{ok} tamamlandı · {failed} hatalı",
+    "batchStopped": "İşlem durduruldu · {ok} tamamlandı · {failed} hatalı",
     "batchResultsTitle": "Toplu öneri sonuçları",
     "batchResultsHint": "İşlem uygulanan hedefler ve komut sonuçları",
     "batchProgress": "{done}/{total} tamamlandı",
@@ -197,6 +198,7 @@
     "batchStatusRunning": "Çalışıyor",
     "batchStatusOk": "Tamamlandı",
     "batchStatusFailed": "Hatalı",
+    "batchStatusStopped": "Durduruldu",
     "dropIndexConfirm": "Bu işlem geri alınamaz; index kalıcı olarak kaldırılır. Kısıtı (PK/UNIQUE) destekleyen indexler bu yöntemle silinemez."
   },
   "table": {
