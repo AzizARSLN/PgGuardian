@@ -234,6 +234,23 @@
       "search": "Sequence ara..."
     }
   },
+  "queryInsight": {
+    "title": "Sorgu analizi",
+    "subtitle": "Bu sorgunun plan maliyeti ve maliyeti düşüren sorgu değişikliği",
+    "openHint": "Sorgu analizini aç",
+    "wait": "Wait event",
+    "seconds": "{value} sn",
+    "costTitle": "Plan maliyeti",
+    "noCost": "Bu sorgu için plan alınamadı; maliyet hesaplanamadı.",
+    "currentPlanCost": "mevcut plan maliyeti",
+    "costHint": "önerilen sorgunun plan maliyeti",
+    "cheaper": "%{percent} daha ucuz",
+    "costlier": "%{percent} daha pahalı",
+    "suggestionTitle": "Sorgu değişikliği önerisi",
+    "noSuggestion": "Maliyeti düşürecek güvenli bir sorgu değişikliği bulunamadı.",
+    "findingsTitle": "Bulgular",
+    "analyzing": "Sorgu analiz ediliyor..."
+  },
   "liveQueries": {
     "title": "Canlı Sorgular",
     "subtitle": "Çalışan sorguları izleyin; gerekirse iptal edin veya sonlandırın",

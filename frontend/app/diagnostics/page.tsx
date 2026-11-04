@@ -75,6 +75,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useConfirm, type ConfirmOptions } from "@/lib/hooks/useConfirm";
+import {
+  QueryInsightDialog,
+  type QueryInsightTarget,
+} from "@/components/query-insight/query-insight-dialog";
 import { formatBytes } from "@/lib/utils";
 import { useI18n, useT, type TFunction } from "@/lib/i18n";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
@@ -683,6 +687,13 @@ export default function DiagnosticsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("findings");
   const [connGroupBy, setConnGroupBy] = useState<ConnGroupKey | "none">("none");
   const [connBatch, setConnBatch] = useState<ConnBatchState | null>(null);
+  const [insightTarget, setInsightTarget] = useState<QueryInsightTarget | null>(null);
+
+  // Shared cost/advice panel: any pid row can open the same dialog.
+  const openInsight = useCallback((row: QueryInfo) => {
+    if (!row.query) return;
+    setInsightTarget({ ...row, query: row.query });
+  }, []);
 
   // Only the visible tab polls, so the heavier catalog reports are not hit in the background.
   const poll = (tab: TabId) => (autoRefresh && activeTab === tab ? pollInterval : false);
@@ -1084,7 +1095,14 @@ export default function DiagnosticsPage() {
         accessorKey: "pid",
         header: () => "PID",
         cell: ({ row }) => (
-          <code className={`${METRIC} font-semibold text-info`}>{row.original.pid}</code>
+          <button
+            type="button"
+            onClick={() => openInsight(row.original)}
+            title={t("queryInsight.openHint")}
+            className={`${METRIC} font-semibold text-info underline-offset-2 hover:underline`}
+          >
+            {row.original.pid}
+          </button>
         ),
       },
       {
@@ -1133,7 +1151,7 @@ export default function DiagnosticsPage() {
         ),
       },
     ],
-    [t]
+    [t, openInsight]
   );
 
   const lockCols = useMemo<ColumnDef<LockInfo>[]>(
@@ -1808,6 +1826,8 @@ export default function DiagnosticsPage() {
           />
         </TabsContent>
       </Tabs>
+
+      <QueryInsightDialog target={insightTarget} onClose={() => setInsightTarget(null)} />
     </div>
   );
 }

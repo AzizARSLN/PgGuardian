@@ -47,6 +47,7 @@ export const qk = {
     format: () => ["sql", "format"] as const,
     explain: () => ["sql", "explain"] as const,
     execute: () => ["sql", "execute"] as const,
+    advise: (sql: string) => ["sql", "advise", sql] as const,
   },
 
   toolkit: {

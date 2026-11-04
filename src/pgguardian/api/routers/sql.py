@@ -27,6 +27,7 @@ from pgguardian.sqlexec.classifier import (
 )
 from pgguardian.sqlexec.executor import DEFAULT_MAX_ROWS, HARD_MAX_ROWS, SqlResult, run_sql
 from pgguardian.sqlexec.formatter import format_sql
+from pgguardian.statements.insight import build_insight
 
 router = APIRouter(prefix="/api/v1/sql", tags=["sql"])
 
@@ -119,6 +120,28 @@ def explain_sql(
             val = next(iter(row.values())) if isinstance(row, dict) else row[0]
             return {"plan": val, "analyze": body.analyze}
         return {"plan": [], "analyze": body.analyze}
+
+
+class SqlAdviseRequest(BaseModel):
+    """Analyse a raw read statement: plan cost and cheaper rewrites (read-only)."""
+
+    sql: str = Field(description="Read statement to analyse.")
+    search_path: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/advise")
+def advise_sql(
+    body: SqlAdviseRequest,
+    client: DbClient = Depends(resolve_client),
+) -> dict:
+    """EXPLAIN a raw statement and suggest cost-lowering rewrites (read-only).
+
+    Used by screens that only hold SQL text (active/long-running queries, the
+    SQL editor) and share the same cost/suggestion payload as ``/statements``.
+    """
+    with mapped_errors(client.settings):
+        _, version = client.ping()
+        return build_insight(client, body.sql, version=version, search_path=body.search_path)
 
 
 @router.post("", response_model=SqlResult | DryRunResult)

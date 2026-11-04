@@ -234,6 +234,23 @@
       "search": "Search sequence..."
     }
   },
+  "queryInsight": {
+    "title": "Query analysis",
+    "subtitle": "This query's plan cost and the cheaper rewrite that lowers it",
+    "openHint": "Open query analysis",
+    "wait": "Wait event",
+    "seconds": "{value} s",
+    "costTitle": "Plan cost",
+    "noCost": "No plan for this query; the cost could not be computed.",
+    "currentPlanCost": "current plan cost",
+    "costHint": "suggested plan cost",
+    "cheaper": "{percent}% cheaper",
+    "costlier": "{percent}% costlier",
+    "suggestionTitle": "Query change suggestion",
+    "noSuggestion": "No safe rewrite that lowers the cost was found.",
+    "findingsTitle": "Findings",
+    "analyzing": "Analysing the query..."
+  },
   "liveQueries": {
     "title": "Live Queries",
     "subtitle": "Watch running queries; cancel or terminate them when needed",
