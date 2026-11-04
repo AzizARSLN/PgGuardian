@@ -121,6 +121,8 @@
       "loading": "Loading…",
       "empty": "No tables found in this schema.",
       "summary": "{tables} tables · {size}",
+      "indexSizeTotal": "Total index size",
+      "unusedSizeTotal": "Unused index size",
       "columns": {
         "table": "Table",
         "total": "Total",

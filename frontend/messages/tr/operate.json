@@ -121,6 +121,8 @@
       "loading": "Yükleniyor…",
       "empty": "Bu şemada tablo bulunamadı.",
       "summary": "{tables} tablo · {size}",
+      "indexSizeTotal": "Toplam indeks boyutu",
+      "unusedSizeTotal": "Kullanılmayan indeks boyutu",
       "columns": {
         "table": "Tablo",
         "total": "Toplam",
