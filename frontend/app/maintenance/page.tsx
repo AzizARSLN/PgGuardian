@@ -6,6 +6,8 @@ import { useForm } from "react-hook-form";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Database,
   Filter,
   ListChecks,
@@ -75,6 +77,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
 const REPORT_LIMIT = 5000;
+/** Rows per page in the table maintenance list; keeps the grid responsive. */
+const TABLE_PAGE_SIZE = 250;
 
 const CELL = "px-2 py-1.5 text-xs";
 const HEAD = "h-8 px-2 text-xs";
@@ -196,6 +200,7 @@ export default function MaintenancePage() {
   const [tab, setTab] = useState("vacuum");
   // Only a status filter is offered, per request: OK / WARNING / CRITICAL.
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [pageIndex, setPageIndex] = useState(0);
   const op = useOpControl();
   // The batch run loops over many tables, so it tracks its own operation.
   const batchOp = useOpControl();
@@ -396,6 +401,16 @@ export default function MaintenancePage() {
         : tables.filter((row) => row.status === statusFilter),
     [tables, statusFilter]
   );
+
+  const pageCount = Math.max(1, Math.ceil(visibleTables.length / TABLE_PAGE_SIZE));
+  const pagedTables = useMemo(
+    () => visibleTables.slice(pageIndex * TABLE_PAGE_SIZE, (pageIndex + 1) * TABLE_PAGE_SIZE),
+    [visibleTables, pageIndex]
+  );
+  // Keep the page index valid when the filter shrinks the list.
+  useEffect(() => {
+    setPageIndex((current) => (current > pageCount - 1 ? pageCount - 1 : current));
+  }, [pageCount]);
 
   const runningLabel = (
     <>
@@ -956,7 +971,10 @@ export default function MaintenancePage() {
             {tables.length > 0 && (
               <Select
                 value={statusFilter}
-                onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+                onValueChange={(value) => {
+                  setStatusFilter(value as StatusFilter);
+                  setPageIndex(0);
+                }}
               >
                 <SelectTrigger
                   className="h-7 w-[150px] text-xs"
@@ -1123,7 +1141,7 @@ export default function MaintenancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleTables.map((row) => (
+                {pagedTables.map((row) => (
                   <TableRow
                     key={tableKey(row)}
                     data-state={selected.has(tableKey(row)) ? "selected" : undefined}
@@ -1169,6 +1187,44 @@ export default function MaintenancePage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+        {visibleTables.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5">
+            <span className="font-mono text-xs text-muted-foreground">
+              {t("maintenance.pagination.summary", {
+                page: formatNumber(pageIndex + 1),
+                pages: formatNumber(pageCount),
+                total: formatNumber(visibleTables.length),
+              })}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">
+                {t("maintenance.pagination.pageSize", { size: formatNumber(TABLE_PAGE_SIZE) })}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+                disabled={pageIndex === 0}
+              >
+                <ChevronLeft className="mr-1 h-3 w-3" />
+                {t("maintenance.pagination.previous")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}
+                disabled={pageIndex >= pageCount - 1}
+              >
+                {t("maintenance.pagination.next")}
+                <ChevronRight className="ml-1 h-3 w-3" />
+              </Button>
+            </div>
           </div>
         )}
       </div>
