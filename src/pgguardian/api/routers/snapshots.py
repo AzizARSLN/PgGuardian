@@ -21,10 +21,10 @@ def list_snapshots(
     profile: str | None = None,
     server: str | None = None,
     database: str | None = None,
-    limit: int = 50,
+    limit: int = 5000,
 ) -> list[Snapshot]:
     """Newest-first snapshots, filterable by profile, server or database."""
-    return _store().list(profile=profile, server=server, database=database, limit=min(limit, 1000))
+    return _store().list(profile=profile, server=server, database=database, limit=min(limit, 5000))
 
 
 @router.get("/latest", response_model=Snapshot)

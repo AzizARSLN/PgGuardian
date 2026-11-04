@@ -55,58 +55,58 @@ def get_diagnose(client: DbClient = Depends(resolve_client)) -> list[DiagnosticF
 
 @router.get("/connections", response_model=ConnectionReport)
 def get_connections(
-    limit: int = 20, client: DbClient = Depends(resolve_client)
+    limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> ConnectionReport:
     """Connection states, usage and waiting backends."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return connections_diag.collect_connections(client, limit=min(limit, 500))
+        return connections_diag.collect_connections(client, limit=min(limit, 5000))
 
 
 @router.get("/queries/active", response_model=QueryReport)
-def get_active_queries(limit: int = 20, client: DbClient = Depends(resolve_client)) -> QueryReport:
+def get_active_queries(limit: int = 5000, client: DbClient = Depends(resolve_client)) -> QueryReport:
     """Currently active queries."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return queries_diag.collect_active_queries(client, limit=min(limit, 500))
+        return queries_diag.collect_active_queries(client, limit=min(limit, 5000))
 
 
 @router.get("/queries/sessions")
-def get_sessions(limit: int = 500, client: DbClient = Depends(resolve_client)) -> dict:
+def get_sessions(limit: int = 5000, client: DbClient = Depends(resolve_client)) -> dict:
     """Every backend grouped by the UI per state, with client host, IP and application."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return queries_diag.collect_sessions(client, limit=min(limit, 2000))
+        return queries_diag.collect_sessions(client, limit=min(limit, 5000))
 
 
 @router.get("/queries/long-running", response_model=QueryReport)
 def get_long_running_queries(
-    min_seconds: int = 60, limit: int = 20, client: DbClient = Depends(resolve_client)
+    min_seconds: int = 60, limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> QueryReport:
     """Queries running longer than ``min_seconds``."""
     _preflight(client)
     with mapped_errors(client.settings):
         return queries_diag.collect_long_running_queries(
-            client, min_seconds=min_seconds, limit=min(limit, 500)
+            client, min_seconds=min_seconds, limit=min(limit, 5000)
         )
 
 
 @router.get("/locks", response_model=LockReport)
-def get_locks(limit: int = 20, client: DbClient = Depends(resolve_client)) -> LockReport:
+def get_locks(limit: int = 5000, client: DbClient = Depends(resolve_client)) -> LockReport:
     """Lock summary, blocking pairs and chains (read-only)."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return locks_diag.collect_locks(client, limit=min(limit, 500))
+        return locks_diag.collect_locks(client, limit=min(limit, 5000))
 
 
 @router.get("/storage", response_model=StorageReport)
 def get_storage(
-    section: str = "all", limit: int = 20, client: DbClient = Depends(resolve_client)
+    section: str = "all", limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> StorageReport:
     """Database/table/index sizes (``section``: all, databases, tables, indexes)."""
     _preflight(client)
     with mapped_errors(client.settings):
-        report = storage_diag.collect_storage(client, limit=min(limit, 500))
+        report = storage_diag.collect_storage(client, limit=min(limit, 5000))
     if section == "databases":
         return StorageReport(databases=report.databases, limit=report.limit)
     if section == "tables":
@@ -117,26 +117,26 @@ def get_storage(
 
 
 @router.get("/indexes", response_model=IndexReport)
-def get_indexes(limit: int = 20, client: DbClient = Depends(resolve_client)) -> IndexReport:
+def get_indexes(limit: int = 5000, client: DbClient = Depends(resolve_client)) -> IndexReport:
     """Index usage and potentially-unused candidates."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return indexes_diag.collect_indexes(client, limit=min(limit, 500))
+        return indexes_diag.collect_indexes(client, limit=min(limit, 5000))
 
 
 @router.get("/maintenance", response_model=MaintenanceReport)
 def get_maintenance(
-    limit: int = 20, client: DbClient = Depends(resolve_client)
+    limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> MaintenanceReport:
     """VACUUM/ANALYZE state per table."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return maintenance_diag.collect_maintenance(client, limit=min(limit, 500))
+        return maintenance_diag.collect_maintenance(client, limit=min(limit, 5000))
 
 
 @router.get("/report")
 def get_report(
-    limit: int = 20, profile: str | None = None, client: DbClient = Depends(resolve_client)
+    limit: int = 5000, profile: str | None = None, client: DbClient = Depends(resolve_client)
 ) -> dict:
     """Full aggregated report (same payload as ``pgguardian report --format json``)."""
     _preflight(client)
@@ -148,31 +148,31 @@ def get_report(
             database=client.settings.database,
             username=client.settings.username,
         )
-        return build_report_dict(opts, limit=min(limit, 500), client=client)
+        return build_report_dict(opts, limit=min(limit, 5000), client=client)
 
 
 @router.get("/pg-stat-statements")
 def get_pg_stat_statements(
-    limit: int = 20, client: DbClient = Depends(resolve_client)
+    limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> list[dict]:
     """Top queries from pg_stat_statements (empty if extension not available)."""
     _preflight(client)
     with mapped_errors(client.settings):
-        rows = pgss_diag.collect_pg_stat_statements(client, limit=min(limit, 100))
+        rows = pgss_diag.collect_pg_stat_statements(client, limit=min(limit, 5000))
     return rows
 
 
 @router.get("/bloat")
-def get_bloat(limit: int = 20, client: DbClient = Depends(resolve_client)) -> list[dict]:
+def get_bloat(limit: int = 5000, client: DbClient = Depends(resolve_client)) -> list[dict]:
     """Tables with high dead tuples as bloat indicator (read-only)."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return bloat_diag.collect_bloat(client, limit=min(limit, 100))
+        return bloat_diag.collect_bloat(client, limit=min(limit, 5000))
 
 
 @router.get("/sequences")
-def get_sequences(limit: int = 100, client: DbClient = Depends(resolve_client)) -> list[dict]:
+def get_sequences(limit: int = 5000, client: DbClient = Depends(resolve_client)) -> list[dict]:
     """Sequences with exhaustion percent (read-only)."""
     _preflight(client)
     with mapped_errors(client.settings):
-        return sequences_diag.collect_sequences(client, limit=min(limit, 500))
+        return sequences_diag.collect_sequences(client, limit=min(limit, 5000))

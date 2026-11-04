@@ -39,7 +39,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import { useProfileStore } from "@/store/useProfileStore";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 
-const LIST_LIMIT = 100;
+const LIST_LIMIT = 5000;
 const PRUNE_DAYS = 90;
 const DAY_MS = 24 * 3600 * 1000;
 // The list key varies by profile, so invalidate every variant through its prefix.

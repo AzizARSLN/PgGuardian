@@ -83,7 +83,7 @@ class QueryDef:
     sql: str
     notes: str = ""
     requires_extension: str | None = None
-    max_rows: int = 200
+    max_rows: int = 5000
     params: tuple[ParamDef, ...] = ()
     advice: tuple[AdviceDef, ...] = ()
 
@@ -103,7 +103,7 @@ class CategoryDef:
 # --------------------------------------------------------------------------- #
 
 
-def _limit(default: int = 50, maximum: int = 1000) -> ParamDef:
+def _limit(default: int = 5000, maximum: int = 5000) -> ParamDef:
     """Row cap applied by the statement's ``LIMIT {limit}`` clause."""
     return ParamDef(
         name="limit",
@@ -434,7 +434,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_VACUUM, ADV_VACUUM_FULL, ADV_VACUUM_FREEZE),
     ),
     QueryDef(
@@ -457,7 +457,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_VACUUM,),
     ),
     QueryDef(
@@ -517,7 +517,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_VACUUM_FREEZE,),
     ),
     # ------------------------------------------------------------ statistics
@@ -542,7 +542,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_ANALYZE, ADV_ANALYZE_COPY),
     ),
     QueryDef(
@@ -571,7 +571,7 @@ CATALOG: tuple[QueryDef, ...] = (
                 ("6 hours", "1 day", "3 days", "7 days"),
                 "Son istatistiği bu süreden eski olan tablolar listelenir.",
             ),
-            _limit(50),
+            _limit(),
         ),
         advice=(ADV_ANALYZE,),
     ),
@@ -593,7 +593,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_ANALYZE,),
     ),
     # --------------------------------------------------------------- indexes
@@ -629,7 +629,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         notes=(
             "Kısıtı (PK/UNIQUE) destekleyen indexler listelenmez: bunlar DROP INDEX ile "
             "kaldırılamaz. Yabancı anahtarın ihtiyaç duyduğu index'ler de burada görünebilir; "
@@ -696,7 +696,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         notes=(
             "Sıralamada en az kullanılan (tarama = 0) ve en küçük index üstte gelir; "
             "genellikle kaldırılacak kopya budur."
@@ -727,7 +727,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_REINDEX_CONCURRENTLY, ADV_DROP_INDEX),
     ),
     QueryDef(
@@ -747,7 +747,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_REINDEX_CONCURRENTLY,),
     ),
     QueryDef(
@@ -778,7 +778,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
     ),
     # ------------------------------------------------------------ parameters
     QueryDef(
@@ -859,7 +859,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(100),),
+        params=(_limit(),),
     ),
     # ------------------------------------------------------------ statements
     QueryDef(
@@ -883,7 +883,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(25),),
+        params=(_limit(),),
         requires_extension="pg_stat_statements",
     ),
     QueryDef(
@@ -903,7 +903,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(25),),
+        params=(_limit(),),
         requires_extension="pg_stat_statements",
         advice=(ADV_WORK_MEM,),
     ),
@@ -926,7 +926,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_min_calls(5), _limit(25)),
+        params=(_min_calls(5), _limit()),
         requires_extension="pg_stat_statements",
     ),
     QueryDef(
@@ -948,7 +948,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(25),),
+        params=(_limit(),),
         requires_extension="pg_stat_statements",
     ),
     QueryDef(
@@ -1205,7 +1205,7 @@ CATALOG: tuple[QueryDef, ...] = (
                 ("1 minute", "5 minutes", "15 minutes", "1 hour"),
                 "Bu süreden uzun süredir boşta bekleyen oturumlar listelenir.",
             ),
-            _limit(50),
+            _limit(),
         ),
         advice=(ADV_CANCEL_BACKEND, ADV_TERMINATE_BACKEND),
     ),
@@ -1421,7 +1421,7 @@ CATALOG: tuple[QueryDef, ...] = (
             LIMIT {limit}
             """
         ),
-        params=(_limit(50),),
+        params=(_limit(),),
         advice=(ADV_VACUUM_FULL,),
     ),
     QueryDef(

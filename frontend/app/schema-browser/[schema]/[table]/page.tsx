@@ -68,7 +68,7 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 
 /** Hard cap enforced by GET /tables/{schema}/{table}/export. */
 const EXPORT_LIMIT = 10000;
-const PREVIEW_LIMIT = 100;
+const PREVIEW_LIMIT = 5000;
 
 type ResultRow = unknown[];
 

@@ -81,6 +81,8 @@ import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 type PageSize = 10 | 25 | 50;
 
 const LONG_RUNNING_SECONDS = 300;
+// Default row count pulled per diagnostics list tab.
+const LIST_LIMIT = 5000;
 const METRIC = "font-mono tabular-nums";
 const PRE = "font-mono text-[11px] text-muted-foreground whitespace-pre-wrap overflow-hidden";
 
@@ -448,48 +450,48 @@ export default function DiagnosticsPage() {
     refetchInterval: poll("findings"),
   });
   const connQ = useQuery({
-    queryKey: qk.diagnostics.connections(100),
-    queryFn: () => endpoints.getConnections(100),
+    queryKey: qk.diagnostics.connections(LIST_LIMIT),
+    queryFn: () => endpoints.getConnections(LIST_LIMIT),
     refetchInterval: poll("connections"),
   });
   const aqQ = useQuery({
-    queryKey: qk.diagnostics.queries.active(100),
-    queryFn: () => endpoints.getActiveQueries(100),
+    queryKey: qk.diagnostics.queries.active(LIST_LIMIT),
+    queryFn: () => endpoints.getActiveQueries(LIST_LIMIT),
     refetchInterval: poll("active"),
   });
   const lrQ = useQuery({
-    queryKey: qk.diagnostics.queries.longRunning(LONG_RUNNING_SECONDS, 100),
-    queryFn: () => endpoints.getLongRunningQueries(LONG_RUNNING_SECONDS, 100),
+    queryKey: qk.diagnostics.queries.longRunning(LONG_RUNNING_SECONDS, LIST_LIMIT),
+    queryFn: () => endpoints.getLongRunningQueries(LONG_RUNNING_SECONDS, LIST_LIMIT),
     refetchInterval: poll("long"),
   });
   const locksQ = useQuery({
-    queryKey: qk.diagnostics.locks(100),
-    queryFn: () => endpoints.getLocks(100),
+    queryKey: qk.diagnostics.locks(LIST_LIMIT),
+    queryFn: () => endpoints.getLocks(LIST_LIMIT),
     refetchInterval: poll("locks"),
   });
   const storageQ = useQuery({
-    queryKey: qk.diagnostics.storage("tables", 200),
-    queryFn: () => endpoints.getStorage("tables", 200),
+    queryKey: qk.diagnostics.storage("tables", LIST_LIMIT),
+    queryFn: () => endpoints.getStorage("tables", LIST_LIMIT),
     refetchInterval: poll("storage"),
   });
   const idxQ = useQuery({
-    queryKey: qk.diagnostics.indexes(200),
-    queryFn: () => endpoints.getIndexes(200),
+    queryKey: qk.diagnostics.indexes(LIST_LIMIT),
+    queryFn: () => endpoints.getIndexes(LIST_LIMIT),
     refetchInterval: poll("indexes"),
   });
   const maintQ = useQuery({
-    queryKey: qk.diagnostics.maintenance(200),
-    queryFn: () => endpoints.getMaintenance(200),
+    queryKey: qk.diagnostics.maintenance(LIST_LIMIT),
+    queryFn: () => endpoints.getMaintenance(LIST_LIMIT),
     refetchInterval: poll("maintenance"),
   });
   const pgssQ = useQuery({
-    queryKey: qk.diagnostics.pgStatStatements(100),
-    queryFn: () => endpoints.getPgStatStatements(100),
+    queryKey: qk.diagnostics.pgStatStatements(LIST_LIMIT),
+    queryFn: () => endpoints.getPgStatStatements(LIST_LIMIT),
     refetchInterval: poll("pgss"),
   });
   const seqQ = useQuery({
-    queryKey: qk.diagnostics.sequences(500),
-    queryFn: () => endpoints.getSequences(500),
+    queryKey: qk.diagnostics.sequences(LIST_LIMIT),
+    queryFn: () => endpoints.getSequences(LIST_LIMIT),
     refetchInterval: poll("sequences"),
   });
 

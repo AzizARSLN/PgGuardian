@@ -57,7 +57,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // VACUUM and REINDEX outlive the default 30s client timeout on large tables.
 const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
-const REPORT_LIMIT = 100;
+const REPORT_LIMIT = 5000;
 
 const CELL = "px-2 py-1.5 text-xs";
 const HEAD = "h-8 px-2 text-xs";

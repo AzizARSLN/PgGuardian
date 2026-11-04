@@ -39,7 +39,7 @@ import { qk } from '@/lib/api/queryKeys';
 import { useI18n, useT } from '@/lib/i18n';
 import { cn, formatBytes } from '@/lib/utils';
 
-const TABLE_LIMIT = 1000;
+const TABLE_LIMIT = 5000;
 
 function tableHref(schema: string, table: string): string {
   return `/schema-browser/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;
@@ -177,15 +177,15 @@ export default function SchemaBrowserPage() {
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="space-y-3">
-      <div>
+    <div className="flex flex-col gap-3 lg:h-[calc(100vh-5rem)]">
+      <div className="shrink-0">
         <h1 className="text-lg font-semibold text-foreground">{t('schemaBrowser.title')}</h1>
         <p className="text-xs text-muted-foreground">{t('schemaBrowser.subtitle')}</p>
       </div>
 
-      <div className="grid grid-cols-12 gap-3">
-        <Card className="col-span-12 flex flex-col overflow-hidden lg:col-span-3">
-          <CardHeader className="border-b border-border !px-3 !py-2">
+      <div className="grid min-h-0 flex-1 grid-cols-12 gap-3">
+        <Card className="col-span-12 flex min-h-0 flex-col overflow-hidden lg:col-span-3">
+          <CardHeader className="shrink-0 border-b border-border !px-3 !py-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Database className="h-3.5 w-3.5 text-info" />
               {t('schemaBrowser.schemas.title')}
@@ -197,7 +197,7 @@ export default function SchemaBrowserPage() {
               })}
             </CardDescription>
           </CardHeader>
-          <CardContent className="max-h-[720px] flex-1 space-y-2 overflow-y-auto !p-1.5">
+          <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto !p-1.5">
             {schemasQuery.isLoading && (
               <div className="p-2 text-xs text-muted-foreground">{t('common.loading')}</div>
             )}
@@ -241,8 +241,8 @@ export default function SchemaBrowserPage() {
           </CardContent>
         </Card>
 
-        <div className="col-span-12 flex flex-col gap-3 lg:col-span-9">
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="col-span-12 flex min-h-0 flex-col gap-3 lg:col-span-9">
+          <div className="grid shrink-0 grid-cols-2 gap-2 md:grid-cols-4">
             <Stat
               label={t('schemaBrowser.stats.tables')}
               value={formatNumber(tablesQuery.data?.length ?? 0)}
@@ -252,8 +252,8 @@ export default function SchemaBrowserPage() {
             <Stat label={t('schemaBrowser.stats.deadRows')} value={formatNumber(totals.dead)} />
           </div>
 
-          <Card className="flex flex-col overflow-hidden">
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border !px-3 !py-2">
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-b border-border !px-3 !py-2">
               <div>
                 <CardTitle className="flex items-center gap-2 text-sm">
                   <Table2 className="h-3.5 w-3.5 text-info" />
@@ -272,13 +272,13 @@ export default function SchemaBrowserPage() {
                 </Badge>
               )}
             </CardHeader>
-            <CardContent className="flex flex-1 flex-col overflow-hidden !p-0">
+            <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden !p-0">
               {tablesQuery.isError ? (
-                <div className="p-2">
+                <div className="shrink-0 p-2">
                   <InlineError error={tablesQuery.error} onRetry={() => tablesQuery.refetch()} />
                 </div>
               ) : (
-                <div className="flex-1 overflow-x-auto">
+                <div className="min-h-0 flex-1 [&>div]:h-full">
                   <UITable>
                     <TableHeader className="sticky top-0 z-10 bg-card">
                       {table.getHeaderGroups().map((hg) => (
@@ -345,7 +345,7 @@ export default function SchemaBrowserPage() {
                 </div>
               )}
               {table.getPageCount() > 1 && (
-                <div className="flex items-center justify-between border-t border-border px-3 py-1.5">
+                <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-1.5">
                   <div className="font-mono text-xs text-muted-foreground">
                     {t('schemaBrowser.pagination.page', {
                       page: formatNumber(table.getState().pagination.pageIndex + 1),

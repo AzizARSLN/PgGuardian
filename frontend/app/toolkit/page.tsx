@@ -18,6 +18,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChartColumn,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -27,7 +28,9 @@ import {
   Download,
   HardDrive,
   Info,
+  ListChecks,
   ListOrdered,
+  Loader2,
   Lock,
   Play,
   Puzzle,
@@ -40,28 +43,28 @@ import {
   SlidersHorizontal,
   Table2,
   Users,
+  X,
+  XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/types";
 import type {
-  AnalyzeRequest,
   BackendActionResult,
-  DropIndexRequest,
   DryRunResult,
   MaintenanceActionResult,
-  ReindexRequest,
   ToolkitAdvice,
   ToolkitCell,
   ToolkitParam,
   ToolkitQuery,
   ToolkitRisk,
   ToolkitRunResult,
-  VacuumRequest,
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
@@ -99,6 +102,70 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
 };
 
 const PRE = "rounded-md bg-muted/50 p-2 font-mono text-[11px] whitespace-pre-wrap break-words";
+
+/** Long mutations (VACUUM/REINDEX) routinely outlive the default request timeout. */
+const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
+/** Cap the SQL preview shown in the batch confirmation so a big selection stays fast. */
+const BATCH_PREVIEW_LIMIT = 10;
+
+type AdviceBatchStatus = "pending" | "running" | "ok" | "failed";
+
+interface AdviceBatchRow {
+  key: string;
+  label: string;
+  status: AdviceBatchStatus;
+  detail: string;
+}
+
+type AdviceResult = DryRunResult | MaintenanceActionResult | BackendActionResult;
+
+/** Route one advice + resolved body to the guarded backend endpoint. */
+function runAdviceRequest(
+  advice: ToolkitAdvice,
+  body: Record<string, unknown>,
+  options: { timeout?: number; skipToast?: boolean } = {}
+): Promise<AdviceResult> {
+  switch (advice.action) {
+    case "vacuum":
+      return api.post<AdviceResult>("/maintenance/vacuum", body, options);
+    case "analyze":
+      return api.post<AdviceResult>("/maintenance/analyze", body, options);
+    case "reindex":
+      return api.post<AdviceResult>("/maintenance/reindex", body, options);
+    case "cancel":
+      return api.post<AdviceResult>(`/queries/${body.pid}/cancel`, { confirm: true }, options);
+    case "terminate":
+      return api.post<AdviceResult>(
+        `/queries/${body.pid}/terminate`,
+        { confirm: true, confirm_name: String(body.pid) },
+        options
+      );
+    case "drop_index":
+      return api.post<AdviceResult>(
+        "/maintenance/drop-index",
+        { ...body, confirm_name: String(body.index_name) },
+        options
+      );
+    default:
+      throw new Error("unsupported action");
+  }
+}
+
+/** Human label for a batch target row (prefers schema.table when present). */
+function rowLabel(row: ResultRow, columns: string[]): string {
+  const schema = columns.indexOf("schemaname");
+  const table = columns.indexOf("tablo");
+  if (table >= 0) {
+    const prefix = schema >= 0 && row.values[schema] ? `${row.values[schema]}.` : "";
+    return `${prefix}${row.values[table]}`;
+  }
+  const parts = columns
+    .slice(0, 2)
+    .map((_, i) => row.values[i])
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map((value) => String(value));
+  return parts.join(" · ") || `#${row.index + 1}`;
+}
 
 /** Default values for a query's declared parameters (used before any edit). */
 function defaultParamValues(query: ToolkitQuery): Record<string, string> {
@@ -279,34 +346,53 @@ type PageSize = 10 | 25 | 50;
 function ResultTable({
   result,
   loading,
-  selectedIndex,
-  onSelect,
+  selected,
+  onToggle,
+  onToggleAll,
 }: {
   result: ToolkitRunResult | null;
   loading: boolean;
-  selectedIndex: number | null;
-  onSelect: (index: number | null) => void;
+  /** Ordered row indices currently selected for batch advice. */
+  selected: number[];
+  onToggle: (index: number) => void;
+  onToggleAll: (indices: number[], select: boolean) => void;
 }) {
   const t = useT();
   const { formatNumber } = useI18n();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
 
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
   const rows = useMemo<ResultRow[]>(
     () => (result?.rows ?? []).map((values, index) => ({ index, values })),
     [result]
   );
 
-  const columns = useMemo<ColumnDef<ResultRow>[]>(
-    () =>
-      (result?.columns ?? []).map((name, i) => ({
-        id: `c${i}`,
-        accessorFn: (row: ResultRow) => row.values[i],
-        header: () => name,
-        cell: ({ getValue }) => renderCell(getValue() as ToolkitCell),
-      })),
-    [result]
-  );
+  const columns = useMemo<ColumnDef<ResultRow>[]>(() => {
+    const selectColumn: ColumnDef<ResultRow> = {
+      id: "__select",
+      header: () => null,
+      enableSorting: false,
+      enableGlobalFilter: false,
+      size: 32,
+      cell: ({ row }) => (
+        <Checkbox
+          aria-label={t("toolkit.selectRow")}
+          checked={selectedSet.has(row.original.index)}
+          onCheckedChange={() => onToggle(row.original.index)}
+          onClick={(event) => event.stopPropagation()}
+        />
+      ),
+    };
+    const dataColumns: ColumnDef<ResultRow>[] = (result?.columns ?? []).map((name, i) => ({
+      id: `c${i}`,
+      accessorFn: (row: ResultRow) => row.values[i],
+      header: () => name,
+      cell: ({ getValue }) => renderCell(getValue() as ToolkitCell),
+    }));
+    return [selectColumn, ...dataColumns];
+  }, [result, selectedSet, onToggle, t]);
 
   const table = useReactTable({
     data: rows,
@@ -326,6 +412,10 @@ function ResultTable({
   const { pageIndex, pageSize } = table.getState().pagination;
   const pageCount = table.getPageCount();
   const filteredCount = table.getFilteredRowModel().rows.length;
+  const filteredIndices = table.getFilteredRowModel().rows.map((row) => row.original.index);
+  const allFilteredSelected =
+    filteredIndices.length > 0 && filteredIndices.every((index) => selectedSet.has(index));
+  const someFilteredSelected = filteredIndices.some((index) => selectedSet.has(index));
 
   if (loading) {
     return (
@@ -369,6 +459,22 @@ function ResultTable({
               <TableRow key={headerGroup.id} className="hover:bg-transparent">
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
+                  if (header.column.id === "__select") {
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className="h-8 w-8 whitespace-nowrap px-2 py-1.5 text-xs font-semibold"
+                      >
+                        <Checkbox
+                          aria-label={t("toolkit.selectAll")}
+                          checked={
+                            allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false
+                          }
+                          onCheckedChange={(value) => onToggleAll(filteredIndices, value === true)}
+                        />
+                      </TableHead>
+                    );
+                  }
                   return (
                     <TableHead
                       key={header.id}
@@ -398,11 +504,12 @@ function ResultTable({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows.map((row) => {
-              const isSelected = selectedIndex === row.original.index;
+              const isSelected = selectedSet.has(row.original.index);
               return (
                 <TableRow
                   key={row.id}
-                  onClick={() => onSelect(isSelected ? null : row.original.index)}
+                  data-state={isSelected ? "selected" : undefined}
+                  onClick={() => onToggle(row.original.index)}
                   title={t("toolkit.selectHint")}
                   className={cn(
                     "cursor-pointer",
@@ -481,18 +588,27 @@ function AdviceCard({
   advice,
   columns,
   row,
+  selectedCount,
   busy,
+  batchBusy,
   onApply,
+  onApplyBatch,
 }: {
   advice: ToolkitAdvice;
   columns: string[];
   row: ResultRow | null;
+  /** How many result rows are selected (drives the batch action). */
+  selectedCount: number;
   busy: boolean;
+  batchBusy: boolean;
   onApply: (advice: ToolkitAdvice) => void;
+  onApplyBatch: (advice: ToolkitAdvice) => void;
 }) {
   const t = useT();
   const sql = useMemo(() => fillAdviceSql(advice, row, columns), [advice, row, columns]);
   const copyOnly = advice.action === "copy";
+  const batch = selectedCount > 1;
+  const busyAny = busy || batchBusy;
 
   const copySql = async () => {
     try {
@@ -532,12 +648,69 @@ function AdviceCard({
             {t("toolkit.copyOnly")}
           </Badge>
         ) : (
-          <Button size="sm" onClick={() => onApply(advice)} disabled={busy} className="h-7 px-2 text-xs">
-            {busy ? t("toolkit.applying") : t("toolkit.apply")}
-          </Button>
+          <>
+            <Button
+              variant={batch ? "outline" : "default"}
+              size="sm"
+              onClick={() => onApply(advice)}
+              disabled={busyAny || selectedCount === 0}
+              className="h-7 px-2 text-xs"
+            >
+              {busy ? t("toolkit.applying") : t("toolkit.apply")}
+            </Button>
+            {batch && (
+              <Button
+                size="sm"
+                onClick={() => onApplyBatch(advice)}
+                disabled={busyAny}
+                className="h-7 px-2 text-xs"
+              >
+                {batchBusy ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <ListChecks className="mr-1 h-3 w-3" />
+                )}
+                {t("toolkit.applyToSelected", { count: selectedCount })}
+              </Button>
+            )}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+function AdviceBatchStatusBadge({ status }: { status: AdviceBatchStatus }) {
+  const t = useT();
+  if (status === "ok") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-success">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        {t("toolkit.batchStatusOk")}
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-destructive">
+        <XCircle className="h-3.5 w-3.5" />
+        {t("toolkit.batchStatusFailed")}
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-warning">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {t("toolkit.batchStatusRunning")}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <Loader2 className="h-3.5 w-3.5" />
+      {t("toolkit.batchStatusPending")}
+    </span>
   );
 }
 
@@ -553,7 +726,8 @@ export default function ToolkitPage() {
   const [showSql, setShowSql] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [batchRows, setBatchRows] = useState<AdviceBatchRow[] | null>(null);
   const [result, setResult] = useState<ToolkitRunResult | null>(null);
 
   const catalogQ = useQuery({
@@ -590,18 +764,37 @@ export default function ToolkitPage() {
 
   const currentResult = result && result.id === activeId ? result : null;
   const resultColumns = currentResult?.columns ?? [];
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  // The most recently clicked row drives the single-row advice preview.
+  const focusedIndex = selected.length > 0 ? selected[selected.length - 1] : null;
   const selectedRow: ResultRow | null = useMemo(() => {
-    if (!currentResult || selectedIndex === null) return null;
-    const values = currentResult.rows[selectedIndex];
-    return values ? { index: selectedIndex, values } : null;
-  }, [currentResult, selectedIndex]);
+    if (!currentResult || focusedIndex === null) return null;
+    const values = currentResult.rows[focusedIndex];
+    return values ? { index: focusedIndex, values } : null;
+  }, [currentResult, focusedIndex]);
+  const allRowIndices = useMemo(
+    () => (currentResult?.rows ?? []).map((_, index) => index),
+    [currentResult]
+  );
+
+  const toggleRow = (index: number) =>
+    setSelected((prev) =>
+      prev.includes(index) ? prev.filter((item) => item !== index) : [...prev, index]
+    );
+
+  const toggleAllRows = (indices: number[], select: boolean) =>
+    setSelected((prev) =>
+      select
+        ? Array.from(new Set([...prev, ...indices]))
+        : prev.filter((item) => !indices.includes(item))
+    );
 
   const { mutate: runQuery, isPending: running } = useMutation({
     mutationFn: ({ query, params }: { query: ToolkitQuery; params: Record<string, string> }) =>
       endpoints.runToolkitQuery(query.id, query.max_rows, params),
     onSuccess: (data) => {
       setResult(data);
-      setSelectedIndex(null);
+      setSelected([]);
     },
   });
 
@@ -612,30 +805,7 @@ export default function ToolkitPage() {
     }: {
       advice: ToolkitAdvice;
       body: Record<string, unknown>;
-    }): Promise<DryRunResult | MaintenanceActionResult | BackendActionResult> => {
-      switch (advice.action) {
-        case "vacuum":
-          return endpoints.runVacuum(body as unknown as VacuumRequest);
-        case "analyze":
-          return endpoints.runAnalyze(body as unknown as AnalyzeRequest);
-        case "reindex":
-          return endpoints.runReindex(body as unknown as ReindexRequest);
-        case "cancel":
-          return endpoints.cancelBackend(Number(body.pid), { confirm: true });
-        case "terminate":
-          return endpoints.terminateBackend(Number(body.pid), {
-            confirm: true,
-            confirm_name: String(body.pid),
-          });
-        case "drop_index":
-          return endpoints.dropIndex({
-            ...(body as unknown as DropIndexRequest),
-            confirm_name: String(body.index_name),
-          });
-        default:
-          throw new Error("unsupported action");
-      }
-    },
+    }): Promise<AdviceResult> => runAdviceRequest(advice, body),
     onSuccess: (_data, { advice, body }) => {
       toast.success(t("toolkit.applied"), {
         description: t("toolkit.appliedDesc", {
@@ -648,12 +818,79 @@ export default function ToolkitPage() {
     },
   });
 
+  // One request per selected row: the API is single-scope, so progress is
+  // reported per row to keep a long run over many tables observable.
+  const {
+    mutate: applyAdviceBatch,
+    isPending: applyingBatch,
+    variables: batchVariables,
+  } = useMutation({
+    mutationFn: async ({
+      advice,
+      targets,
+    }: {
+      advice: ToolkitAdvice;
+      targets: ResultRow[];
+    }) => {
+      const patch = (key: string, update: Partial<AdviceBatchRow>) =>
+        setBatchRows((prev) =>
+          prev ? prev.map((row) => (row.key === key ? { ...row, ...update } : row)) : prev
+        );
+
+      setBatchRows(
+        targets.map((row) => ({
+          key: String(row.index),
+          label: rowLabel(row, resultColumns),
+          status: "pending" as AdviceBatchStatus,
+          detail: "",
+        }))
+      );
+
+      let ok = 0;
+      let failed = 0;
+      for (const row of targets) {
+        const key = String(row.index);
+        patch(key, { status: "running" });
+        const { body, missing } = resolveAdviceBody(advice, row, resultColumns);
+        if (!body) {
+          failed += 1;
+          patch(key, { status: "failed", detail: t("toolkit.targetMissing", { field: missing ?? "" }) });
+          continue;
+        }
+        try {
+          const response = await runAdviceRequest(advice, body, {
+            timeout: LONG_ACTION_TIMEOUT_MS,
+            skipToast: true,
+          });
+          ok += 1;
+          const status = "command_status" in response ? response.command_status : "";
+          patch(key, { status: "ok", detail: status ?? "" });
+        } catch (error) {
+          failed += 1;
+          patch(key, {
+            status: "failed",
+            detail: error instanceof Error ? error.message : "",
+          });
+        }
+      }
+      return { ok, failed };
+    },
+    onSuccess: ({ ok, failed }) => {
+      toast.success(t("toolkit.batchApplied"), {
+        description: t("toolkit.batchSummary", { ok, failed }),
+      });
+      queryClient.invalidateQueries({ queryKey: qk.toolkit.all() });
+      if (activeQuery) runQuery({ query: activeQuery, params: paramValues });
+    },
+  });
+
   const selectQuery = (id: string) => {
     const next = queries.find((query) => query.id === id) ?? null;
     setActiveId(id);
     setParamValues(next ? defaultParamValues(next) : {});
     setResult(null);
-    setSelectedIndex(null);
+    setSelected([]);
+    setBatchRows(null);
     setShowSql(false);
     setShowDetails(true);
   };
@@ -691,6 +928,49 @@ export default function ToolkitPage() {
     }
   };
 
+  const handleApplyBatch = async (advice: ToolkitAdvice) => {
+    if (!currentResult) return;
+    const targets = selected
+      .map((index) => ({ index, values: currentResult.rows[index] }))
+      .filter((item): item is { index: number; values: ToolkitCell[] } => Boolean(item.values))
+      .map((item) => ({ index: item.index, values: item.values }));
+
+    if (targets.length === 0) {
+      toast.error(t("toolkit.selectRowFirst"));
+      return;
+    }
+
+    // Show the SQL the API will actually run, bounded so a big selection stays fast.
+    const previews = targets
+      .slice(0, BATCH_PREVIEW_LIMIT)
+      .map((row) => fillAdviceSql(advice, row, resultColumns));
+    const extra =
+      targets.length > BATCH_PREVIEW_LIMIT
+        ? `\n${t("toolkit.andMore", { count: targets.length - BATCH_PREVIEW_LIMIT })}`
+        : "";
+
+    const options: ConfirmOptions = {
+      title: t("toolkit.batchConfirmTitle", { count: targets.length, action: advice.title }),
+      description: `${advice.description}\n\n${t("toolkit.approvalDesc")}${extra}`,
+      sql_preview: previews,
+      risk_level: advice.risk === "DANGEROUS" ? "DANGEROUS" : "MAINTENANCE",
+      confirm_label: t("toolkit.applyToSelected", { count: targets.length }),
+      cancel_label: t("common.cancel"),
+    };
+
+    // Dangerous batch runs need the target count typed back, mirroring single-row safety.
+    if (advice.risk === "DANGEROUS") {
+      options.confirm_name_required = true;
+      options.confirm_name_value = String(targets.length);
+      options.confirm_name_placeholder = String(targets.length);
+      options.confirm_name_description = t("toolkit.batchConfirmNameDesc", { count: targets.length });
+    }
+
+    if (await confirm(options)) {
+      applyAdviceBatch({ advice, targets });
+    }
+  };
+
   const copySql = async () => {
     if (!activeQuery) return;
     try {
@@ -724,6 +1004,8 @@ export default function ToolkitPage() {
   };
 
   const selectedAdviceId = variables?.advice.id ?? null;
+  const batchAdviceId = batchVariables?.advice.id ?? null;
+  const batchDone = batchRows?.filter((row) => row.status === "ok" || row.status === "failed").length ?? 0;
 
   return (
     <div className="space-y-3">
@@ -1061,14 +1343,108 @@ export default function ToolkitPage() {
 
               {(currentResult || running) && (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold text-foreground">{t("toolkit.results")}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-foreground">{t("toolkit.results")}</p>
+                    {currentResult && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="tabular-nums text-[11px] text-muted-foreground">
+                          {t("toolkit.selectedCount", { count: selected.length })}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          onClick={() => toggleAllRows(allRowIndices, true)}
+                          disabled={allRowIndices.length === 0}
+                        >
+                          {t("toolkit.selectAll")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          onClick={() => setSelected([])}
+                          disabled={selected.length === 0}
+                        >
+                          {t("toolkit.clearSelection")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <ResultTable
                     key={currentResult?.id ?? activeQuery.id}
                     result={currentResult}
                     loading={running}
-                    selectedIndex={selectedIndex}
-                    onSelect={setSelectedIndex}
+                    selected={selected}
+                    onToggle={toggleRow}
+                    onToggleAll={toggleAllRows}
                   />
+                </div>
+              )}
+
+              {batchRows && batchRows.length > 0 && (
+                <div className="overflow-hidden rounded-md border border-border bg-card">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+                    <div>
+                      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <ListChecks className="h-3.5 w-3.5 text-success" />
+                        {t("toolkit.batchResultsTitle")}
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        {t("toolkit.batchResultsHint")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" size="sm" className="font-mono tabular-nums">
+                        {applyingBatch
+                          ? t("toolkit.batchRunning", { done: batchDone, total: batchRows.length })
+                          : t("toolkit.batchProgress", { done: batchDone, total: batchRows.length })}
+                      </Badge>
+                      {!applyingBatch && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          onClick={() => setBatchRows(null)}
+                        >
+                          <X className="mr-1 h-3 w-3" />
+                          {t("toolkit.batchClear")}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="max-h-44 overflow-auto">
+                    <Table className="text-xs">
+                      <TableHeader className="sticky top-0 z-10 bg-card">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="h-7 px-2 py-1 text-xs font-semibold">
+                            {t("toolkit.batchStatus")}
+                          </TableHead>
+                          <TableHead className="h-7 px-2 py-1 text-xs font-semibold">
+                            {t("toolkit.batchTarget")}
+                          </TableHead>
+                          <TableHead className="h-7 px-2 py-1 text-xs font-semibold">
+                            {t("toolkit.batchDetail")}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {batchRows.map((row) => (
+                          <TableRow key={row.key}>
+                            <TableCell className="px-2 py-1">
+                              <AdviceBatchStatusBadge status={row.status} />
+                            </TableCell>
+                            <TableCell className="px-2 py-1 font-mono">{row.label}</TableCell>
+                            <TableCell className="px-2 py-1 font-mono text-muted-foreground">
+                              {row.detail || "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               )}
 
@@ -1077,10 +1453,8 @@ export default function ToolkitPage() {
                   <p className="text-xs font-semibold text-foreground">{t("toolkit.recommendations")}</p>
                   {activeQuery.advice.length > 0 && (
                     <p className="text-[11px] text-muted-foreground">
-                      {selectedRow
-                        ? `${t("toolkit.selectedRow")}: ${
-                            resultColumns[0] ? `${resultColumns[0]}=${selectedRow.values[0]}` : "-"
-                          }`
+                      {selected.length > 0
+                        ? t("toolkit.selectedCount", { count: selected.length })
                         : t("toolkit.recommendationsHint")}
                     </p>
                   )}
@@ -1098,8 +1472,11 @@ export default function ToolkitPage() {
                         advice={advice}
                         columns={resultColumns}
                         row={selectedRow}
+                        selectedCount={selected.length}
                         busy={applying && selectedAdviceId === advice.id}
+                        batchBusy={applyingBatch && batchAdviceId === advice.id}
                         onApply={handleApply}
+                        onApplyBatch={handleApplyBatch}
                       />
                     ))}
                   </div>

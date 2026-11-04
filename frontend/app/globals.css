@@ -264,20 +264,56 @@
   overflow: hidden;
   pointer-events: none;
   user-select: none;
+  background: radial-gradient(ellipse 58% 46% at 50% 50%, hsl(var(--primary) / 0.09), transparent 72%);
 }
 
-/* Statement-log watermark: the kind of SQL this console issues, at texture contrast. */
-.pgg-db-sql {
+/* Statement log: the SQL this console issues, rendered line by line. */
+.pgg-db-log {
   position: absolute;
   inset: 0;
   margin: 0;
-  padding: 2rem;
+  padding: clamp(2.5rem, 7vh, 5rem) clamp(1.5rem, 7vw, 7rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(0.7rem, 2.6vh, 1.7rem);
+  overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 2.7;
-  letter-spacing: 0.08em;
-  color: hsl(var(--foreground) / 0.055);
-  overflow-wrap: break-word;
+  font-size: clamp(11px, 0.95vw, 13px);
+  line-height: 1.65;
+  -webkit-mask-image: radial-gradient(ellipse 92% 84% at 50% 50%, #000 32%, transparent 106%);
+  mask-image: radial-gradient(ellipse 92% 84% at 50% 50%, #000 32%, transparent 106%);
+}
+
+.pgg-db-log-line {
+  display: flex;
+  gap: 0.7rem;
+  margin: 0;
+  padding-left: 0.15rem;
+}
+
+/* Prompt gutter: reads like an interactive psql session. */
+.pgg-db-log-prompt {
+  flex: none;
+  color: hsl(var(--warning) / 0.5);
+  font-weight: 600;
+}
+
+.pgg-db-log-sql {
+  color: hsl(var(--foreground) / 0.27);
+  overflow-wrap: anywhere;
+}
+
+.pgg-db-log-meta {
+  color: hsl(var(--muted-foreground) / 0.32);
+  letter-spacing: 0.12em;
+  overflow-wrap: anywhere;
+}
+
+/* Keywords borrow the console accent so the log reads as SQL at a glance. */
+.pgg-sql-kw {
+  color: hsl(var(--primary) / 0.62);
+  font-weight: 600;
 }
 
 /* Table rhythm: column and row rules of a data grid, faded outwards. */
@@ -285,9 +321,9 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, hsl(var(--border) / 0.75) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--border) / 0.75) 1px, transparent 1px);
+    linear-gradient(to right, hsl(var(--border) / 0.55) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--border) / 0.55) 1px, transparent 1px);
   background-size: 68px 44px;
-  -webkit-mask-image: radial-gradient(ellipse 78% 68% at 50% 50%, #000 18%, transparent 100%);
-  mask-image: radial-gradient(ellipse 78% 68% at 50% 50%, #000 18%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 72% 64% at 50% 50%, #000 12%, transparent 100%);
+  mask-image: radial-gradient(ellipse 72% 64% at 50% 50%, #000 12%, transparent 100%);
 }

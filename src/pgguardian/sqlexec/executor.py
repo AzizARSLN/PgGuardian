@@ -29,7 +29,7 @@ _NON_TRANSACTIONAL = re.compile(
     re.I | re.S,
 )
 
-DEFAULT_MAX_ROWS = 100
+DEFAULT_MAX_ROWS = 5000
 HARD_MAX_ROWS = 5000
 
 

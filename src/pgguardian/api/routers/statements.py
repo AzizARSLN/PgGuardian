@@ -61,7 +61,7 @@ def statements_status(client: DbClient = Depends(resolve_client)) -> dict:
 def list_statements(
     sort: Literal[tuple(collector.SORT_COLUMNS)] = "calls",  # type: ignore[valid-type]
     direction: Literal["asc", "desc"] = "desc",
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=5000, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     min_calls: int = Query(default=2, ge=1),
     search: str | None = Query(default=None, max_length=200),
