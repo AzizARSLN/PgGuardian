@@ -25,7 +25,7 @@ class SchemaInfo(BaseModel):
 
 
 class TableSummary(BaseModel):
-    """One table with size, tuple stats and owner."""
+    """One table with sizes, tuple stats, write counters and owner."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -33,9 +33,27 @@ class TableSummary(BaseModel):
     table_name: str
     owner: str | None = None
     total_size_bytes: int = 0
+    table_size_bytes: int = 0
+    indexes_size_bytes: int = 0
     live_tuples: int = 0
     dead_tuples: int = 0
     dead_tuple_percent: float = 0.0
+    inserted_rows: int = 0
+    updated_rows: int = 0
+    deleted_rows: int = 0
+    unused_index_count: int = 0
+    unused_index_size_bytes: int = 0
+
+
+class IndexUsageInfo(BaseModel):
+    """One index of a table with its size and scan counter."""
+
+    model_config = ConfigDict(frozen=True)
+
+    index_name: str
+    size_bytes: int = 0
+    index_scans: int = 0
+    potentially_unused: bool = False
 
 
 class ColumnInfo(BaseModel):
@@ -135,17 +153,33 @@ def list_schemas(client: DbClient = Depends(resolve_client)) -> list[SchemaInfo]
 def list_tables(
     schema: str, limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> list[TableSummary]:
-    """Tables in a schema with sizes, dead-tuple ratios and owners (read-only)."""
+    """Tables in a schema with sizes, tuple stats, write counters and owners.
+
+    Read-only. One pass over ``pg_stat_user_tables`` (tuple stats + write
+    counters) joined to the relation for sizes, plus a lateral aggregate of the
+    index scan counters so a table knows how many indexes are never used.
+    """
     schema_name = validate_identifier(schema, what="schema name")
     with mapped_errors(client.settings):
         client.ping()
         rows = client.fetch_all(
             "SELECT s.schemaname AS schema_name, s.relname AS table_name,"
             " pg_get_userbyid(c.relowner) AS owner,"
-            " pg_total_relation_size(c.oid) AS total_size_bytes,"
-            " s.n_live_tup AS live_tuples, s.n_dead_tup AS dead_tuples"
+            " pg_total_relation_size(s.relid) AS total_size_bytes,"
+            " pg_relation_size(s.relid) AS table_size_bytes,"
+            " s.n_live_tup AS live_tuples, s.n_dead_tup AS dead_tuples,"
+            " s.n_tup_ins AS inserted_rows, s.n_tup_upd AS updated_rows,"
+            " s.n_tup_del AS deleted_rows,"
+            " COALESCE(u.unused_count, 0) AS unused_index_count,"
+            " COALESCE(u.unused_size_bytes, 0) AS unused_index_size_bytes"
             " FROM pg_stat_user_tables s"
             " JOIN pg_class c ON c.oid = s.relid"
+            " LEFT JOIN LATERAL ("
+            "   SELECT count(*) AS unused_count,"
+            "     sum(pg_relation_size(i.indexrelid)) AS unused_size_bytes"
+            "   FROM pg_stat_user_indexes i"
+            "   WHERE i.relid = s.relid AND i.idx_scan = 0"
+            " ) u ON true"
             " WHERE s.schemaname = %s"
             " ORDER BY 4 DESC LIMIT %s",
             (schema_name, min(limit, 5000)),
@@ -154,15 +188,61 @@ def list_tables(
     for row in rows:
         live = to_int(row.get("live_tuples"))
         dead = to_int(row.get("dead_tuples"))
+        total = to_int(row.get("total_size_bytes"))
+        table_size = to_int(row.get("table_size_bytes"))
         result.append(
             TableSummary(
                 schema_name=str(row.get("schema_name")),
                 table_name=str(row.get("table_name")),
                 owner=str(row.get("owner")) if row.get("owner") else None,
-                total_size_bytes=to_int(row.get("total_size_bytes")),
+                total_size_bytes=total,
+                table_size_bytes=table_size,
+                indexes_size_bytes=max(total - table_size, 0),
                 live_tuples=live,
                 dead_tuples=dead,
                 dead_tuple_percent=dead_tuple_percent(live, dead),
+                inserted_rows=to_int(row.get("inserted_rows")),
+                updated_rows=to_int(row.get("updated_rows")),
+                deleted_rows=to_int(row.get("deleted_rows")),
+                unused_index_count=to_int(row.get("unused_index_count")),
+                unused_index_size_bytes=to_int(row.get("unused_index_size_bytes")),
+            )
+        )
+    return result
+
+
+@router.get(
+    "/schemas/{schema}/tables/{table}/indexes", response_model=list[IndexUsageInfo]
+)
+def list_table_indexes(
+    schema: str, table: str, client: DbClient = Depends(resolve_client)
+) -> list[IndexUsageInfo]:
+    """Indexes of one table with size and scan counters (read-only).
+
+    Indexes with ``index_scans == 0`` are flagged as potentially unused; the
+    counters reset with every ``pg_stat_reset``.
+    """
+    schema_name = validate_identifier(schema, what="schema name")
+    table_name = validate_identifier(table, what="table name")
+    with mapped_errors(client.settings):
+        client.ping()
+        rows = client.fetch_all(
+            "SELECT i.indexrelname AS index_name,"
+            " pg_relation_size(i.indexrelid) AS size_bytes, i.idx_scan AS index_scans"
+            " FROM pg_stat_user_indexes i"
+            " WHERE i.schemaname = %s AND i.relname = %s"
+            " ORDER BY i.idx_scan ASC, pg_relation_size(i.indexrelid) DESC",
+            (schema_name, table_name),
+        )
+    result: list[IndexUsageInfo] = []
+    for row in rows:
+        scans = to_int(row.get("index_scans"))
+        result.append(
+            IndexUsageInfo(
+                index_name=str(row.get("index_name")),
+                size_bytes=to_int(row.get("size_bytes")),
+                index_scans=scans,
+                potentially_unused=scans == 0,
             )
         )
     return result
