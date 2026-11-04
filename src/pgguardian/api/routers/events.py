@@ -17,7 +17,14 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sse_starlette.sse import EventSourceResponse
 
 from pgguardian.api.deps import get_jwt_settings, verify_token_OR_jwt
@@ -106,7 +113,7 @@ async def sse_stream(
                     break
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield {"event": "ping", "data": json.dumps({"t": "keepalive"})}
                     continue
                 yield {"event": payload.get("event", "message"), "data": json.dumps(payload)}
@@ -175,7 +182,7 @@ async def websocket_stream(
         while True:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await websocket.send_json({"event": "ping", "data": {"t": "keepalive"}})
                 continue
             except asyncio.CancelledError:

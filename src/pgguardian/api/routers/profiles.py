@@ -13,8 +13,13 @@ from pgguardian.api.settings import ApiSettings
 from pgguardian.cli import GlobalOptions, build_settings
 from pgguardian.config.settings import PgGuardianSettings, get_settings
 from pgguardian.database.connection import DbClient
+from pgguardian.profiles.store import (
+    PROFILE_NAME_PATTERN,
+    Profile,
+    ProfileNotFoundError,
+    ProfileStore,
+)
 from pgguardian.utils.security import sanitize_error
-from pgguardian.profiles.store import Profile, ProfileNotFoundError, ProfileStore, PROFILE_NAME_PATTERN
 
 read_router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
 router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
