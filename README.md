@@ -28,6 +28,21 @@ Health Score     94 / 100
 Status           HEALTHY
 ```
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="./docs/screenshots/login-page.png" alt="PgGuardian login page" />
+      <p align="center"><strong>Login screen</strong><br />Centered access card with SQL-themed backdrop.</p>
+    </td>
+    <td width="50%">
+      <img src="./docs/screenshots/login-card.png" alt="PgGuardian login card detail" />
+      <p align="center"><strong>Focused sign-in card</strong><br />Compact, modern and DBA-oriented entry experience.</p>
+    </td>
+  </tr>
+</table>
+
 ## Features
 
 - **Health** — version, uptime, size, connections, cache hit ratio,
