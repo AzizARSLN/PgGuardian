@@ -78,7 +78,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
 const REPORT_LIMIT = 5000;
 /** Rows per page in the table maintenance list; keeps the grid responsive. */
-const TABLE_PAGE_SIZE = 250;
+const TABLE_PAGE_SIZE = 100;
 
 const CELL = "px-2 py-1.5 text-xs";
 const HEAD = "h-8 px-2 text-xs";
