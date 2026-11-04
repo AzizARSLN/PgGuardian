@@ -10,8 +10,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { IfWriter } from "@/components/role-guard";
 import { formatBytes } from "@/components/statements/format";
+import { ApiError } from "@/lib/api/client";
 import { pgbadgerApi, type ReportListItem } from "@/lib/api/pgbadger";
 import useConfirm from "@/lib/hooks/useConfirm";
+import { OpStopButton, useOpControl } from "@/lib/hooks/use-op-control";
 import { useI18n } from "@/lib/i18n";
 import { useProfileStore } from "@/store/useProfileStore";
 
@@ -24,17 +26,26 @@ export default function PgBadgerPage() {
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const profile = useProfileStore((s) => s.selectedProfileName);
   const input = React.useRef<HTMLInputElement>(null);
+  // Report parsing happens server-side; the upload can therefore be stopped.
+  const uploadOp = useOpControl();
   const key = ["pgbadger", profile];
 
   const reports = useQuery({ queryKey: key, queryFn: () => pgbadgerApi.list() });
 
   const upload = useMutation({
-    mutationFn: (file: File) => pgbadgerApi.upload(file),
+    mutationFn: (file: File) => {
+      const handle = uploadOp.begin("pgbadger");
+      return pgbadgerApi.upload(file, { opId: handle.opId, signal: handle.signal });
+    },
     onSuccess: ({ id }) => {
       toast.success(t("pgbadger.uploaded"));
       queryClient.invalidateQueries({ queryKey: key });
       router.push(`/pgbadger/${id}`);
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 499) return;
+    },
+    onSettled: () => uploadOp.end(),
   });
 
   const remove = useMutation({
@@ -87,6 +98,7 @@ export default function PgBadgerPage() {
             {upload.isPending ? <Loader2 className="animate-spin" /> : <Upload />}
             {t(upload.isPending ? "pgbadger.uploading" : "pgbadger.upload")}
           </Button>
+          <OpStopButton control={uploadOp} className="h-8" />
         </IfWriter>
       </div>
 
