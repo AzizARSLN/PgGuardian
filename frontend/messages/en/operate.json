@@ -112,6 +112,44 @@
       "summary": "{ok} completed · {failed} failed",
       "stoppedToast": "Run stopped · {ok} completed · {failed} failed",
       "clearResults": "Close"
+    },
+    "health": {
+      "tab": "Table health",
+      "schema": "Schema",
+      "schemaPlaceholder": "Select schema",
+      "noSchema": "Select a schema to view its tables.",
+      "loading": "Loading…",
+      "empty": "No tables found in this schema.",
+      "summary": "{tables} tables · {size}",
+      "columns": {
+        "table": "Table",
+        "total": "Total",
+        "tableSize": "Table",
+        "indexSize": "Index",
+        "live": "Live",
+        "dead": "Dead",
+        "deadPercent": "Dead %",
+        "inserted": "Inserted",
+        "updated": "Updated",
+        "deleted": "Deleted",
+        "unused": "Unused index"
+      },
+      "selected": "Selected table",
+      "clear": "Clear selection",
+      "pickHint": "Select a table from the list to run an action.",
+      "actions": {
+        "vacuum": "VACUUM",
+        "vacuumFull": "VACUUM FULL",
+        "analyze": "ANALYZE",
+        "reindex": "REINDEX TABLE"
+      },
+      "unused": {
+        "title": "Unused indexes",
+        "subtitle": "idx_scan = 0",
+        "empty": "No unused indexes.",
+        "scans": "Scans",
+        "reindex": "REINDEX INDEX"
+      }
     }
   },
   "backups": {

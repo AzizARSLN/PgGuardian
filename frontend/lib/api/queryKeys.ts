@@ -90,6 +90,8 @@ export const qk = {
       ["schemas", schema, "objects", limit] as const,
     table: (schema: string, table: string) =>
       ["schemas", "table", schema, table] as const,
+    tableIndexes: (schema: string, table: string) =>
+      ["schemas", schema, table, "indexes"] as const,
   },
 
   roles: {
