@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
+from pgguardian.api.ops import op_application_name, validate_op_id
 from pgguardian.api.safety import (
     DryRunResult,
     MutationRequest,
@@ -89,10 +90,12 @@ class ExplainRequest(BaseModel):
 @router.post("/explain")
 def explain_sql(
     body: ExplainRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> dict:
     """EXPLAIN (ANALYZE) a query - read-only, capped; ANALYZE needs writes."""
+    tracked = validate_op_id(op_id) if op_id else None
     if body.analyze and not settings.allow_writes:
         raise HTTPException(
             status_code=403, detail="EXPLAIN ANALYZE needs PGGUARDIAN_ALLOW_WRITES=1"
@@ -110,10 +113,13 @@ def explain_sql(
             status_code=400,
             detail=f"EXPLAIN ANALYZE only runs read statements; this one is {kind.value}.",
         )
+    run_client = (
+        client.clone(application_name=op_application_name(tracked)) if tracked else client
+    )
     with mapped_errors(settings):
-        _, version = client.ping()
+        _, version = run_client.ping()
         plan = explain(
-            client,
+            run_client,
             statements[0],
             version=version,
             analyze=body.analyze,
@@ -152,10 +158,15 @@ def advise_sql(
 @router.post("", response_model=SqlResult | DryRunResult)
 def execute_sql(
     body: SqlRequest,
+    op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
 ) -> SqlResult | DryRunResult:
     """Classify and run one SQL statement, results capped for large databases."""
+    tracked = validate_op_id(op_id) if op_id else None
+    run_client = (
+        client.clone(application_name=op_application_name(tracked)) if tracked else client
+    )
     try:
         kind = classify(body.sql)
     except SqlRejectedError as exc:
@@ -177,8 +188,8 @@ def execute_sql(
                 "Resubmit with readonly=false, writes enabled and explicit confirmation.",
             )
         with mapped_errors(settings):
-            client.ping()
-            return run_sql(client, body.sql, body.params, max_rows=body.max_rows)
+            run_client.ping()
+            return run_sql(run_client, body.sql, body.params, max_rows=body.max_rows)
 
     if kind == StatementKind.DANGEROUS:
         ensure_dangerous_allowed(settings, "sql.execute")
@@ -187,9 +198,9 @@ def execute_sql(
     require_confirm(body, "sql.execute")
     audit("sql.execute", None, _risk_for(kind), settings)
     with mapped_errors(settings):
-        client.ping()
+        run_client.ping()
         return run_sql(
-            client,
+            run_client,
             body.sql,
             body.params,
             max_rows=body.max_rows,

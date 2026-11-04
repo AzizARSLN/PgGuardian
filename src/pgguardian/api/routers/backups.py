@@ -7,8 +7,8 @@ answer 501 with a clear message instead of pretending to work.
 
 from __future__ import annotations
 
-import re
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -123,10 +123,15 @@ _SUFFIXES = {"custom": "dump", "plain": "sql", "directory": "dir"}
 _JOB_TIMEOUT_SECONDS = 6 * 3600
 _STDERR_TAIL_CHARS = 1000
 _INTERRUPTED_ERROR = "interrupted: the server stopped before this job finished."
+_CANCELLED_ERROR = "cancelled by operator."
 
 # Job ids owned by a worker thread in this process. A "running" job that is not
 # in here has no one left to finish it.
 _active_jobs: set[str] = set()
+# Live tool processes (pg_dump/pg_restore/psql) by job id, so a cancel request
+# can terminate them; and the ids the user already asked to stop.
+_job_procs: dict[str, subprocess.Popen] = {}
+_cancelled_jobs: set[str] = set()
 _active_lock = threading.Lock()
 
 # pg_dump/pg_restore parse "host=x dbname=y" as a conninfo, and the name also
@@ -320,16 +325,48 @@ def _failure_message(tool: str, exc: Exception, secrets: list[str]) -> str:
     return sanitize_text(f"{headline}: {tail}" if tail else headline, secrets)
 
 
-def _run_tool(cmd: list[str], env: dict[str, str]) -> None:
-    subprocess.run(
+class _JobCancelled(RuntimeError):
+    """Raised inside a worker when the operator cancelled the job."""
+
+
+def _run_tool(job_id: str, cmd: list[str], env: dict[str, str]) -> None:
+    """Run a tool as a child process that a cancel request can terminate.
+
+    The handle is registered before waiting, so ``POST /backups/{id}/cancel``
+    finds and kills it even while the tool is mid-run.
+    """
+    with _active_lock:
+        cancelled = job_id in _cancelled_jobs
+        if cancelled:
+            _cancelled_jobs.discard(job_id)
+    if cancelled:
+        raise _JobCancelled()
+
+    proc = subprocess.Popen(
         cmd,
         env=env,
-        timeout=_JOB_TIMEOUT_SECONDS,
-        check=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
+    with _active_lock:
+        _job_procs[job_id] = proc
+        # A cancel arriving between the check above and the registration now wins.
+        cancelled = job_id in _cancelled_jobs
+    if cancelled:
+        proc.terminate()
+    try:
+        _, stderr = proc.communicate(timeout=_JOB_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise
+    finally:
+        with _active_lock:
+            _job_procs.pop(job_id, None)
+            _cancelled_jobs.discard(job_id)
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr)
 
 
 def _path_size(path: Path) -> int:
@@ -439,6 +476,44 @@ def download_backup(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Backup file no longer on disk.")
     return FileResponse(str(path), filename=path.name)
+
+
+@router.post("/{job_id}/cancel", response_model=BackupJob)
+def cancel_backup(
+    job_id: str, request: Request, settings: ApiSettings = Depends(get_api_settings)
+) -> BackupJob:
+    """Stop a running backup/restore job (MAINTENANCE).
+
+    A worker that is already mid-tool has its child process terminated; one that
+    has not started yet skips the tool entirely. Either way the job ends as
+    ``cancelled``.
+    """
+    ensure_writes_allowed(settings, "backup.cancel")
+    directory = _backup_dir(settings)
+    registry = _jobs(request)
+    job = _load_job(directory, registry, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Backup job '{job_id}' not found.")
+    if job.status not in ("running", "queued"):
+        return job  # Already finished; nothing to stop.
+
+    with _active_lock:
+        _cancelled_jobs.add(job_id)
+        proc = _job_procs.get(job_id)
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+
+    stopped = job.model_copy(
+        update={
+            "status": "cancelled",
+            "finished_at": _utc_now(),
+            "error": _CANCELLED_ERROR,
+        }
+    )
+    registry[job_id] = stopped
+    _write_sidecar(directory, stopped)
+    audit("backup.cancel", job.database, RiskLevel.MAINTENANCE, settings)
+    return stopped
 
 
 @router.post("", response_model=BackupJob)
@@ -555,12 +630,21 @@ def start_backup(
             cmd.append(f'--schema="{schema_name}"')
         cmd.append(database)
         try:
-            _run_tool(cmd, env)
+            _run_tool(job_id, cmd, env)
             done = job.model_copy(
                 update={
                     "status": "done",
                     "finished_at": _utc_now(),
                     "size_bytes": _path_size(target),
+                }
+            )
+        except _JobCancelled:
+            _remove_partial(target)
+            done = job.model_copy(
+                update={
+                    "status": "cancelled",
+                    "finished_at": _utc_now(),
+                    "error": _CANCELLED_ERROR,
                 }
             )
         except Exception as exc:  # noqa: BLE001 — job result must capture everything
@@ -671,8 +755,16 @@ def start_restore(
                 cmd.append("--clean")
             cmd.append(str(source))
         try:
-            _run_tool(cmd, env)
+            _run_tool(job_id, cmd, env)
             done = restore_job.model_copy(update={"status": "done", "finished_at": _utc_now()})
+        except _JobCancelled:
+            done = restore_job.model_copy(
+                update={
+                    "status": "cancelled",
+                    "finished_at": _utc_now(),
+                    "error": _CANCELLED_ERROR,
+                }
+            )
         except Exception as exc:  # noqa: BLE001 — job result must capture everything
             done = restore_job.model_copy(
                 update={
