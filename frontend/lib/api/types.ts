@@ -1,5 +1,15 @@
 import { api } from "./client";
 
+/**
+ * Per-call overrides for long-running operations: an `opId` tags the backend so
+ * it can be cancelled, and a `signal` aborts the client wait.
+ */
+export interface CallOptions {
+  opId?: string;
+  signal?: AbortSignal;
+  skipToast?: boolean;
+}
+
 export type Severity = "OK" | "INFO" | "WARNING" | "CRITICAL" | "UNKNOWN";
 
 export type RiskLevel = "READ" | "MAINTENANCE" | "DANGEROUS";
@@ -424,6 +434,25 @@ export interface BackendActionResult {
   signal_sent: boolean;
 }
 
+export interface OpStatus {
+  op_id: string;
+  running: boolean;
+  pid?: number | null;
+  state?: string | null;
+  elapsed_seconds?: number | null;
+  query?: string | null;
+  /** Locks currently blocking this operation's backend. */
+  blocked_by: LockInfo[];
+}
+
+export interface OpCancelResult {
+  op_id: string;
+  action: string;
+  pid?: number | null;
+  signal_sent: boolean;
+  running: boolean;
+}
+
 export interface VacuumRequest extends MutationRequest {
   schema_name?: string | null;
   table_name?: string | null;
@@ -825,18 +854,19 @@ export const endpoints = {
   runToolkitQuery: (
     id: string,
     maxRows = 5000,
-    params: Record<string, string> = {}
+    params: Record<string, string> = {},
+    options?: CallOptions
   ): Promise<ToolkitRunResult> =>
-    api.post<ToolkitRunResult>("/toolkit/run", { id, max_rows: maxRows, params }),
+    api.post<ToolkitRunResult>("/toolkit/run", { id, max_rows: maxRows, params }, options),
 
   formatSql: (body: SqlFormatRequest): Promise<SqlFormatResponse> =>
     api.post<SqlFormatResponse>("/sql/format", body),
 
-  explainSql: (body: ExplainRequest): Promise<ExplainResult> =>
-    api.post<ExplainResult>("/sql/explain", body),
+  explainSql: (body: ExplainRequest, options?: CallOptions): Promise<ExplainResult> =>
+    api.post<ExplainResult>("/sql/explain", body, options),
 
-  executeSql: (body: SqlRequest): Promise<SqlResult | DryRunResult> =>
-    api.post<SqlResult | DryRunResult>("/sql", body),
+  executeSql: (body: SqlRequest, options?: CallOptions): Promise<SqlResult | DryRunResult> =>
+    api.post<SqlResult | DryRunResult>("/sql", body, options),
 
   listProfiles: (): Promise<Profile[]> =>
     api.get<Profile[]>("/profiles"),
@@ -881,17 +911,21 @@ export const endpoints = {
 
   captureSnapshot: (
     profile?: string,
-    server?: string
+    server?: string,
+    options?: CallOptions
   ): Promise<Snapshot> =>
     api.post<Snapshot>("/snapshots", undefined, {
       params: { profile, server },
+      ...options,
     }),
 
   pruneSnapshots: (
-    keepDays = 90
+    keepDays = 90,
+    options?: CallOptions
   ): Promise<PruneSnapshotsResult> =>
     api.post<PruneSnapshotsResult>("/snapshots/prune", undefined, {
       params: { keep_days: keepDays, confirm: true },
+      ...options,
     }),
 
   listDatabases: (): Promise<DatabaseInfo[]> =>
@@ -1018,6 +1052,15 @@ export const endpoints = {
       body
     ),
 
+  getOpStatus: (opId: string): Promise<OpStatus> =>
+    api.get<OpStatus>(`/ops/${opId}`),
+
+  cancelOp: (
+    opId: string,
+    body: MutationRequest
+  ): Promise<DryRunResult | OpCancelResult> =>
+    api.post<DryRunResult | OpCancelResult>(`/ops/${opId}/cancel`, body),
+
   terminateBackend: (
     pid: number,
     body: MutationRequest
@@ -1110,6 +1153,9 @@ export const endpoints = {
 
   startBackup: (body: BackupRequest): Promise<BackupJob> =>
     api.post<BackupJob>("/backups", body),
+
+  cancelBackup: (jobId: string): Promise<BackupJob> =>
+    api.post<BackupJob>(`/backups/${jobId}/cancel`),
 
   startRestore: (body: RestoreRequest): Promise<BackupJob> =>
     api.post<BackupJob>("/backups/restore", body),

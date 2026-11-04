@@ -7,6 +7,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Database,
+  Filter,
   ListChecks,
   Loader2,
   PlayCircle,
@@ -22,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { api } from "@/lib/api/client";
+import { ApiError, api } from "@/lib/api/client";
 import {
   endpoints,
   type AnalyzeRequest,
@@ -35,6 +36,12 @@ import {
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
 import { useConfirm } from "@/lib/hooks/useConfirm";
+import {
+  OpBlockedHint,
+  OpStopButton,
+  useOpControl,
+  type OpControl,
+} from "@/lib/hooks/use-op-control";
 import { useI18n, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { IfWriter } from "@/components/role-guard";
@@ -44,6 +51,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RiskBadge, type RiskLevel } from "@/components/ui/risk-badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -119,10 +133,13 @@ const tableKey = (row: TableMaintenance) => `${row.schema_name ?? ""}.${row.tabl
 
 const RISKY_STATUSES: TableMaintenance["status"][] = ["WARNING", "CRITICAL"];
 
+/** Table status filter; "ALL" shows everything. */
+type StatusFilter = "ALL" | TableMaintenance["status"];
+
 /** How many per-table SQL previews the confirmation dialog shows. */
 const PREVIEW_LIMIT = 10;
 
-type BatchStatus = "pending" | "running" | "ok" | "failed";
+type BatchStatus = "pending" | "running" | "ok" | "failed" | "stopped";
 
 interface BatchRow {
   key: string;
@@ -132,6 +149,7 @@ interface BatchRow {
 }
 
 function useMaintenanceAction<TBody extends MutationRequest>(
+  op: OpControl,
   path: "vacuum" | "analyze" | "reindex",
   command: string,
   onDone: () => void
@@ -139,10 +157,14 @@ function useMaintenanceAction<TBody extends MutationRequest>(
   const t = useT();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: TBody) =>
-      api.post<MaintenanceActionResult>(`/maintenance/${path}`, body, {
+    mutationFn: (body: TBody) => {
+      const handle = op.begin(path);
+      return api.post<MaintenanceActionResult>(`/maintenance/${path}`, body, {
         timeout: LONG_ACTION_TIMEOUT_MS,
-      }),
+        opId: handle.opId,
+        signal: handle.signal,
+      });
+    },
     onSuccess: (result) => {
       toast.success(t("maintenance.toast.done", { command }), {
         description: result?.command_status,
@@ -150,9 +172,12 @@ function useMaintenanceAction<TBody extends MutationRequest>(
       queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance(REPORT_LIMIT) });
       onDone();
     },
-    onError: () => {
+    onError: (error) => {
+      // 499 is our own client abort ("Durdur"); the API client stays quiet too.
+      if (error instanceof ApiError && error.status === 499) return;
       toast.error(t("maintenance.toast.failed", { command }));
     },
+    onSettled: () => op.end(),
   });
 }
 
@@ -162,6 +187,11 @@ export default function MaintenancePage() {
   const { formatNumber, formatDate } = useI18n();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const [tab, setTab] = useState("vacuum");
+  // Only a status filter is offered, per request: OK / WARNING / CRITICAL.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const op = useOpControl();
+  // The batch run loops over many tables, so it tracks its own operation.
+  const batchOp = useOpControl();
 
   const [vacuumPreview, setVacuumPreview] = useState<MaintenancePreview>(null);
   const [analyzePreview, setAnalyzePreview] = useState<MaintenancePreview>(null);
@@ -197,15 +227,15 @@ export default function MaintenancePage() {
     queryFn: () => endpoints.getMaintenance(REPORT_LIMIT),
   });
 
-  const vacuumMutation = useMaintenanceAction<VacuumRequest>("vacuum", "VACUUM", () => {
+  const vacuumMutation = useMaintenanceAction<VacuumRequest>(op, "vacuum", "VACUUM", () => {
     setVacuumPreview(null);
     vacuumForm.reset();
   });
-  const analyzeMutation = useMaintenanceAction<AnalyzeRequest>("analyze", "ANALYZE", () => {
+  const analyzeMutation = useMaintenanceAction<AnalyzeRequest>(op, "analyze", "ANALYZE", () => {
     setAnalyzePreview(null);
     analyzeForm.reset();
   });
-  const reindexMutation = useMaintenanceAction<ReindexRequest>("reindex", "REINDEX", () => {
+  const reindexMutation = useMaintenanceAction<ReindexRequest>(op, "reindex", "REINDEX", () => {
     setReindexPreview(null);
     reindexForm.reset();
   });
@@ -352,6 +382,14 @@ export default function MaintenancePage() {
     critical: tables.filter((row) => row.status === "CRITICAL").length,
   };
 
+  const visibleTables = useMemo(
+    () =>
+      statusFilter === "ALL"
+        ? tables
+        : tables.filter((row) => row.status === statusFilter),
+    [tables, statusFilter]
+  );
+
   const runningLabel = (
     <>
       <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -366,10 +404,12 @@ export default function MaintenancePage() {
     () => tables.filter((row) => selected.has(tableKey(row))),
     [tables, selected]
   );
-  const allSelected = tables.length > 0 && selected.size >= tables.length;
+  const allSelected =
+    visibleTables.length > 0 && visibleTables.every((row) => selected.has(tableKey(row)));
   const okCount = batchRows?.filter((row) => row.status === "ok").length ?? 0;
   const failedCount = batchRows?.filter((row) => row.status === "failed").length ?? 0;
-  const doneCount = okCount + failedCount;
+  const stoppedCount = batchRows?.filter((row) => row.status === "stopped").length ?? 0;
+  const doneCount = okCount + failedCount + stoppedCount;
 
   const toggleRow = (key: string) => {
     setSelected((prev) => {
@@ -380,7 +420,7 @@ export default function MaintenancePage() {
     });
   };
   const selectNone = () => setSelected(new Set());
-  const selectAll = () => setSelected(new Set(tables.map(tableKey)));
+  const selectAll = () => setSelected(new Set(visibleTables.map(tableKey)));
   const selectRisky = () =>
     setSelected(
       new Set(tables.filter((row) => RISKY_STATUSES.includes(row.status)).map(tableKey))
@@ -396,6 +436,12 @@ export default function MaintenancePage() {
         setBatchRows((prev) =>
           prev ? prev.map((row) => (row.key === key ? { ...row, ...update } : row)) : prev
         );
+      const markPendingStopped = () =>
+        setBatchRows((prev) =>
+          prev
+            ? prev.map((row) => (row.status === "pending" ? { ...row, status: "stopped" } : row))
+            : prev
+        );
 
       setBatchRows(
         targets.map((row) => ({
@@ -406,20 +452,39 @@ export default function MaintenancePage() {
         }))
       );
 
+      // A fresh op id tags every request in the run; aborting it (via "Durdur")
+      // releases the in-flight request and ends the loop.
+      const handle = batchOp.begin("batch");
       let ok = 0;
       let failed = 0;
+
       for (const row of targets) {
+        if (handle.signal.aborted) {
+          markPendingStopped();
+          break;
+        }
         const key = tableKey(row);
         patch(key, { status: "running" });
         try {
           const result = await api.post<MaintenanceActionResult>(
             "/maintenance/vacuum",
             { ...body, schema_name: row.schema_name, table_name: row.table_name, confirm: true },
-            { timeout: LONG_ACTION_TIMEOUT_MS, skipToast: true }
+            {
+              timeout: LONG_ACTION_TIMEOUT_MS,
+              skipToast: true,
+              opId: handle.opId,
+              signal: handle.signal,
+            }
           );
           ok += 1;
           patch(key, { status: "ok", detail: result?.command_status ?? "" });
         } catch (error) {
+          // 499 is our own client abort ("Durdur"), not a failure.
+          if (error instanceof ApiError && error.status === 499) {
+            patch(key, { status: "stopped" });
+            markPendingStopped();
+            break;
+          }
           failed += 1;
           patch(key, {
             status: "failed",
@@ -427,15 +492,20 @@ export default function MaintenancePage() {
           });
         }
       }
-      return { ok, failed };
+      return { ok, failed, stopped: targets.length - ok - failed };
     },
-    onSuccess: ({ ok, failed }) => {
-      toast.success(t("maintenance.toast.done", { command: "VACUUM" }), {
-        description: t("maintenance.batch.summary", { ok, failed }),
-      });
+    onSuccess: ({ ok, failed, stopped }) => {
+      if (stopped > 0) {
+        toast.info(t("maintenance.batch.stoppedToast", { ok, failed }));
+      } else {
+        toast.success(t("maintenance.toast.done", { command: "VACUUM" }), {
+          description: t("maintenance.batch.summary", { ok, failed }),
+        });
+      }
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: qk.diagnostics.maintenance(REPORT_LIMIT) });
     },
+    onSettled: () => batchOp.end(),
   });
 
   const handleBatchVacuum = async () => {
@@ -557,6 +627,8 @@ export default function MaintenancePage() {
             <TabsTrigger value="reindex">REINDEX</TabsTrigger>
           </TabsList>
 
+          <OpBlockedHint control={op} className="mt-3" />
+
           <TabsContent value="vacuum" className="mt-3">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div className="space-y-3">
@@ -637,6 +709,7 @@ export default function MaintenancePage() {
                       )}
                     </Button>
                   </IfWriter>
+                  <OpStopButton control={op} className="h-8 text-xs" />
                 </div>
               </div>
               <SqlPreview
@@ -705,6 +778,7 @@ export default function MaintenancePage() {
                       )}
                     </Button>
                   </IfWriter>
+                  <OpStopButton control={op} className="h-8 text-xs" />
                 </div>
               </div>
               <SqlPreview preview={analyzePreview} note={t("maintenance.notes.analyze")} />
@@ -779,6 +853,7 @@ export default function MaintenancePage() {
                       )}
                     </Button>
                   </IfWriter>
+                  <OpStopButton control={op} className="h-8 text-xs" />
                 </div>
               </div>
               <SqlPreview
@@ -808,6 +883,11 @@ export default function MaintenancePage() {
               <Badge variant="outline" size="sm" className="font-mono">
                 {t("maintenance.batch.summary", { ok: okCount, failed: failedCount })}
               </Badge>
+              {stoppedCount > 0 && (
+                <Badge variant="outline" size="sm" className="font-mono text-muted-foreground">
+                  {t("maintenance.batch.statusStopped")}: {formatNumber(stoppedCount)}
+                </Badge>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -819,6 +899,7 @@ export default function MaintenancePage() {
               </Button>
             </div>
           </div>
+          <OpBlockedHint control={batchOp} />
           <div className="max-h-40 overflow-auto">
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-card">
@@ -856,6 +937,36 @@ export default function MaintenancePage() {
             <p className="text-xs text-muted-foreground">{t("maintenance.table.subtitle")}</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            {tables.length > 0 && (
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+              >
+                <SelectTrigger
+                  className="h-7 w-[150px] text-xs"
+                  aria-label={t("maintenance.filter.label")}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                    <SelectValue />
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="py-1.5 text-xs">
+                    {t("maintenance.filter.all")}
+                  </SelectItem>
+                  <SelectItem value="OK" className="py-1.5 text-xs">
+                    OK ({formatNumber(tablesByStatus.ok)})
+                  </SelectItem>
+                  <SelectItem value="WARNING" className="py-1.5 text-xs">
+                    WARNING ({formatNumber(tablesByStatus.warning)})
+                  </SelectItem>
+                  <SelectItem value="CRITICAL" className="py-1.5 text-xs">
+                    CRITICAL ({formatNumber(tablesByStatus.critical)})
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             <RiskBadge riskLevel="OK" size="sm">
               <span className="font-mono">OK: {formatNumber(tablesByStatus.ok)}</span>
             </RiskBadge>
@@ -919,6 +1030,23 @@ export default function MaintenancePage() {
                   )}
                 </Button>
               </IfWriter>
+              {batchVacuum.isPending && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => void batchOp.stop()}
+                  disabled={batchOp.stopping}
+                >
+                  {batchOp.stopping ? (
+                    <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                  ) : (
+                    <span className="mr-1.5 inline-block h-3 w-3 rounded-[2px] bg-current" />
+                  )}
+                  {t("maintenance.batch.stop")}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -945,6 +1073,11 @@ export default function MaintenancePage() {
           <div className="px-3 py-6 text-center">
             <p className="text-sm font-medium">{t("maintenance.table.emptyTitle")}</p>
             <p className="text-xs text-muted-foreground">{t("maintenance.table.emptyHint")}</p>
+          </div>
+        ) : visibleTables.length === 0 ? (
+          <div className="px-3 py-6 text-center">
+            <p className="text-sm font-medium">{t("maintenance.table.noMatchTitle")}</p>
+            <p className="text-xs text-muted-foreground">{t("maintenance.table.noMatchHint")}</p>
           </div>
         ) : (
           <div className="flex-1 overflow-auto">
@@ -974,7 +1107,7 @@ export default function MaintenancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tables.map((row) => (
+                {visibleTables.map((row) => (
                   <TableRow
                     key={tableKey(row)}
                     data-state={selected.has(tableKey(row)) ? "selected" : undefined}
@@ -1050,6 +1183,14 @@ function BatchStatusBadge({ status }: { status: BatchStatus }) {
       <span className="inline-flex items-center gap-1 text-xs text-warning">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {t("maintenance.batch.statusRunning")}
+      </span>
+    );
+  }
+  if (status === "stopped") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="inline-block h-3 w-3 rounded-[2px] bg-current" />
+        {t("maintenance.batch.statusStopped")}
       </span>
     );
   }

@@ -20,6 +20,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Square,
   XCircle,
 } from "lucide-react";
 
@@ -66,7 +67,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { getSelectedProfileFromStore, useProfileStore } from "@/store/useProfileStore";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 
-type BackupStatus = "queued" | "running" | "done" | "failed";
+type BackupStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
 /** The API also returns the owning profile; the shared type does not list it yet. */
 type Job = BackupJob & {
@@ -128,6 +129,8 @@ function getStatusMeta(status: string): {
     return { level: "done", labelKey: "backups.status.done", icon: CheckCircle2 };
   if (s.includes("fail") || s.includes("error"))
     return { level: "failed", labelKey: "backups.status.failed", icon: XCircle };
+  if (s.includes("cancel") || s.includes("stop"))
+    return { level: "cancelled", labelKey: "backups.status.cancelled", icon: Square };
   return { level: "queued", labelKey: null, icon: AlertCircle };
 }
 
@@ -318,6 +321,26 @@ export default function BackupsPage() {
     onError: () => toast.error(t("backups.toast.restoreFailed")),
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: (jobId: string) => endpoints.cancelBackup(jobId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.backups.all() });
+      toast.success(t("backups.toast.cancelQueued"));
+    },
+    onError: () => toast.error(t("backups.toast.cancelFailed")),
+  });
+
+  const handleCancel = async (job: Job) => {
+    const ok = await confirm({
+      title: t("backups.actions.cancel"),
+      description: t("backups.actions.cancelHint"),
+      risk_level: "MAINTENANCE",
+      confirm_label: t("backups.actions.cancel"),
+      cancel_label: t("common.cancel"),
+    });
+    if (ok) cancelMutation.mutate(job.id);
+  };
+
   const isPlainForm = form.format === "plain";
   const allSchemas = schemas.length > 0 && chosenSchemas.length === schemas.length;
   const canStart =
@@ -492,11 +515,34 @@ export default function BackupsPage() {
       header: t("backups.columns.actions"),
       cell: ({ row }) => {
         const job = row.original;
-        if (job.kind !== "backup") return null;
+        const cancelling = cancelMutation.isPending && cancelMutation.variables === job.id;
+        const cancelButton = isUnfinished(job) ? (
+          <IfWriter>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={cancelling}
+              onClick={() => handleCancel(job)}
+            >
+              {cancelling ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Square className="mr-1 h-3 w-3" />
+              )}
+              {t("backups.actions.cancel")}
+            </Button>
+          </IfWriter>
+        ) : null;
+        // A restore job has no download/restore actions, but can still be stopped.
+        if (job.kind !== "backup") {
+          return cancelButton ? <div className="flex items-center gap-1.5">{cancelButton}</div> : null;
+        }
         const ready = isRestorable(job);
         const directory = isDirectoryBackup(job);
         return (
           <div className="flex items-center gap-1.5">
+            {cancelButton}
             <Button
               variant="outline"
               size="sm"
