@@ -641,8 +641,18 @@ export default function MaintenancePage() {
         </div>
       )}
 
-      <div className={cn(PANEL, "shrink-0 p-3")}>
-        <Tabs value={tab} onValueChange={setTab}>
+      <div
+        className={cn(
+          PANEL,
+          "p-3",
+          tab === "health" ? "flex min-h-0 flex-1 flex-col" : "shrink-0"
+        )}
+      >
+        <Tabs
+          value={tab}
+          onValueChange={setTab}
+          className={cn(tab === "health" && "flex min-h-0 flex-1 flex-col")}
+        >
           <TabsList>
             <TabsTrigger value="vacuum">VACUUM</TabsTrigger>
             <TabsTrigger value="analyze">ANALYZE</TabsTrigger>
@@ -890,7 +900,7 @@ export default function MaintenancePage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="health" className="mt-3">
+          <TabsContent value="health" className="flex min-h-0 flex-1 flex-col">
             <TableHealthTab op={op} />
           </TabsContent>
         </Tabs>
@@ -1600,7 +1610,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
   const doneCount = okCount + failedCount + stoppedCount;
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <ConfirmDialog />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1761,7 +1771,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </div>
           </div>
 
-          <div className="max-h-[320px] overflow-auto rounded-md border border-border">
+          <div className="min-h-[240px] flex-1 overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
@@ -1882,7 +1892,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
       )}
 
       {batchRows && batchRows.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-border">
+        <div className="shrink-0 overflow-hidden rounded-md border border-border">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
             <div>
               <h3 className="flex items-center gap-1.5 text-sm font-semibold">
@@ -1942,7 +1952,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
       )}
 
       {selected ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="space-y-3 rounded-md border border-border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 text-sm font-semibold">
