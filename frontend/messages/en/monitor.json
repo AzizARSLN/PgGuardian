@@ -133,7 +133,22 @@
       "usage": "Usage",
       "emptyTitle": "No connections",
       "emptyDesc": "No PostgreSQL connections found.",
-      "search": "Search PID, user, database or client..."
+      "search": "Search PID, user, database or client...",
+      "groupBy": "Group by",
+      "groupNone": "Ungrouped",
+      "groupSummary": "{groups} groups · {count} connections",
+      "groupCount": "Count",
+      "groupBreakdown": "Breakdown",
+      "groupUnset": "(unset)",
+      "groupCancelAll": "Cancel all",
+      "groupTerminateAll": "Terminate all",
+      "batchCancelTitle": "Cancel {count} connections in {group}?",
+      "batchTerminateTitle": "Terminate {count} connections in {group}?",
+      "batchCancelDesc": "pg_cancel_backend() cancels the active query on {count} connections. The connections stay open.",
+      "batchTerminateDesc": "pg_terminate_backend() closes {count} connections and rolls back active transactions. This cannot be undone.",
+      "typeCount": "Type {count} to confirm",
+      "batchProgress": "{done}/{total} processed",
+      "batchSummary": "{ok} done · {failed} failed"
     },
     "active": {
       "emptyTitle": "No active queries",

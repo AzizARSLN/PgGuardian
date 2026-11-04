@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -37,6 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/types";
 import type {
   BackendActionResult,
@@ -73,7 +74,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useConfirm } from "@/lib/hooks/useConfirm";
+import { useConfirm, type ConfirmOptions } from "@/lib/hooks/useConfirm";
 import { formatBytes } from "@/lib/utils";
 import { useI18n, useT, type TFunction } from "@/lib/i18n";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
@@ -431,6 +432,246 @@ function isActionResult(data: DryRunResult | BackendActionResult): data is Backe
   return "signal_sent" in data;
 }
 
+const CONN_BATCH_PREVIEW_LIMIT = 10;
+const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
+
+type ConnGroupKey = "user" | "client_address" | "state" | "application_name";
+type ConnGroupAction = "cancel" | "terminate";
+
+const CONN_GROUP_OPTIONS: { id: ConnGroupKey; labelKey: string }[] = [
+  { id: "user", labelKey: "diagnostics.columns.user" },
+  { id: "client_address", labelKey: "diagnostics.columns.client" },
+  { id: "state", labelKey: "diagnostics.columns.state" },
+  { id: "application_name", labelKey: "diagnostics.columns.application" },
+];
+
+const CONN_GROUP_FIELD: Record<ConnGroupKey, keyof ConnectionInfo> = {
+  user: "user",
+  client_address: "client_address",
+  state: "state",
+  application_name: "application_name",
+};
+
+interface ConnGroup {
+  key: string;
+  items: ConnectionInfo[];
+}
+
+interface ConnBatchState {
+  key: string;
+  action: ConnGroupAction;
+  total: number;
+  done: number;
+  ok: number;
+  failed: number;
+}
+
+/** Connections bucketed by a dimension, each with a count and bulk actions. */
+function ConnectionGroups({
+  groups,
+  label,
+  busy,
+  batch,
+  onGroupAction,
+  onCancelPid,
+  onTerminatePid,
+}: {
+  groups: ConnGroup[];
+  label: string;
+  busy: boolean;
+  batch: ConnBatchState | null;
+  onGroupAction: (action: ConnGroupAction, group: ConnGroup) => void;
+  onCancelPid: (pid: number) => void;
+  onTerminatePid: (pid: number) => void;
+}) {
+  const t = useT();
+  const { formatNumber } = useI18n();
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border">
+      <Table className="text-xs">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-8 px-2 py-1.5 text-xs font-semibold">{label}</TableHead>
+            <TableHead className="h-8 w-[72px] px-2 py-1.5 text-right text-xs font-semibold">
+              {t("diagnostics.connections.groupCount")}
+            </TableHead>
+            <TableHead className="h-8 px-2 py-1.5 text-xs font-semibold">
+              {t("diagnostics.connections.groupBreakdown")}
+            </TableHead>
+            <TableHead className="h-8 px-2 py-1.5 text-right text-xs font-semibold">
+              <IfWriter>{t("diagnostics.columns.actions")}</IfWriter>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groups.map((group) => {
+            const open = expanded === group.key;
+            const running = batch?.key === group.key;
+            const activeCount = group.items.filter((c) => c.state === "active").length;
+            const txCount = group.items.filter((c) => c.state === "idle in transaction").length;
+            const waitCount = group.items.filter((c) => c.wait_event_type).length;
+            return (
+              <Fragment key={group.key}>
+                <TableRow
+                  className="cursor-pointer"
+                  onClick={() => setExpanded(open ? null : group.key)}
+                >
+                  <TableCell className="px-2 py-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <ChevronRight
+                        className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${
+                          open ? "rotate-90" : ""
+                        }`}
+                      />
+                      <span className="truncate font-mono">{group.key}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-2 py-1.5 text-right">
+                    <span className={`${METRIC} font-semibold`}>
+                      {formatNumber(group.items.length)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-2 py-1.5">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {activeCount > 0 && (
+                        <RiskBadge riskLevel="OK" size="sm" showIcon={false}>
+                          {t("diagnostics.connections.active")} {activeCount}
+                        </RiskBadge>
+                      )}
+                      {txCount > 0 && (
+                        <RiskBadge riskLevel="WARNING" size="sm" showIcon={false}>
+                          {t("diagnostics.connections.idleInTx")} {txCount}
+                        </RiskBadge>
+                      )}
+                      {waitCount > 0 && (
+                        <RiskBadge riskLevel="DANGEROUS" size="sm" showIcon={false}>
+                          {t("diagnostics.connections.waiting")} {waitCount}
+                        </RiskBadge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-2 py-1.5">
+                    <IfWriter>
+                      <div
+                        className="flex items-center justify-end gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {running && (
+                          <span className={`${METRIC} text-[11px] text-muted-foreground`}>
+                            {t("diagnostics.connections.batchProgress", {
+                              done: batch.done,
+                              total: batch.total,
+                            })}
+                          </span>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => onGroupAction("cancel", group)}
+                          className="h-6 px-1.5 text-[11px]"
+                        >
+                          <StopCircle className="h-3 w-3" />
+                          {t("diagnostics.connections.groupCancelAll")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => onGroupAction("terminate", group)}
+                          className="h-6 border-destructive/30 px-1.5 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Skull className="h-3 w-3" />
+                          {t("diagnostics.connections.groupTerminateAll")}
+                        </Button>
+                      </div>
+                    </IfWriter>
+                  </TableCell>
+                </TableRow>
+                {open && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={4} className="bg-muted/30 px-2 py-2">
+                      <Table className="text-[11px]">
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="h-7 px-2 py-1 font-semibold">PID</TableHead>
+                            <TableHead className="h-7 px-2 py-1 font-semibold">
+                              {t("diagnostics.columns.client")}
+                            </TableHead>
+                            <TableHead className="h-7 px-2 py-1 font-semibold">
+                              {t("diagnostics.columns.state")}
+                            </TableHead>
+                            <TableHead className="h-7 px-2 py-1 font-semibold">
+                              {t("diagnostics.columns.duration")}
+                            </TableHead>
+                            <TableHead className="h-7 px-2 py-1 text-right font-semibold">
+                              <IfWriter>{t("diagnostics.columns.actions")}</IfWriter>
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.items.map((conn) => (
+                            <TableRow key={conn.pid}>
+                              <TableCell className="px-2 py-1">
+                                <span className={`${METRIC} text-info`}>{conn.pid}</span>
+                              </TableCell>
+                              <TableCell className="px-2 py-1">
+                                <span className="font-mono text-muted-foreground">
+                                  {conn.client_address ?? "-"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="px-2 py-1">
+                                {conn.state ?? "unknown"}
+                              </TableCell>
+                              <TableCell className={`${METRIC} px-2 py-1`}>
+                                {typeof conn.query_duration_seconds === "number"
+                                  ? formatSeconds(conn.query_duration_seconds, t)
+                                  : "-"}
+                              </TableCell>
+                              <TableCell className="px-2 py-1">
+                                <IfWriter>
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => onCancelPid(conn.pid)}
+                                      className="h-6 px-1.5 text-[11px]"
+                                    >
+                                      <StopCircle className="h-3 w-3" />
+                                      {t("diagnostics.actions.cancel")}
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => onTerminatePid(conn.pid)}
+                                      className="h-6 border-destructive/30 px-1.5 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    >
+                                      <Skull className="h-3 w-3" />
+                                      {t("diagnostics.actions.terminate")}
+                                    </Button>
+                                  </div>
+                                </IfWriter>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export default function DiagnosticsPage() {
   const t = useT();
   const { formatNumber, formatDate } = useI18n();
@@ -440,6 +681,8 @@ export default function DiagnosticsPage() {
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
 
   const [activeTab, setActiveTab] = useState<TabId>("findings");
+  const [connGroupBy, setConnGroupBy] = useState<ConnGroupKey | "none">("none");
+  const [connBatch, setConnBatch] = useState<ConnBatchState | null>(null);
 
   // Only the visible tab polls, so the heavier catalog reports are not hit in the background.
   const poll = (tab: TabId) => (autoRefresh && activeTab === tab ? pollInterval : false);
@@ -530,6 +773,28 @@ export default function DiagnosticsPage() {
   const lrData = useMemo(() => lrQ.data?.queries ?? [], [lrQ.data]);
   const aqData = useMemo(() => aqQ.data?.queries ?? [], [aqQ.data]);
   const connData = useMemo(() => connQ.data?.connections ?? [], [connQ.data]);
+  const connGroups = useMemo<ConnGroup[]>(() => {
+    if (connGroupBy === "none") return [];
+    const field = CONN_GROUP_FIELD[connGroupBy];
+    const buckets = new Map<string, ConnectionInfo[]>();
+    for (const conn of connData) {
+      const raw = conn[field];
+      const key =
+        raw === null || raw === undefined || raw === ""
+          ? t("diagnostics.connections.groupUnset")
+          : String(raw);
+      const list = buckets.get(key);
+      if (list) list.push(conn);
+      else buckets.set(key, [conn]);
+    }
+    return [...buckets.entries()]
+      .map(([key, items]) => ({ key, items }))
+      .sort((a, b) => b.items.length - a.items.length || a.key.localeCompare(b.key));
+  }, [connData, connGroupBy, t]);
+  const connGroupLabel =
+    connGroupBy === "none"
+      ? ""
+      : t(CONN_GROUP_OPTIONS.find((o) => o.id === connGroupBy)?.labelKey ?? "");
   const locksData = useMemo(() => locksQ.data?.locks ?? [], [locksQ.data]);
   const maintData = useMemo(() => maintQ.data?.tables ?? [], [maintQ.data]);
   const pgssData = useMemo(() => pgssQ.data ?? [], [pgssQ.data]);
@@ -595,8 +860,8 @@ export default function DiagnosticsPage() {
     [t]
   );
 
-  const connCols = useMemo<ColumnDef<ConnectionInfo>[]>(() => {
-    const handleCancel = async (pid: number) => {
+  const handleCancel = useCallback(
+    async (pid: number) => {
       const ok = await confirm({
         title: t("diagnostics.confirm.cancelTitle", { pid }),
         description: t("diagnostics.confirm.cancelDesc"),
@@ -606,8 +871,12 @@ export default function DiagnosticsPage() {
         sql_preview: [`SELECT pg_cancel_backend(${pid});`],
       });
       if (ok) cancelBackend(pid);
-    };
-    const handleTerminate = async (pid: number) => {
+    },
+    [confirm, t, cancelBackend]
+  );
+
+  const handleTerminate = useCallback(
+    async (pid: number) => {
       const ok = await confirm({
         title: t("diagnostics.confirm.terminateTitle", { pid }),
         description: t("diagnostics.confirm.terminateDesc"),
@@ -620,7 +889,90 @@ export default function DiagnosticsPage() {
         sql_preview: [`SELECT pg_terminate_backend(${pid});`],
       });
       if (ok) terminateBackend(pid);
-    };
+    },
+    [confirm, t, terminateBackend]
+  );
+
+  const handleGroupAction = useCallback(
+    async (action: ConnGroupAction, group: ConnGroup) => {
+      const count = group.items.length;
+      const isTerminate = action === "terminate";
+      const fn = isTerminate ? "pg_terminate_backend" : "pg_cancel_backend";
+      const sqlPreview = group.items
+        .slice(0, CONN_BATCH_PREVIEW_LIMIT)
+        .map((c) => `SELECT ${fn}(${c.pid});`);
+      if (count > CONN_BATCH_PREVIEW_LIMIT) {
+        sqlPreview.push(`-- … +${count - CONN_BATCH_PREVIEW_LIMIT}`);
+      }
+      const ok = await confirm({
+        title: t(
+          isTerminate
+            ? "diagnostics.connections.batchTerminateTitle"
+            : "diagnostics.connections.batchCancelTitle",
+          { group: group.key, count }
+        ),
+        description: t(
+          isTerminate
+            ? "diagnostics.connections.batchTerminateDesc"
+            : "diagnostics.connections.batchCancelDesc",
+          { count }
+        ),
+        risk_level: isTerminate ? "DANGEROUS" : "MAINTENANCE",
+        confirm_label: t(
+          isTerminate
+            ? "diagnostics.connections.groupTerminateAll"
+            : "diagnostics.connections.groupCancelAll"
+        ),
+        cancel_label: t("common.cancel"),
+        confirm_name_required: isTerminate,
+        confirm_name_value: String(count),
+        confirm_name_placeholder: t("diagnostics.connections.typeCount", { count }),
+        sql_preview: sqlPreview,
+      });
+      if (!ok) return;
+
+      const targets = group.items.map((c) => c.pid);
+      setConnBatch({
+        key: group.key,
+        action,
+        total: targets.length,
+        done: 0,
+        ok: 0,
+        failed: 0,
+      });
+      let okCount = 0;
+      let failedCount = 0;
+      for (const pid of targets) {
+        try {
+          const data = await api.post<DryRunResult | BackendActionResult>(
+            `/queries/${pid}/${isTerminate ? "terminate" : "cancel"}`,
+            isTerminate ? { confirm: true, confirm_name: String(pid) } : { confirm: true },
+            { skipToast: true, timeout: LONG_ACTION_TIMEOUT_MS }
+          );
+          if (isActionResult(data) && !data.signal_sent) failedCount += 1;
+          else okCount += 1;
+        } catch {
+          failedCount += 1;
+        }
+        setConnBatch((prev) =>
+          prev && prev.key === group.key
+            ? { ...prev, done: prev.done + 1, ok: okCount, failed: failedCount }
+            : prev
+        );
+      }
+      setConnBatch(null);
+      queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() });
+      const summary = t("diagnostics.connections.batchSummary", {
+        ok: okCount,
+        failed: failedCount,
+      });
+      if (failedCount > 0) toast.warning(summary, { description: group.key });
+      else toast.success(summary, { description: group.key });
+    },
+    [confirm, t, queryClient]
+  );
+
+  const connCols = useMemo<ColumnDef<ConnectionInfo>[]>(() => {
     return [
       {
         accessorKey: "pid",
@@ -724,7 +1076,7 @@ export default function DiagnosticsPage() {
         },
       },
     ];
-  }, [t, confirm, cancelBackend, terminateBackend, cancelling, terminating]);
+  }, [t, handleCancel, handleTerminate, cancelling, terminating]);
 
   const queryCols = useMemo<ColumnDef<QueryInfo>[]>(
     () => [
@@ -1239,17 +1591,64 @@ export default function DiagnosticsPage() {
               <StatCard label={t("diagnostics.connections.usage")} value={percent(connSummary.usage_percent)} tone="info" />
             </div>
           )}
-          <DataTable
-            columns={connCols}
-            data={connData}
-            isLoading={connQ.isLoading}
-            isError={connQ.isError}
-            error={connQ.error}
-            onRetry={() => connQ.refetch()}
-            emptyTitle={t("diagnostics.connections.emptyTitle")}
-            emptyDesc={t("diagnostics.connections.emptyDesc")}
-            searchPlaceholder={t("diagnostics.connections.search")}
-          />
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {t("diagnostics.connections.groupBy")}
+            </span>
+            <Select
+              value={connGroupBy}
+              onValueChange={(v) => setConnGroupBy(v as ConnGroupKey | "none")}
+            >
+              <SelectTrigger className="h-7 w-[180px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{t("diagnostics.connections.groupNone")}</SelectItem>
+                {CONN_GROUP_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.id} value={opt.id}>
+                    {t(opt.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {connGroupBy !== "none" && !connQ.isError && (
+              <span className="text-xs text-muted-foreground">
+                {t("diagnostics.connections.groupSummary", {
+                  groups: formatNumber(connGroups.length),
+                  count: formatNumber(connData.length),
+                })}
+              </span>
+            )}
+          </div>
+          {connGroupBy === "none" ? (
+            <DataTable
+              columns={connCols}
+              data={connData}
+              isLoading={connQ.isLoading}
+              isError={connQ.isError}
+              error={connQ.error}
+              onRetry={() => connQ.refetch()}
+              emptyTitle={t("diagnostics.connections.emptyTitle")}
+              emptyDesc={t("diagnostics.connections.emptyDesc")}
+              searchPlaceholder={t("diagnostics.connections.search")}
+            />
+          ) : connQ.isLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : connGroups.length === 0 ? (
+            <p className="rounded-md border border-border px-3 py-6 text-center text-xs text-muted-foreground">
+              {t("diagnostics.connections.emptyDesc")}
+            </p>
+          ) : (
+            <ConnectionGroups
+              groups={connGroups}
+              label={connGroupLabel}
+              busy={cancelling || terminating || connBatch !== null}
+              batch={connBatch}
+              onGroupAction={handleGroupAction}
+              onCancelPid={handleCancel}
+              onTerminatePid={handleTerminate}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="active" className="mt-2">

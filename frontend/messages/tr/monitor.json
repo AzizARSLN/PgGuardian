@@ -133,7 +133,22 @@
       "usage": "Kullanım",
       "emptyTitle": "Bağlantı yok",
       "emptyDesc": "PostgreSQL bağlantısı bulunamadı.",
-      "search": "PID, kullanıcı, veritabanı veya istemci ara..."
+      "search": "PID, kullanıcı, veritabanı veya istemci ara...",
+      "groupBy": "Gruplama",
+      "groupNone": "Gruplanmamış",
+      "groupSummary": "{groups} grup · {count} bağlantı",
+      "groupCount": "Adet",
+      "groupBreakdown": "Dağılım",
+      "groupUnset": "(tanımsız)",
+      "groupCancelAll": "Hepsini iptal et",
+      "groupTerminateAll": "Hepsini sonlandır",
+      "batchCancelTitle": "{group} grubundaki {count} bağlantı iptal edilsin mi?",
+      "batchTerminateTitle": "{group} grubundaki {count} bağlantı sonlandırılsın mı?",
+      "batchCancelDesc": "pg_cancel_backend() ile {count} bağlantının aktif sorgusu iptal edilir. Bağlantılar açık kalır.",
+      "batchTerminateDesc": "pg_terminate_backend() ile {count} bağlantı kapatılır ve aktif transaction'lar rollback edilir. Geri alınamaz.",
+      "typeCount": "Onaylamak için {count} yazın",
+      "batchProgress": "{done}/{total} işlendi",
+      "batchSummary": "{ok} tamamlandı · {failed} hatalı"
     },
     "active": {
       "emptyTitle": "Aktif sorgu yok",
