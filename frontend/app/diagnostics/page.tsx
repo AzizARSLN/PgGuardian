@@ -48,7 +48,6 @@ import type {
   LockInfo,
   PgStatStatementsRow,
   QueryInfo,
-  SequenceRow,
   TableMaintenance,
   TableSize,
 } from "@/lib/api/types";
@@ -79,6 +78,7 @@ import {
   QueryInsightDialog,
   type QueryInsightTarget,
 } from "@/components/query-insight/query-insight-dialog";
+import { SequencesPanel } from "@/components/diagnostics/sequences-panel";
 import { formatBytes } from "@/lib/utils";
 import { useI18n, useT, type TFunction } from "@/lib/i18n";
 import { useUIPrefsStore } from "@/store/useUIPrefsStore";
@@ -135,10 +135,6 @@ function formatMs(
     });
   }
   return formatSeconds(ms / 1000, t);
-}
-
-function sequenceUsage(row: SequenceRow): number {
-  return Number(row.usage_percent ?? 0);
 }
 
 function severityToRisk(sev: string): "OK" | "WARNING" | "DANGEROUS" | "INFO" {
@@ -743,11 +739,6 @@ export default function DiagnosticsPage() {
     queryFn: () => endpoints.getPgStatStatements(LIST_LIMIT),
     refetchInterval: poll("pgss"),
   });
-  const seqQ = useQuery({
-    queryKey: qk.diagnostics.sequences(LIST_LIMIT),
-    queryFn: () => endpoints.getSequences(LIST_LIMIT),
-    refetchInterval: poll("sequences"),
-  });
 
   const notifyResult = (data: DryRunResult | BackendActionResult, pid: number, sentKey: string) => {
     queryClient.invalidateQueries({ queryKey: qk.diagnostics.all() });
@@ -775,10 +766,6 @@ export default function DiagnosticsPage() {
         (a, b) => (b.total_size_bytes ?? 0) - (a.total_size_bytes ?? 0)
       ),
     [storageQ.data]
-  );
-  const seqData = useMemo(
-    () => [...(seqQ.data ?? [])].sort((a, b) => sequenceUsage(b) - sequenceUsage(a)),
-    [seqQ.data]
   );
   const idxData = useMemo(() => idxQ.data?.indexes ?? [], [idxQ.data]);
   const lrData = useMemo(() => lrQ.data?.queries ?? [], [lrQ.data]);
@@ -1480,65 +1467,6 @@ export default function DiagnosticsPage() {
     [t, formatNumber]
   );
 
-  const seqCols = useMemo<ColumnDef<SequenceRow>[]>(
-    () => [
-      {
-        accessorKey: "sequence_name",
-        header: () => t("diagnostics.sequences.sequence"),
-        cell: ({ row }) => (
-          <div>
-            <div className="font-mono font-medium">{row.original.sequence_name}</div>
-            <div className="font-mono text-[11px] text-muted-foreground">
-              {row.original.schema_name ?? "public"}
-            </div>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "last_value",
-        header: () => t("diagnostics.sequences.lastValue"),
-        cell: ({ row }) =>
-          row.original.last_value == null ? (
-            <span className="text-muted-foreground">-</span>
-          ) : (
-            <code className={METRIC}>{formatNumber(Number(row.original.last_value))}</code>
-          ),
-      },
-      {
-        accessorKey: "max_value",
-        header: () => t("diagnostics.sequences.maxValue"),
-        cell: ({ row }) => (
-          <code className={`${METRIC} text-muted-foreground`}>
-            {formatNumber(Number(row.original.max_value ?? 0))}
-          </code>
-        ),
-      },
-      {
-        id: "usage_percent",
-        accessorFn: (r) => sequenceUsage(r),
-        header: () => t("diagnostics.sequences.usage"),
-        cell: ({ row }) => {
-          const pct = sequenceUsage(row.original);
-          return (
-            <div className="flex items-center gap-2">
-              <PercentBar
-                pct={pct}
-                className={pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-success"}
-              />
-              <span className={`${METRIC} font-semibold`}>{percent(pct, 2)}</span>
-              <RiskBadge
-                riskLevel={pct >= 90 ? "DANGEROUS" : pct >= 75 ? "WARNING" : "OK"}
-                size="sm"
-                showIcon={false}
-              />
-            </div>
-          );
-        },
-      },
-    ],
-    [t, formatNumber, percent]
-  );
-
   const unusedCount = idxData.filter((i) => i.potentially_unused).length;
   const connSummary = connQ.isError ? undefined : connQ.data?.summary;
   const lockSummary = locksQ.isError ? undefined : locksQ.data?.summary;
@@ -1813,17 +1741,7 @@ export default function DiagnosticsPage() {
           >
             {t("diagnostics.sequences.noticeDesc")}
           </Notice>
-          <DataTable
-            columns={seqCols}
-            data={seqData}
-            isLoading={seqQ.isLoading}
-            isError={seqQ.isError}
-            error={seqQ.error}
-            onRetry={() => seqQ.refetch()}
-            emptyTitle={t("diagnostics.sequences.emptyTitle")}
-            emptyDesc={t("diagnostics.sequences.emptyDesc")}
-            searchPlaceholder={t("diagnostics.sequences.search")}
-          />
+          <SequencesPanel refetchInterval={autoRefresh ? pollInterval : false} />
         </TabsContent>
       </Tabs>
 

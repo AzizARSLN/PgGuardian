@@ -449,6 +449,13 @@ export interface DropIndexRequest extends MutationRequest {
   index_name: string;
 }
 
+export interface RaiseSequenceMaxValueRequest extends MutationRequest {
+  schema_name: string;
+  sequence_name: string;
+  /** New ceiling = current MAXVALUE × multiplier. */
+  multiplier?: number;
+}
+
 export interface MaintenanceActionResult {
   action: string;
   target: string;
@@ -588,9 +595,15 @@ export interface BloatRow {
 export interface SequenceRow {
   schema_name?: string;
   sequence_name?: string;
-  last_value?: number | string;
+  data_type?: string;
+  start_value?: number | string;
+  min_value?: number | string;
   max_value?: number | string;
-  exhaustion_percent?: number;
+  increment_by?: number | string;
+  last_value?: number | string;
+  cycle?: boolean;
+  status?: string;
+  usage_percent?: number;
   [key: string]: unknown;
 }
 
@@ -1043,6 +1056,14 @@ export const endpoints = {
   ): Promise<DryRunResult | MaintenanceActionResult> =>
     api.post<DryRunResult | MaintenanceActionResult>(
       "/maintenance/drop-index",
+      body
+    ),
+
+  raiseSequenceMaxValue: (
+    body: RaiseSequenceMaxValueRequest
+  ): Promise<DryRunResult | MaintenanceActionResult> =>
+    api.post<DryRunResult | MaintenanceActionResult>(
+      "/maintenance/sequence-maxvalue",
       body
     ),
 

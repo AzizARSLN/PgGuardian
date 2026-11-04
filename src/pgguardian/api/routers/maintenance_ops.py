@@ -12,8 +12,8 @@ what this statement requires.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from psycopg.sql import SQL, Identifier
-from pydantic import BaseModel, ConfigDict
+from psycopg.sql import SQL, Identifier, Literal
+from pydantic import BaseModel, ConfigDict, Field
 
 from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
 from pgguardian.api.safety import (
@@ -28,6 +28,7 @@ from pgguardian.api.safety import (
 )
 from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
+from pgguardian.diagnostics.sequences import INTEGER_LIMITS
 
 router = APIRouter(prefix="/api/v1/maintenance", tags=["maintenance-ops"])
 
@@ -71,6 +72,16 @@ class DropIndexRequest(MutationRequest):
 
     schema_name: str | None = None
     index_name: str
+
+
+class RaiseSequenceMaxValueRequest(MutationRequest):
+    """Raise a sequence MAXVALUE to a multiple of its current ceiling (DANGEROUS)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_name: str
+    sequence_name: str
+    multiplier: int = Field(default=10, ge=2, le=1_000_000)
 
 
 class MaintenanceActionResult(BaseModel):
@@ -241,3 +252,68 @@ def run_drop_index(
         status = _untimed(client).execute_raw(query)
     audit("maintenance.drop_index", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="drop_index", target=target, command_status=status)
+
+
+@router.post("/sequence-maxvalue", response_model=DryRunResult | MaintenanceActionResult)
+def raise_sequence_max_value(
+    body: RaiseSequenceMaxValueRequest,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+) -> DryRunResult | MaintenanceActionResult:
+    """ALTER SEQUENCE ... MAXVALUE — raises the ceiling before nextval starts failing.
+
+    The new bound is ``current MAXVALUE x multiplier`` and never touches
+    ``last_value``, so existing primary keys cannot collide. A raise beyond the
+    sequence's own integer type is rejected: that case needs a wider column.
+    """
+    ensure_dangerous_allowed(settings, "maintenance.sequence_maxvalue")
+    schema_name = validate_identifier(body.schema_name, what="schema name")
+    sequence_name = validate_identifier(body.sequence_name, what="sequence name")
+    target = f"{schema_name}.{sequence_name}"
+    with mapped_errors(settings):
+        row = client.fetch_one(
+            """
+            SELECT data_type, increment_by, max_value
+            FROM pg_sequences
+            WHERE schemaname = %s AND sequencename = %s
+            """,
+            (schema_name, sequence_name),
+        )
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail=f"Sequence '{target}' was not found in this database."
+        )
+    if int(row.get("increment_by") or 1) < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{target}' counts downwards; raise its MINVALUE instead of MAXVALUE.",
+        )
+    data_type = str(row.get("data_type") or "bigint")
+    ceiling = INTEGER_LIMITS.get(data_type, INTEGER_LIMITS["bigint"])
+    current_max = int(row["max_value"]) if row.get("max_value") is not None else ceiling
+    new_max = current_max * body.multiplier
+    if new_max > ceiling:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"'{target}' is a {data_type} sequence capped at {ceiling}; "
+                f"{body.multiplier}x would need {new_max}. Widen the owning column type instead."
+            ),
+        )
+    query = SQL("ALTER SEQUENCE {}.{} MAXVALUE {}").format(
+        Identifier(schema_name), Identifier(sequence_name), Literal(new_max)
+    )
+    if body.dry_run:
+        return DryRunResult(
+            action="maintenance.sequence_maxvalue",
+            risk=RiskLevel.DANGEROUS,
+            sql=[query.as_string()],
+            target=target,
+        )
+    # The typed confirmation is the bare sequence name; the audit target stays qualified.
+    require_confirm(body, "maintenance.sequence_maxvalue", sequence_name)
+    with mapped_errors(settings):
+        client.ping()
+        status = _untimed(client).execute_raw(query)
+    audit("maintenance.sequence_maxvalue", target, RiskLevel.DANGEROUS, settings)
+    return MaintenanceActionResult(action="sequence_maxvalue", target=target, command_status=status)
