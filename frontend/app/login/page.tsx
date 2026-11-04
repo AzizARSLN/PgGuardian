@@ -61,21 +61,46 @@ function safeNext(next: string | null): string {
 }
 
 /**
- * Backdrop texture: real statements the console runs, kept as a low-contrast
- * watermark so it reads as a statement log rather than decoration.
+ * Backdrop texture: the real statements this console issues, rendered as a live
+ * statement log so the backdrop reads as a working session, not decoration.
  */
-const SQL_WATERMARK = [
-  "SELECT schemaname, relname, n_dead_tup, last_autovacuum FROM pg_stat_user_tables ORDER BY n_dead_tup DESC;",
-  "SELECT pid, usename, state, wait_event_type, query_start FROM pg_stat_activity WHERE state <> 'idle';",
-  "SELECT relname, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) FROM pg_stat_user_indexes;",
-  "CREATE INDEX CONCURRENTLY idx_orders_created_at ON public.orders (created_at);",
-  "VACUUM (ANALYZE, VERBOSE) public.orders;",
-  "REINDEX INDEX CONCURRENTLY public.idx_orders_created_at;",
-  "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM public.orders WHERE created_at >= now() - interval '7 days';",
-  "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;",
-  "pg_locks  ·  pg_stat_replication  ·  pg_stat_statements  ·  WAL  ·  dead tuples  ·  bloat  ·  checkpoint",
-  "autovacuum  ·  shared_buffers  ·  index scan  ·  seq scan  ·  replication lag  ·  lock wait  ·  pgbadger",
-].join("   ");
+type SqlLogLine = { prompt: string; text: string; meta?: boolean };
+
+const SQL_LOG: SqlLogLine[] = [
+  { prompt: "pg=#", text: "SELECT schemaname, relname, n_dead_tup, last_autovacuum FROM pg_stat_user_tables ORDER BY n_dead_tup DESC;" },
+  { prompt: "pg=#", text: "SELECT pid, usename, state, wait_event_type, query_start FROM pg_stat_activity WHERE state <> 'idle';" },
+  { prompt: "pg=#", text: "SELECT relname, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) FROM pg_stat_user_indexes;" },
+  { prompt: "pg=#", text: "CREATE INDEX CONCURRENTLY idx_orders_created_at ON public.orders (created_at);" },
+  { prompt: "pg=#", text: "VACUUM (ANALYZE, VERBOSE) public.orders;" },
+  { prompt: "pg=#", text: "REINDEX INDEX CONCURRENTLY public.idx_orders_created_at;" },
+  { prompt: "pg=#", text: "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM public.orders WHERE created_at >= now() - INTERVAL '7 days';" },
+  { prompt: "pg=#", text: "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;" },
+  { prompt: "--", meta: true, text: "pg_locks · pg_stat_replication · pg_stat_statements · WAL · dead tuples · bloat · checkpoint" },
+  { prompt: "--", meta: true, text: "autovacuum · shared_buffers · index scan · seq scan · replication lag · lock wait · pgbadger" },
+];
+
+const SQL_KEYWORD_ALT =
+  "SELECT|FROM|WHERE|ORDER BY|GROUP BY|CREATE INDEX CONCURRENTLY|CREATE INDEX|CREATE|INDEX|CONCURRENTLY|VACUUM|ANALYZE|VERBOSE|REINDEX|EXPLAIN|BUFFERS|FORMAT JSON|FORMAT|JSON|DESC|ASC|AND|OR|ON|AS|INTERVAL";
+const SQL_SPLIT_RE = new RegExp(`\\b(${SQL_KEYWORD_ALT})\\b`, "g");
+
+/** Colour SQL keywords so the log is legible as SQL at a glance. */
+function highlightSql(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  SQL_SPLIT_RE.lastIndex = 0;
+  while ((match = SQL_SPLIT_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    nodes.push(
+      <span key={`${match.index}-${match[0]}`} className="pgg-sql-kw">
+        {match[0]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
+}
 
 const BACKEND_ERRORS: Record<string, string> = {
   "Invalid credentials.": "login.errors.invalid",
@@ -154,10 +179,19 @@ export default function LoginPage() {
 
   return (
     <div className="dark pgg-login relative flex min-h-screen items-center justify-center px-6 py-12 text-foreground">
-      {/* Database-flavoured backdrop: a data-grid rhythm behind a statement log. */}
+      {/* Database-flavoured backdrop: a live statement log over a data-grid rhythm. */}
       <div className="pgg-db-backdrop" aria-hidden>
-        <p className="pgg-db-sql">{SQL_WATERMARK}</p>
         <div className="pgg-db-grid" />
+        <div className="pgg-db-log">
+          {SQL_LOG.map((line, index) => (
+            <p key={index} className="pgg-db-log-line">
+              <span className="pgg-db-log-prompt">{line.prompt}</span>
+              <span className={line.meta ? "pgg-db-log-meta" : "pgg-db-log-sql"}>
+                {line.meta ? line.text : highlightSql(line.text)}
+              </span>
+            </p>
+          ))}
+        </div>
       </div>
 
       <main className="pgg-rise relative z-10 w-full max-w-[400px] rounded-xl border border-border bg-card p-7 shadow-2xl sm:p-9">
