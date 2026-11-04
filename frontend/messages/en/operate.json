@@ -72,6 +72,12 @@
       "all": "All",
       "label": "Filter by status"
     },
+    "pagination": {
+      "summary": "Page {page} / {pages} · {total} tables",
+      "pageSize": "{size} per page",
+      "previous": "Previous",
+      "next": "Next"
+    },
     "table": {
       "title": "Table maintenance status",
       "subtitle": "Dead tuple ratio with VACUUM and ANALYZE history",
