@@ -401,7 +401,7 @@ def suggested_sql(query: str, recommendations: list[Recommendation]) -> tuple[st
         if recommendation.code == "SELECT_STAR" and recommendation.sql_rewrite:
             expanded = re.sub(
                 r"(\bSELECT\s+)\*",
-                lambda m: _star_columns(recommendation.sql_rewrite or "", m),
+                lambda m, rewrite=recommendation.sql_rewrite: _star_columns(rewrite or "", m),
                 current,
                 count=1,
                 flags=re.I,

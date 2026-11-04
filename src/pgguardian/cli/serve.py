@@ -7,7 +7,6 @@ import sys
 
 import typer
 
-
 _LOG_LEVELS = {"critical", "error", "warning", "info", "debug", "trace"}
 
 
@@ -44,6 +43,7 @@ def run(
     ``--debug`` is a shorthand for ``--reload --log-level debug``.
     """
     import logging
+
     import uvicorn
 
     if debug:
