@@ -8,7 +8,8 @@ SELECT
     wait_event_type,
     wait_event,
     EXTRACT(EPOCH FROM (now() - query_start)) AS duration_seconds,
-    left(query, 1000) AS query
+    -- Full text: a truncated statement cannot be EXPLAINed by the analysis panel.
+    query
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
   AND query_start IS NOT NULL

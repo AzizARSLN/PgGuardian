@@ -1,8 +1,9 @@
 "use client";
 
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, Play } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as React from "react";
+import { toast } from "sonner";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +28,9 @@ import type {
   PlanResult,
   Recommendation,
 } from "@/lib/api/statements";
+import { endpoints, type DryRunResult, type SqlResult } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
+import { useConfirm } from "@/lib/hooks/useConfirm";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -193,59 +196,195 @@ function CostCard({ insight }: { insight: QueryInsight }) {
   );
 }
 
-function PlanTree({ node, depth = 0 }: { node: PlanNodeJson; depth?: number }) {
+const NODE_TONE: Record<string, string> = {
+  "Seq Scan": "border-warning/50 bg-warning/5",
+  "Index Scan": "border-success/40 bg-success/5",
+  "Index Only Scan": "border-success/40 bg-success/5",
+  "Bitmap Index Scan": "border-success/40 bg-success/5",
+  "Bitmap Heap Scan": "border-success/40 bg-success/5",
+  Sort: "border-info/40 bg-info/5",
+  Hash: "border-info/40 bg-info/5",
+  "Hash Join": "border-info/40 bg-info/5",
+  "Merge Join": "border-info/40 bg-info/5",
+  "Nested Loop": "border-warning/40 bg-warning/5",
+};
+
+function nodeTone(node: PlanNodeJson): string {
+  const type = node["Node Type"];
+  if (NODE_TONE[type]) return NODE_TONE[type];
+  if (type.includes("Join")) return "border-info/40 bg-info/5";
+  return "border-border bg-card";
+}
+
+function walkPlan(node: PlanNodeJson, visit: (n: PlanNodeJson) => void) {
+  visit(node);
+  for (const child of node.Plans ?? []) walkPlan(child, visit);
+}
+
+interface PlanAnalysis {
+  hotspot: PlanNodeJson;
+  hotspotByTime: boolean;
+  seqScans: string[];
+  sorts: number;
+  nestedLoops: number;
+  rowMismatch: { node: PlanNodeJson; ratio: number } | null;
+}
+
+/** Purely derived facts the UI turns into a plain-language summary. */
+function analysePlan(tree: PlanNodeJson): PlanAnalysis {
+  const nodes: PlanNodeJson[] = [];
+  walkPlan(tree, (node) => nodes.push(node));
+  const hasTime = nodes.some((node) => node["Actual Total Time"] !== undefined);
+  const metric = (node: PlanNodeJson) =>
+    hasTime ? (node["Actual Total Time"] ?? 0) : node["Total Cost"];
+  const hotspot = nodes.reduce((best, node) => (metric(node) > metric(best) ? node : best), tree);
+  let rowMismatch: PlanAnalysis["rowMismatch"] = null;
+  for (const node of nodes) {
+    const actual = node["Actual Rows"];
+    const estimate = node["Plan Rows"];
+    if (actual === undefined || !estimate || actual === 0) continue;
+    const ratio = Math.max(actual, estimate) / Math.max(Math.min(actual, estimate), 1);
+    if (ratio >= 10 && (!rowMismatch || ratio > rowMismatch.ratio)) {
+      rowMismatch = { node, ratio };
+    }
+  }
+  return {
+    hotspot,
+    hotspotByTime: hasTime,
+    seqScans: nodes
+      .filter((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"])
+      .map((node) => node["Relation Name"] as string),
+    sorts: nodes.filter((node) => node["Node Type"] === "Sort").length,
+    nestedLoops: nodes.filter((node) => node["Node Type"] === "Nested Loop").length,
+    rowMismatch,
+  };
+}
+
+function PlanNodeCard({
+  node,
+  rootCost,
+  hotspot,
+  depth = 0,
+}: {
+  node: PlanNodeJson;
+  rootCost: number;
+  hotspot: PlanNodeJson | null;
+  depth?: number;
+}) {
   const { t, formatNumber } = useI18n();
-  const flagged = node["Node Type"] === "Seq Scan" && Boolean(node.Filter);
+  const [open, setOpen] = React.useState(true);
+  const children = node.Plans ?? [];
+  const cost = node["Total Cost"] ?? 0;
+  const costPct = rootCost > 0 ? Math.min(100, (cost / rootCost) * 100) : 0;
+  const isHot = hotspot === node;
+  const details: Array<[string, string | undefined]> = [
+    ["Filter", node.Filter],
+    ["Index Cond", node["Index Cond"]],
+    ["Hash Cond", node["Hash Cond"]],
+    ["Sort Key", node["Sort Key"]?.join(", ")],
+  ];
   return (
-    <div className={cn(depth > 0 && "ml-4 border-l border-border pl-3")}>
+    <div className={cn(depth > 0 && "ml-3 border-l border-border pl-3")}>
       <div
         className={cn(
-          "my-1 rounded-md border px-2.5 py-1.5",
-          flagged ? "border-warning/50 bg-warning/5" : "border-border bg-card"
+          "my-1 rounded-md border px-2.5 py-2",
+          nodeTone(node),
+          isHot && "ring-1 ring-warning/60"
         )}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          {children.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              aria-label={t("statements.plan.showTree")}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-90")} />
+            </button>
+          ) : (
+            <span className="h-3.5 w-3.5" />
+          )}
           <span className="font-semibold">
             {node["Join Type"] ? `${node["Join Type"]} ` : ""}
             {node["Node Type"]}
           </span>
           {node["Relation Name"] && (
-            <span className="font-mono text-info">{node["Relation Name"]}</span>
+            <span className="font-mono text-[11px] text-info">{node["Relation Name"]}</span>
           )}
           {node["Index Name"] && (
-            <span className="font-mono text-success">{node["Index Name"]}</span>
+            <span className="font-mono text-[11px] text-success">{node["Index Name"]}</span>
           )}
-          <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-            {t("statements.plan.nodeStats", {
-              cost: formatNumber(node["Total Cost"], { maximumFractionDigits: 1 }),
-              rows: formatNumber(node["Plan Rows"]),
-            })}
-            {node["Actual Total Time"] !== undefined &&
-              ` · ${formatNumber(node["Actual Total Time"], {
-                maximumFractionDigits: 3,
-              })} ms`}
+          {isHot && (
+            <Badge
+              variant="outline"
+              className="border-warning/40 bg-warning/10 px-1.5 py-0 text-[10px] text-warning"
+            >
+              {t("queryInsight.plan.hotspotBadge")}
+            </Badge>
+          )}
+          <span className="ml-auto flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-muted-foreground">
+            <span>
+              {t("queryInsight.plan.costLabel")} {formatNumber(cost, { maximumFractionDigits: 1 })}
+            </span>
+            <span>
+              {t("queryInsight.plan.rowsLabel")} {formatNumber(node["Plan Rows"])}
+            </span>
+            {node["Actual Rows"] !== undefined && (
+              <span className="text-foreground">
+                → {formatNumber(node["Actual Rows"])}
+              </span>
+            )}
+            {node["Actual Total Time"] !== undefined && (
+              <span>{formatNumber(node["Actual Total Time"], { maximumFractionDigits: 3 })} ms</span>
+            )}
           </span>
         </div>
-        {[
-          ["Filter", node.Filter],
-          ["Index Cond", node["Index Cond"]],
-          ["Hash Cond", node["Hash Cond"]],
-          ["Sort Key", node["Sort Key"]?.join(", ")],
-        ].map(
+        <div className="mt-1.5 h-1 w-full overflow-hidden rounded bg-muted">
+          <div
+            className={cn("h-full rounded", isHot ? "bg-warning" : "bg-info/60")}
+            style={{ width: `${costPct}%` }}
+          />
+        </div>
+        {details.map(
           ([label, value]) =>
             value && (
               <p
                 key={label}
-                className="mt-0.5 break-words font-mono text-[11px] text-muted-foreground"
+                className="mt-1 break-words font-mono text-[11px] text-muted-foreground"
               >
                 {label}: {value}
               </p>
             )
         )}
       </div>
-      {node.Plans?.map((child, index) => (
-        <PlanTree key={index} node={child} depth={depth + 1} />
-      ))}
+      {open &&
+        children.map((child, index) => (
+          <PlanNodeCard
+            key={index}
+            node={child}
+            rootCost={rootCost}
+            hotspot={hotspot}
+            depth={depth + 1}
+          />
+        ))}
+    </div>
+  );
+}
+
+function PlanStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  tone?: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("font-mono text-sm font-semibold", tone)}>{value}</p>
     </div>
   );
 }
@@ -266,7 +405,182 @@ function PlanFailure({ plan }: { plan: PlanResult }) {
   );
 }
 
-function ExecutionPlanPanel({ target }: { target: QueryInsightTarget }) {
+function PlanAnalysisCard({ analysis }: { analysis: PlanAnalysis }) {
+  const { t, formatNumber } = useI18n();
+  const hot = analysis.hotspot;
+  const hotName = `${hot["Join Type"] ? `${hot["Join Type"]} ` : ""}${hot["Node Type"]}${
+    hot["Relation Name"] ? ` · ${hot["Relation Name"]}` : ""
+  }`;
+  const hotValue = analysis.hotspotByTime
+    ? `${formatNumber(hot["Actual Total Time"] ?? 0, { maximumFractionDigits: 3 })} ms`
+    : formatNumber(hot["Total Cost"], { maximumFractionDigits: 1 });
+  const findings: string[] = [];
+  if (analysis.seqScans.length > 0) {
+    findings.push(
+      t("queryInsight.plan.findingSeqScan", {
+        relations: [...new Set(analysis.seqScans)].join(", "),
+      })
+    );
+  }
+  if (analysis.sorts > 0) findings.push(t("queryInsight.plan.findingSort", { count: analysis.sorts }));
+  if (analysis.nestedLoops > 0) {
+    findings.push(t("queryInsight.plan.findingNestedLoop", { count: analysis.nestedLoops }));
+  }
+  if (analysis.rowMismatch) {
+    findings.push(
+      t("queryInsight.plan.findingRowMismatch", {
+        node: analysis.rowMismatch.node["Node Type"],
+        ratio: formatNumber(analysis.rowMismatch.ratio, { maximumFractionDigits: 0 }),
+      })
+    );
+  }
+  return (
+    <div className="rounded-md border border-border bg-card p-3">
+      <p className="text-[13px] font-semibold">{t("queryInsight.plan.analysisTitle")}</p>
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        <div className="rounded-md border border-warning/40 bg-warning/5 px-2.5 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t(analysis.hotspotByTime ? "queryInsight.plan.hotspotTime" : "queryInsight.plan.hotspotCost")}
+          </p>
+          <p className="font-mono text-xs text-foreground">{hotName}</p>
+          <p className="font-mono text-[11px] text-warning">{hotValue}</p>
+        </div>
+        <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            {t("queryInsight.plan.findingsLabel")}
+          </p>
+          {findings.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">{t("queryInsight.plan.noFindings")}</p>
+          ) : (
+            <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-[11px] text-foreground">
+              {findings.map((finding, index) => (
+                <li key={index}>{finding}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanActions({ insight }: { insight: QueryInsight }) {
+  const { t, formatNumber } = useI18n();
+  const { confirm, Component: ConfirmDialog } = useConfirm();
+  const items = insight.recommendations.filter((item) => item.ddl || item.sql_rewrite);
+  const run = useMutation({
+    mutationFn: async ({ sql }: { sql: string }) => {
+      const plan = await endpoints.executeSql({ sql, dry_run: true, readonly: false });
+      if (!("risk" in plan)) return null;
+      let result: SqlResult | DryRunResult;
+      if (plan.risk === "READ") {
+        result = await endpoints.executeSql({ sql, readonly: true });
+      } else {
+        const ok = await confirm({
+          title: t("queryInsight.plan.confirmTitle"),
+          description: t("queryInsight.plan.confirmDesc", { risk: plan.risk }),
+          risk_level: plan.risk,
+          sql_preview: plan.sql,
+          confirm_label: t("queryInsight.plan.runSuggestion"),
+          cancel_label: t("common.cancel"),
+        });
+        if (!ok) return null;
+        result = await endpoints.executeSql({ sql, confirm: true, readonly: false });
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      if (!result || !("row_count" in result)) return;
+      toast.success(t("queryInsight.plan.executed"), {
+        description: t("queryInsight.plan.executedDesc", {
+          rows: formatNumber(result.row_count),
+          ms: formatNumber(result.duration_ms, { maximumFractionDigits: 1 }),
+        }),
+      });
+    },
+  });
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <ConfirmDialog />
+      <div>
+        <p className="text-[13px] font-semibold">{t("queryInsight.plan.actionsTitle")}</p>
+        <p className="text-xs text-muted-foreground">{t("queryInsight.plan.actionsHint")}</p>
+      </div>
+      {items.map((item, index) => {
+        const sql = item.ddl ?? item.sql_rewrite ?? "";
+        const running = run.isPending && run.variables?.sql === sql;
+        return (
+          <article
+            key={`${item.code}-${index}`}
+            className="space-y-1.5 rounded-md border border-border bg-card p-3"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                  SEVERITY_STYLE[item.severity]
+                )}
+              >
+                {t(`statements.severity.${item.severity}`)}
+              </span>
+              <h3 className="text-[13px] font-semibold">{t(`statements.rules.${item.code}.title`)}</h3>
+              <span
+                className={cn(
+                  "ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                  SAFETY_STYLE[item.safety]
+                )}
+              >
+                {t(`statements.safety.${item.safety}.label`)}
+              </span>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t(`statements.rules.${item.code}.fix`)}
+            </p>
+            <CodeBlock
+              code={sql}
+              label={t(item.ddl ? "queryInsight.plan.ddlLabel" : "queryInsight.plan.rewriteLabel")}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-[11px]"
+                disabled={run.isPending}
+                onClick={() => run.mutate({ sql })}
+              >
+                {running ? (
+                  <>
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    {t("queryInsight.plan.runningSuggestion")}
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-1 h-3 w-3" />
+                    {t("queryInsight.plan.runSuggestion")}
+                  </>
+                )}
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                {t("queryInsight.plan.runHint")}
+              </span>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function ExecutionPlanPanel({
+  target,
+  insight,
+}: {
+  target: QueryInsightTarget;
+  insight: QueryInsight;
+}) {
   const { t, formatNumber } = useI18n();
   const [options, setOptions] =
     React.useState<Required<ExplainPlanOptions>>(DEFAULT_PLAN_OPTIONS);
@@ -299,6 +613,7 @@ function ExecutionPlanPanel({ target }: { target: QueryInsightTarget }) {
   const plan = explain.data;
   const envelope = Array.isArray(plan?.plan) ? (plan.plan[0] as PlanEnvelope | undefined) : undefined;
   const tree = envelope?.Plan;
+  const analysis = tree ? analysePlan(tree) : null;
   const optionDefs: Array<{
     key: keyof typeof DEFAULT_PLAN_OPTIONS;
     title: string;
@@ -351,9 +666,7 @@ function ExecutionPlanPanel({ target }: { target: QueryInsightTarget }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[13px] font-semibold">{t("queryInsight.plan.title")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("queryInsight.plan.subtitle")}
-            </p>
+            <p className="text-xs text-muted-foreground">{t("queryInsight.plan.subtitle")}</p>
           </div>
           <Button
             size="sm"
@@ -367,31 +680,34 @@ function ExecutionPlanPanel({ target }: { target: QueryInsightTarget }) {
                 {t("queryInsight.plan.running")}
               </>
             ) : (
-              t("queryInsight.plan.run")
+              <>
+                <Play className="mr-1 h-3.5 w-3.5" />
+                {t("queryInsight.plan.run")}
+              </>
             )}
           </Button>
         </div>
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {optionDefs.map((option) => (
             <label
               key={option.key}
+              title={option.description}
               className={cn(
-                "flex items-start gap-3 rounded-md border px-3 py-2",
-                option.disabled ? "border-border/60 bg-muted/30" : "border-border bg-background"
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors",
+                option.disabled
+                  ? "cursor-not-allowed border-border/60 bg-muted/30 text-muted-foreground"
+                  : options[option.key]
+                    ? "cursor-pointer border-primary bg-accent text-foreground"
+                    : "cursor-pointer border-border bg-background text-muted-foreground hover:bg-muted"
               )}
             >
               <Checkbox
                 checked={options[option.key]}
                 disabled={option.disabled}
                 onCheckedChange={toggle(option.key)}
-                className="mt-0.5"
+                className="h-3.5 w-3.5"
               />
-              <span className="space-y-0.5">
-                <span className="block font-mono text-xs font-semibold">{option.title}</span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {option.description}
-                </span>
-              </span>
+              <span className="font-mono font-semibold">{option.title}</span>
             </label>
           ))}
         </div>
@@ -409,42 +725,36 @@ function ExecutionPlanPanel({ target }: { target: QueryInsightTarget }) {
         />
       )}
       {plan && plan.status !== "ok" && <PlanFailure plan={plan} />}
-      {plan?.status === "ok" && tree && (
+      {plan?.status === "ok" && tree && analysis && (
         <div className="space-y-3">
-          <div className="grid gap-2 md:grid-cols-3">
-            <div className="rounded-md border border-border bg-card p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("queryInsight.plan.mode")}
-              </p>
-              <p className="font-mono text-sm font-semibold">
-                {t(`statements.plan.mode.${plan.mode}`)}
-              </p>
-            </div>
-            <div className="rounded-md border border-border bg-card p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("queryInsight.plan.planningTime")}
-              </p>
-              <p className="font-mono text-sm font-semibold">
-                {envelope?.["Planning Time"] !== undefined
-                  ? `${formatNumber(envelope["Planning Time"], {
-                      maximumFractionDigits: 3,
-                    })} ms`
-                  : "-"}
-              </p>
-            </div>
-            <div className="rounded-md border border-border bg-card p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t("queryInsight.plan.executionTime")}
-              </p>
-              <p className="font-mono text-sm font-semibold">
-                {envelope?.["Execution Time"] !== undefined
-                  ? `${formatNumber(envelope["Execution Time"], {
-                      maximumFractionDigits: 3,
-                    })} ms`
-                  : "-"}
-              </p>
-            </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <PlanStat label={t("queryInsight.plan.mode")} value={t(`statements.plan.mode.${plan.mode}`)} />
+            <PlanStat
+              label={t("queryInsight.plan.planningTime")}
+              value={
+                envelope?.["Planning Time"] !== undefined
+                  ? `${formatNumber(envelope["Planning Time"], { maximumFractionDigits: 3 })} ms`
+                  : "-"
+              }
+            />
+            <PlanStat
+              label={t("queryInsight.plan.executionTime")}
+              value={
+                envelope?.["Execution Time"] !== undefined
+                  ? `${formatNumber(envelope["Execution Time"], { maximumFractionDigits: 3 })} ms`
+                  : "-"
+              }
+            />
+            <PlanStat
+              label={t("queryInsight.plan.totalCost")}
+              value={formatNumber(tree["Total Cost"], { maximumFractionDigits: 1 })}
+            />
+            <PlanStat
+              label={t("queryInsight.plan.rowsLabel")}
+              value={formatNumber(tree["Actual Rows"] ?? tree["Plan Rows"])}
+            />
           </div>
+          <PlanAnalysisCard analysis={analysis} />
           <div className="flex flex-wrap items-center gap-2">
             {optionDefs
               .filter((option) => options[option.key])
@@ -465,11 +775,13 @@ function ExecutionPlanPanel({ target }: { target: QueryInsightTarget }) {
             <CodeBlock code={JSON.stringify(plan.plan, null, 2)} label="JSON" />
           ) : (
             <div className="rounded-md border border-border bg-muted/20 p-2">
-              <PlanTree node={tree} />
+              <PlanNodeCard node={tree} rootCost={tree["Total Cost"]} hotspot={analysis.hotspot} />
             </div>
           )}
         </div>
       )}
+
+      <PlanActions insight={insight} />
     </div>
   );
 }
@@ -760,7 +1072,7 @@ function Body({ target }: { target: QueryInsightTarget }) {
         <Overview insight={data} target={target} />
       </TabsContent>
       <TabsContent value="plan" className="space-y-3">
-        <ExecutionPlanPanel target={target} />
+        <ExecutionPlanPanel target={target} insight={data} />
       </TabsContent>
       <TabsContent value="session" className="space-y-3">
         <SessionDetail target={target} />

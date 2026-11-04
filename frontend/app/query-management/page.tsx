@@ -8,6 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type Row,
   type SortingState,
 } from '@tanstack/react-table';
 import { toast } from 'sonner';
@@ -21,6 +22,13 @@ import {
 } from '@/components/query-insight/query-insight-dialog';
 import { RiskBadge } from '@/components/ui/risk-badge';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { IfWriter } from '@/components/role-guard';
 import {
@@ -61,6 +69,28 @@ function stateGroup(state: string | null): StateGroup {
   if (state === 'idle') return 'idle';
   return 'none';
 }
+
+type GroupKey = 'state' | 'client' | 'application' | 'user';
+
+// The dimension a section header is built from; "state" keeps the historic layout.
+const GROUP_OPTIONS: { id: GroupKey; labelKey: string }[] = [
+  { id: 'state', labelKey: 'liveQueries.groupByState' },
+  { id: 'client', labelKey: 'liveQueries.groupByClient' },
+  { id: 'application', labelKey: 'liveQueries.groupByApplication' },
+  { id: 'user', labelKey: 'liveQueries.groupByUser' },
+];
+
+const GROUP_FIELD: Record<Exclude<GroupKey, 'state'>, keyof SessionInfo> = {
+  client: 'client_addr',
+  application: 'application_name',
+  user: 'username',
+};
+
+type SessionRow = Row<SessionInfo>;
+
+type GroupSection =
+  | { kind: 'state'; key: StateGroup; rows: SessionRow[] }
+  | { kind: 'dimension'; key: string; rows: SessionRow[] };
 
 const LONG_RUNNING_MIN_SECONDS = 60;
 const DANGEROUS_SECONDS = 300;
@@ -112,6 +142,7 @@ export default function QueryManagementPage() {
   ]);
 
   const [filter, setFilter] = React.useState<StateGroup | 'all'>('all');
+  const [groupBy, setGroupBy] = React.useState<GroupKey>('state');
   const [search, setSearch] = React.useState('');
   const [insightTarget, setInsightTarget] = React.useState<QueryInsightTarget | null>(null);
 
@@ -463,12 +494,33 @@ export default function QueryManagementPage() {
   const failedMessage = sessionsQuery.error instanceof Error ? sessionsQuery.error.message : '';
 
   const sortedRows = table.getRowModel().rows;
-  const sections = (filter === 'all' ? STATE_GROUPS : [filter])
-    .map((group) => ({
-      group,
-      rows: sortedRows.filter((r) => stateGroup(r.original.state) === group),
-    }))
-    .filter((section) => section.rows.length > 0);
+  const sections: GroupSection[] = (() => {
+    if (groupBy === 'state') {
+      return (filter === 'all' ? STATE_GROUPS : [filter])
+        .map((group) => ({
+          kind: 'state' as const,
+          key: group,
+          rows: sortedRows.filter((r) => stateGroup(r.original.state) === group),
+        }))
+        .filter((section) => section.rows.length > 0);
+    }
+    const field = GROUP_FIELD[groupBy];
+    const buckets = new Map<string, SessionRow[]>();
+    for (const row of sortedRows) {
+      const raw = row.original[field];
+      const key =
+        raw === null || raw === undefined || raw === ''
+          ? t('liveQueries.groupUnset')
+          : String(raw);
+      const list = buckets.get(key);
+      if (list) list.push(row);
+      else buckets.set(key, [row]);
+    }
+    return [...buckets.entries()]
+      .map(([key, rows]) => ({ kind: 'dimension' as const, key, rows }))
+      .sort((a, b) => b.rows.length - a.rows.length || a.key.localeCompare(b.key));
+  })();
+  const groupByLabel = t(GROUP_OPTIONS.find((o) => o.id === groupBy)?.labelKey ?? '');
 
   const filterButtons: { key: StateGroup | 'all'; count: number; tone: string }[] = [
     { key: 'all', count: allRows.length, tone: 'text-foreground' },
@@ -523,6 +575,21 @@ export default function QueryManagementPage() {
               </span>
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground">{t('liveQueries.groupBy')}</span>
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupKey)}>
+            <SelectTrigger className="h-8 w-[160px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {GROUP_OPTIONS.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {t(opt.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="relative min-w-[220px] flex-1">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -606,37 +673,71 @@ export default function QueryManagementPage() {
                 ))}
               </TableHeader>
               <TableBody>
-                {sections.map(({ group, rows: sectionRows }) => (
-                  <React.Fragment key={group}>
-                    {filter === 'all' && (
-                      <TableRow className="bg-muted/40 hover:bg-muted/40">
-                        <TableCell colSpan={columns.length} className="px-2 py-1 text-[11px] font-semibold">
-                          <span className={GROUP_TONE[group]}>{t(`liveQueries.groups.${group}`)}</span>
-                          <span className={`${METRIC} ml-2 text-muted-foreground`}>{sectionRows.length}</span>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {sectionRows.map((r) => (
-                      <TableRow
-                        key={r.id}
-                        className={cn(
-                          isDangerous(r.original) &&
-                            'border-l-2 border-l-destructive/60 bg-destructive/5'
-                        )}
-                      >
-                        {r.getVisibleCells().map((c) => (
-                          <TableCell
-                            key={c.id}
-                            style={{ width: c.column.getSize() }}
-                            className="px-2 py-1.5 align-top text-xs"
-                          >
-                            {flexRender(c.column.columnDef.cell, c.getContext())}
+                {sections.map((section) => {
+                  const sectionRows = section.rows;
+                  const showHeader = section.kind === 'dimension' || filter === 'all';
+                  const stateCounts =
+                    section.kind === 'dimension'
+                      ? STATE_GROUPS.map((g) => ({
+                          group: g,
+                          count: sectionRows.filter((r) => stateGroup(r.original.state) === g).length,
+                        })).filter((d) => d.count > 0)
+                      : [];
+                  return (
+                    <React.Fragment key={section.key}>
+                      {showHeader && (
+                        <TableRow className="bg-muted/40 hover:bg-muted/40">
+                          <TableCell colSpan={columns.length} className="px-2 py-1 text-[11px] font-semibold">
+                            {section.kind === 'state' ? (
+                              <>
+                                <span className={GROUP_TONE[section.key]}>
+                                  {t(`liveQueries.groups.${section.key}`)}
+                                </span>
+                                <span className={`${METRIC} ml-2 text-muted-foreground`}>
+                                  {sectionRows.length}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="text-muted-foreground">{groupByLabel}:</span>
+                                <span className="font-mono text-foreground">{section.key}</span>
+                                <span className={`${METRIC} text-muted-foreground`}>
+                                  {sectionRows.length}
+                                </span>
+                                <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  {stateCounts.map(({ group, count }) => (
+                                    <span key={group} className={cn(GROUP_TONE[group], 'font-mono')}>
+                                      {t(`liveQueries.groups.${group}`)} {count}
+                                    </span>
+                                  ))}
+                                </span>
+                              </span>
+                            )}
                           </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </React.Fragment>
-                ))}
+                        </TableRow>
+                      )}
+                      {sectionRows.map((r) => (
+                        <TableRow
+                          key={r.id}
+                          className={cn(
+                            isDangerous(r.original) &&
+                              'border-l-2 border-l-destructive/60 bg-destructive/5'
+                          )}
+                        >
+                          {r.getVisibleCells().map((c) => (
+                            <TableCell
+                              key={c.id}
+                              style={{ width: c.column.getSize() }}
+                              className="px-2 py-1.5 align-top text-xs"
+                            >
+                              {flexRender(c.column.columnDef.cell, c.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </UITable>
           </div>

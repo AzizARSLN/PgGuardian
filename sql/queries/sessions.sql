@@ -21,7 +21,8 @@ SELECT
     EXTRACT(EPOCH FROM (now() - xact_start))::float8 AS xact_seconds,
     EXTRACT(EPOCH FROM (now() - backend_start))::float8 AS backend_seconds,
     pg_blocking_pids(pid) AS blocked_by,
-    left(query, 2000) AS query
+    -- Full text: a truncated statement cannot be EXPLAINed by the analysis panel.
+    query
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
 ORDER BY state NULLS LAST, state_change
