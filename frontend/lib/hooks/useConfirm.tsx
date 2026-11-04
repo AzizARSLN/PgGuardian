@@ -32,6 +32,8 @@ export interface ConfirmOptions {
   title: string;
   description: string;
   sql_preview?: string[];
+  /** When true the SQL preview becomes an editable textarea (see ConfirmResult.sql). */
+  sql_editable?: boolean;
   risk_level: ConfirmRiskLevel;
   confirm_label?: string;
   cancel_label?: string;
@@ -41,12 +43,18 @@ export interface ConfirmOptions {
   confirm_name_description?: string;
 }
 
+export interface ConfirmResult {
+  confirmed: boolean;
+  /** The (possibly edited) SQL when ``sql_editable`` is set, otherwise null. */
+  sql: string | null;
+}
+
 interface DialogState {
   open: boolean;
   options: ConfirmOptions | null;
 }
 
-let globalResolver: ((value: boolean) => void) | null = null;
+let globalResolver: ((value: ConfirmResult) => void) | null = null;
 
 export function useConfirm() {
   const [dialogState, setDialogState] = React.useState<DialogState>({
@@ -54,25 +62,40 @@ export function useConfirm() {
     options: null,
   });
   const [confirmNameInput, setConfirmNameInput] = React.useState("");
+  const [sqlDraft, setSqlDraft] = React.useState("");
+  // Read inside stable callbacks so they never capture stale options/draft.
+  const optionsRef = React.useRef<ConfirmOptions | null>(null);
+  optionsRef.current = dialogState.options;
+  const sqlDraftRef = React.useRef("");
+  sqlDraftRef.current = sqlDraft;
 
   const close = React.useCallback((result: boolean) => {
+    const sql = optionsRef.current?.sql_editable ? sqlDraftRef.current : null;
     setDialogState({ open: false, options: null });
     setConfirmNameInput("");
+    setSqlDraft("");
     if (globalResolver) {
-      globalResolver(result);
+      globalResolver({ confirmed: result, sql });
       globalResolver = null;
     }
   }, []);
 
-  const confirm = React.useCallback(
-    (options: ConfirmOptions): Promise<boolean> => {
-      return new Promise<boolean>((resolve) => {
+  const confirmSql = React.useCallback(
+    (options: ConfirmOptions): Promise<ConfirmResult> => {
+      return new Promise<ConfirmResult>((resolve) => {
         globalResolver = resolve;
         setConfirmNameInput("");
+        setSqlDraft((options.sql_preview ?? []).join("\n\n"));
         setDialogState({ open: true, options });
       });
     },
     []
+  );
+
+  const confirm = React.useCallback(
+    (options: ConfirmOptions): Promise<boolean> =>
+      confirmSql(options).then((result) => result.confirmed),
+    [confirmSql]
   );
 
   const handleCancel = React.useCallback(() => {
@@ -184,18 +207,33 @@ export function useConfirm() {
             <div className="rounded-md border bg-black/40 p-4 overflow-hidden">
               <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
                 <TerminalSquare className="h-3.5 w-3.5" />
-                <span className="font-semibold">SQL Onizlemesi</span>
+                <span className="font-semibold">{tGlobal("common.sqlPreview")}</span>
+                {opts.sql_editable && (
+                  <span className="ml-auto text-[11px] text-warning">
+                    {tGlobal("common.sqlEditableHint")}
+                  </span>
+                )}
               </div>
-              <div className="space-y-1.5">
-                {opts.sql_preview.map((sql, idx) => (
-                  <pre
-                    key={idx}
-                    className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all bg-black/20 rounded-lg p-3"
-                  >
-                    {sql}
-                  </pre>
-                ))}
-              </div>
+              {opts.sql_editable ? (
+                <textarea
+                  value={sqlDraft}
+                  onChange={(e) => setSqlDraft(e.target.value)}
+                  spellCheck={false}
+                  rows={Math.min(14, Math.max(3, sqlDraft.split("\n").length))}
+                  className="w-full resize-y rounded-lg border border-border/60 bg-black/30 p-3 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-border"
+                />
+              ) : (
+                <div className="space-y-1.5">
+                  {opts.sql_preview.map((sql, idx) => (
+                    <pre
+                      key={idx}
+                      className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all bg-black/20 rounded-lg p-3"
+                    >
+                      {sql}
+                    </pre>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -270,6 +308,7 @@ export function useConfirm() {
 
   return {
     confirm,
+    confirmSql,
     Component,
   };
 }
