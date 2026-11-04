@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Table2,
   Target,
   TerminalSquare,
   Trash2,
@@ -28,10 +29,12 @@ import {
   endpoints,
   type AnalyzeRequest,
   type DryRunResult,
+  type IndexUsageInfo,
   type MaintenanceActionResult,
   type MutationRequest,
   type ReindexRequest,
   type TableMaintenance,
+  type TableSummary,
   type VacuumRequest,
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
@@ -43,7 +46,7 @@ import {
   type OpControl,
 } from "@/lib/hooks/use-op-control";
 import { useI18n, useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { IfWriter } from "@/components/role-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -625,6 +628,7 @@ export default function MaintenancePage() {
             <TabsTrigger value="vacuum">VACUUM</TabsTrigger>
             <TabsTrigger value="analyze">ANALYZE</TabsTrigger>
             <TabsTrigger value="reindex">REINDEX</TabsTrigger>
+            <TabsTrigger value="health">{t("maintenance.health.tab")}</TabsTrigger>
           </TabsList>
 
           <OpBlockedHint control={op} className="mt-3" />
@@ -865,6 +869,10 @@ export default function MaintenancePage() {
                 )}
               />
             </div>
+          </TabsContent>
+
+          <TabsContent value="health" className="mt-3">
+            <TableHealthTab op={op} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1156,6 +1164,506 @@ export default function MaintenancePage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Schema-scoped table overview: sizes, tuple/write counters and never-used
+ * indexes, with VACUUM / ANALYZE / REINDEX actions on the selected table.
+ * Every write action runs a dry run first and shows the SQL in the confirmation.
+ */
+function TableHealthTab({ op }: { op: OpControl }) {
+  const t = useT();
+  const queryClient = useQueryClient();
+  const { formatNumber } = useI18n();
+  const { confirm, Component: ConfirmDialog } = useConfirm();
+
+  const [schema, setSchema] = useState("");
+  const [selectedKey, setSelectedKey] = useState("");
+
+  const formatPercent = (value: number) =>
+    formatNumber(value / 100, { style: "percent", maximumFractionDigits: 1 });
+
+  const schemasQuery = useQuery({
+    queryKey: qk.schemas.all(),
+    queryFn: () => endpoints.listSchemas(),
+  });
+
+  const tablesQuery = useQuery({
+    queryKey: qk.schemas.tables(schema, REPORT_LIMIT),
+    queryFn: () => endpoints.listTables(schema, REPORT_LIMIT),
+    enabled: Boolean(schema),
+  });
+
+  const tables: TableSummary[] = tablesQuery.data ?? [];
+  const selected =
+    tables.find((row) => `${row.schema_name}.${row.table_name}` === selectedKey) ?? null;
+  const selectedTable = selected?.table_name ?? "";
+
+  const indexesQuery = useQuery({
+    queryKey: qk.schemas.tableIndexes(schema, selectedTable),
+    queryFn: () => endpoints.listTableIndexes(schema, selectedTable),
+    enabled: Boolean(schema && selectedTable),
+  });
+  const unusedIndexes: IndexUsageInfo[] = (indexesQuery.data ?? []).filter(
+    (row) => row.potentially_unused
+  );
+
+  const invalidateTables = () => {
+    queryClient.invalidateQueries({ queryKey: qk.schemas.all() });
+  };
+
+  const vacuumMutation = useMaintenanceAction<VacuumRequest>(op, "vacuum", "VACUUM", invalidateTables);
+  const analyzeMutation = useMaintenanceAction<AnalyzeRequest>(op, "analyze", "ANALYZE", invalidateTables);
+  const reindexMutation = useMaintenanceAction<ReindexRequest>(op, "reindex", "REINDEX", invalidateTables);
+
+  const previewAndConfirm = async (
+    path: "vacuum" | "analyze" | "reindex",
+    body: MutationRequest,
+    command: string,
+    descriptionKey: string
+  ) => {
+    try {
+      const result = await api.post<DryRunResult>(
+        `/maintenance/${path}`,
+        { ...body, dry_run: true },
+        { skipToast: true }
+      );
+      const preview = toPreview(result);
+      if (!preview) return false;
+      return await confirm({
+        title: t("maintenance.confirm.title", { command }),
+        description: t(descriptionKey),
+        risk_level: preview.risk,
+        sql_preview: preview.sql,
+        confirm_label: t("maintenance.confirm.run", { command }),
+        cancel_label: t("common.cancel"),
+      });
+    } catch {
+      // The API client has already surfaced the error.
+      return false;
+    }
+  };
+
+  const runVacuum = async (full: boolean) => {
+    if (!selected) return;
+    const body: VacuumRequest = {
+      schema_name: selected.schema_name,
+      table_name: selected.table_name,
+      full,
+      analyze: true,
+      freeze: false,
+    };
+    const ok = await previewAndConfirm(
+      "vacuum",
+      body,
+      "VACUUM",
+      full ? "maintenance.confirm.vacuumFull" : "maintenance.confirm.vacuum"
+    );
+    if (ok) vacuumMutation.mutate({ ...body, confirm: true });
+  };
+
+  const runAnalyze = async () => {
+    if (!selected) return;
+    const body: AnalyzeRequest = {
+      schema_name: selected.schema_name,
+      table_name: selected.table_name,
+    };
+    const ok = await previewAndConfirm("analyze", body, "ANALYZE", "maintenance.confirm.analyze");
+    if (ok) analyzeMutation.mutate({ ...body, confirm: true });
+  };
+
+  const runReindexTable = async () => {
+    if (!selected) return;
+    const body: ReindexRequest = {
+      schema_name: selected.schema_name,
+      table_name: selected.table_name,
+      concurrently: true,
+    };
+    const ok = await previewAndConfirm(
+      "reindex",
+      body,
+      "REINDEX",
+      "maintenance.confirm.reindexConcurrent"
+    );
+    if (ok) reindexMutation.mutate({ ...body, confirm: true });
+  };
+
+  const runReindexIndex = async (indexName: string) => {
+    const body: ReindexRequest = { schema_name: schema, index_name: indexName, concurrently: true };
+    const ok = await previewAndConfirm(
+      "reindex",
+      body,
+      "REINDEX",
+      "maintenance.confirm.reindexConcurrent"
+    );
+    if (ok) reindexMutation.mutate({ ...body, confirm: true });
+  };
+
+  const busy = vacuumMutation.isPending || analyzeMutation.isPending || reindexMutation.isPending;
+  const schemaOptions = (schemasQuery.data ?? []).filter((row) => !row.is_system);
+  const totalSize = tables.reduce((sum, row) => sum + row.total_size_bytes, 0);
+
+  return (
+    <div className="space-y-3">
+      <ConfirmDialog />
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={schema}
+            onValueChange={(value) => {
+              setSchema(value);
+              setSelectedKey("");
+            }}
+          >
+            <SelectTrigger
+              className="h-8 w-[220px] text-xs"
+              aria-label={t("maintenance.health.schema")}
+            >
+              <SelectValue placeholder={t("maintenance.health.schemaPlaceholder")} />
+            </SelectTrigger>
+            <SelectContent>
+              {schemaOptions.map((row) => (
+                <SelectItem key={row.name} value={row.name} className="py-1.5 font-mono text-xs">
+                  {row.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {schema && (
+            <span className="font-mono text-xs text-muted-foreground">
+              {t("maintenance.health.summary", {
+                tables: formatNumber(tables.length),
+                size: formatBytes(totalSize, 1),
+              })}
+            </span>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={() => void tablesQuery.refetch()}
+          disabled={!schema || tablesQuery.isFetching}
+        >
+          <RefreshCw
+            className={cn("mr-1.5 h-3.5 w-3.5", tablesQuery.isFetching && "animate-spin")}
+          />
+          {t("maintenance.refresh")}
+        </Button>
+      </div>
+
+      {!schema ? (
+        <HintBox icon={<Table2 className="h-4 w-4" />} text={t("maintenance.health.noSchema")} />
+      ) : tablesQuery.isError ? (
+        <QueryError onRetry={() => tablesQuery.refetch()} />
+      ) : tablesQuery.isLoading ? (
+        <div className="space-y-1.5">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-7 w-full" />
+          ))}
+        </div>
+      ) : tables.length === 0 ? (
+        <HintBox icon={<Table2 className="h-4 w-4" />} text={t("maintenance.health.empty")} />
+      ) : (
+        <div className="max-h-[320px] overflow-auto rounded-md border border-border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableRow>
+                <TableHead className={HEAD}>{t("maintenance.health.columns.table")}</TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.total")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.tableSize")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.indexSize")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.live")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.dead")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.deadPercent")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.inserted")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.updated")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.deleted")}
+                </TableHead>
+                <TableHead className={cn(HEAD, "text-right")}>
+                  {t("maintenance.health.columns.unused")}
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tables.map((row) => {
+                const key = `${row.schema_name}.${row.table_name}`;
+                const isSelected = key === selectedKey;
+                return (
+                  <TableRow
+                    key={key}
+                    className="cursor-pointer"
+                    data-state={isSelected ? "selected" : undefined}
+                    onClick={() => setSelectedKey(isSelected ? "" : key)}
+                  >
+                    <TableCell className={cn(CELL, "font-mono")}>
+                      <span className="text-muted-foreground">{row.schema_name}.</span>
+                      {row.table_name}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono")}>
+                      {formatBytes(row.total_size_bytes)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono text-muted-foreground")}>
+                      {formatBytes(row.table_size_bytes)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono text-muted-foreground")}>
+                      {formatBytes(row.indexes_size_bytes)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono")}>
+                      {formatNumber(row.live_tuples)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono")}>
+                      {formatNumber(row.dead_tuples)}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        CELL,
+                        "text-right font-mono font-semibold",
+                        deadTone(row.dead_tuple_percent)
+                      )}
+                    >
+                      {formatPercent(row.dead_tuple_percent)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono text-muted-foreground")}>
+                      {formatNumber(row.inserted_rows)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono text-muted-foreground")}>
+                      {formatNumber(row.updated_rows)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right font-mono text-muted-foreground")}>
+                      {formatNumber(row.deleted_rows)}
+                    </TableCell>
+                    <TableCell className={cn(CELL, "text-right")}>
+                      {row.unused_index_count > 0 ? (
+                        <span className="font-mono text-warning">
+                          {formatNumber(row.unused_index_count)}
+                          <span className="ml-1 text-muted-foreground">
+                            · {formatBytes(row.unused_index_size_bytes, 1)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-muted-foreground">0</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {selected ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                <Table2 className="h-3.5 w-3.5 text-info" />
+                <span className="font-mono">
+                  {selected.schema_name}.{selected.table_name}
+                </span>
+              </h3>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setSelectedKey("")}
+              >
+                <X className="mr-1 h-3 w-3" />
+                {t("maintenance.health.clear")}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <Metric label={t("maintenance.health.columns.inserted")} value={selected.inserted_rows} />
+              <Metric label={t("maintenance.health.columns.updated")} value={selected.updated_rows} />
+              <Metric label={t("maintenance.health.columns.deleted")} value={selected.deleted_rows} />
+              <Metric label={t("maintenance.table.live")} value={selected.live_tuples} />
+              <Metric
+                label={t("maintenance.table.dead")}
+                value={selected.dead_tuples}
+                tone={deadTone(selected.dead_tuple_percent)}
+              />
+              <Metric
+                label={t("maintenance.table.deadPercent")}
+                value={selected.dead_tuple_percent}
+                percent
+                tone={deadTone(selected.dead_tuple_percent)}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <IfWriter>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => void runVacuum(false)}
+                  disabled={busy}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {t("maintenance.health.actions.vacuum")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-8 text-xs"
+                  onClick={() => void runVacuum(true)}
+                  disabled={busy}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {t("maintenance.health.actions.vacuumFull")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => void runAnalyze()}
+                  disabled={busy}
+                >
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  {t("maintenance.health.actions.analyze")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => void runReindexTable()}
+                  disabled={busy}
+                >
+                  <Database className="mr-1.5 h-3.5 w-3.5" />
+                  {t("maintenance.health.actions.reindex")}
+                </Button>
+              </IfWriter>
+              <OpStopButton control={op} className="h-8 text-xs" />
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                <Target className="h-3.5 w-3.5 text-warning" />
+                {t("maintenance.health.unused.title")}
+              </h3>
+              <Badge variant="outline" size="sm" className="font-mono">
+                {t("maintenance.health.unused.subtitle")}
+              </Badge>
+            </div>
+            {indexesQuery.isLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : unusedIndexes.length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground">
+                {t("maintenance.health.unused.empty")}
+              </p>
+            ) : (
+              <div className="max-h-[200px] overflow-auto rounded-md border border-border">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableRow>
+                      <TableHead className={HEAD}>{t("maintenance.fields.index")}</TableHead>
+                      <TableHead className={cn(HEAD, "text-right")}>
+                        {t("maintenance.health.columns.indexSize")}
+                      </TableHead>
+                      <TableHead className={cn(HEAD, "text-right")}>
+                        {t("maintenance.health.unused.scans")}
+                      </TableHead>
+                      <TableHead className={HEAD} />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unusedIndexes.map((row) => (
+                      <TableRow key={row.index_name}>
+                        <TableCell className={cn(CELL, "font-mono")}>{row.index_name}</TableCell>
+                        <TableCell className={cn(CELL, "text-right font-mono")}>
+                          {formatBytes(row.size_bytes)}
+                        </TableCell>
+                        <TableCell className={cn(CELL, "text-right font-mono text-muted-foreground")}>
+                          {formatNumber(row.index_scans)}
+                        </TableCell>
+                        <TableCell className={cn(CELL, "text-right")}>
+                          <IfWriter>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => void runReindexIndex(row.index_name)}
+                              disabled={busy}
+                            >
+                              <RefreshCw className="mr-1 h-3 w-3" />
+                              {t("maintenance.health.unused.reindex")}
+                            </Button>
+                          </IfWriter>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : schema && tables.length > 0 ? (
+        <p className="text-xs text-muted-foreground">{t("maintenance.health.pickHint")}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  tone,
+  percent,
+}: {
+  label: string;
+  value: number;
+  tone?: string;
+  percent?: boolean;
+}) {
+  const { formatNumber } = useI18n();
+  return (
+    <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
+      <div className="truncate text-[11px] text-muted-foreground">{label}</div>
+      <div className={cn("font-mono text-sm font-semibold", tone ?? "text-foreground")}>
+        {percent
+          ? formatNumber(value / 100, { style: "percent", maximumFractionDigits: 1 })
+          : formatNumber(value)}
+      </div>
+    </div>
+  );
+}
+
+function HintBox({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4">
+      <span className="shrink-0 text-muted-foreground">{icon}</span>
+      <p className="text-sm text-muted-foreground">{text}</p>
     </div>
   );
 }
