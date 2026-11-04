@@ -136,7 +136,7 @@ class SnapshotStore:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY taken_at DESC LIMIT ?"
-        params.append(max(1, min(limit, 1000)))
+        params.append(max(1, min(limit, 5000)))
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, params).fetchall()

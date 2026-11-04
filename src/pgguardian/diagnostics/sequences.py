@@ -5,7 +5,7 @@ from __future__ import annotations
 from pgguardian.database.connection import DbClient
 
 
-def collect_sequences(client: DbClient, limit: int = 100) -> list[dict]:
+def collect_sequences(client: DbClient, limit: int = 5000) -> list[dict]:
     """Sequences with usage percent, most exhausted first; unused ones report 0."""
     sql = """
     SELECT schemaname AS schema_name, sequencename AS sequence_name,

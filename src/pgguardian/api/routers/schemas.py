@@ -133,7 +133,7 @@ def list_schemas(client: DbClient = Depends(resolve_client)) -> list[SchemaInfo]
 
 @router.get("/schemas/{schema}/tables", response_model=list[TableSummary])
 def list_tables(
-    schema: str, limit: int = 100, client: DbClient = Depends(resolve_client)
+    schema: str, limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> list[TableSummary]:
     """Tables in a schema with sizes, dead-tuple ratios and owners (read-only)."""
     schema_name = validate_identifier(schema, what="schema name")
@@ -148,7 +148,7 @@ def list_tables(
             " JOIN pg_class c ON c.oid = s.relid"
             " WHERE s.schemaname = %s"
             " ORDER BY 4 DESC LIMIT %s",
-            (schema_name, min(limit, 1000)),
+            (schema_name, min(limit, 5000)),
         )
     result: list[TableSummary] = []
     for row in rows:
@@ -245,7 +245,7 @@ def list_functions(schema: str, client: DbClient = Depends(resolve_client)) -> l
 
 @router.get("/schemas/{schema}/objects", response_model=list[DbObjectInfo])
 def list_objects(
-    schema: str, limit: int = 200, client: DbClient = Depends(resolve_client)
+    schema: str, limit: int = 5000, client: DbClient = Depends(resolve_client)
 ) -> list[DbObjectInfo]:
     """All objects in a schema with owners and sizes (read-only)."""
     schema_name = validate_identifier(schema, what="schema name")
@@ -260,7 +260,7 @@ def list_objects(
             " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
             " WHERE n.nspname = %s AND c.relkind IN ('r','v','m','S','p','f','i')"
             " ORDER BY 3, 2 LIMIT %s",
-            (schema_name, min(limit, 1000)),
+            (schema_name, min(limit, 5000)),
         )
     return [
         DbObjectInfo(

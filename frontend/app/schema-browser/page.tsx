@@ -39,7 +39,7 @@ import { qk } from '@/lib/api/queryKeys';
 import { useI18n, useT } from '@/lib/i18n';
 import { cn, formatBytes } from '@/lib/utils';
 
-const TABLE_LIMIT = 1000;
+const TABLE_LIMIT = 5000;
 
 function tableHref(schema: string, table: string): string {
   return `/schema-browser/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`;

@@ -743,54 +743,54 @@ export const endpoints = {
   getDiagnose: (): Promise<DiagnosticFinding[]> =>
     api.get<DiagnosticFinding[]>("/diagnose"),
 
-  getConnections: (limit = 20): Promise<ConnectionReport> =>
+  getConnections: (limit = 5000): Promise<ConnectionReport> =>
     api.get<ConnectionReport>("/connections", { params: { limit } }),
 
-  getSessions: (limit = 500): Promise<SessionReport> =>
+  getSessions: (limit = 5000): Promise<SessionReport> =>
     api.get<SessionReport>(`/queries/sessions?limit=${limit}`),
 
-  getActiveQueries: (limit = 20): Promise<QueryReport> =>
+  getActiveQueries: (limit = 5000): Promise<QueryReport> =>
     api.get<QueryReport>("/queries/active", { params: { limit } }),
 
   getLongRunningQueries: (
     minSeconds = 60,
-    limit = 20
+    limit = 5000
   ): Promise<QueryReport> =>
     api.get<QueryReport>("/queries/long-running", {
       params: { min_seconds: minSeconds, limit },
     }),
 
-  getLocks: (limit = 20): Promise<LockReport> =>
+  getLocks: (limit = 5000): Promise<LockReport> =>
     api.get<LockReport>("/locks", { params: { limit } }),
 
-  getStorage: (section = "all", limit = 20): Promise<StorageReport> =>
+  getStorage: (section = "all", limit = 5000): Promise<StorageReport> =>
     api.get<StorageReport>("/storage", {
       params: { section, limit },
     }),
 
-  getIndexes: (limit = 20): Promise<IndexReport> =>
+  getIndexes: (limit = 5000): Promise<IndexReport> =>
     api.get<IndexReport>("/indexes", { params: { limit } }),
 
-  getMaintenance: (limit = 20): Promise<MaintenanceReport> =>
+  getMaintenance: (limit = 5000): Promise<MaintenanceReport> =>
     api.get<MaintenanceReport>("/maintenance", { params: { limit } }),
 
   getReport: (
-    limit = 20,
+    limit = 5000,
     profile?: string
   ): Promise<ReportDict> =>
     api.get<ReportDict>("/report", { params: { limit, profile } }),
 
   getPgStatStatements: (
-    limit = 20
+    limit = 5000
   ): Promise<PgStatStatementsRow[]> =>
     api.get<PgStatStatementsRow[]>("/pg-stat-statements", {
       params: { limit },
     }),
 
-  getBloat: (limit = 20): Promise<BloatRow[]> =>
+  getBloat: (limit = 5000): Promise<BloatRow[]> =>
     api.get<BloatRow[]>("/bloat", { params: { limit } }),
 
-  getSequences: (limit = 100): Promise<SequenceRow[]> =>
+  getSequences: (limit = 5000): Promise<SequenceRow[]> =>
     api.get<SequenceRow[]>("/sequences", { params: { limit } }),
 
   getToolkitCatalog: (): Promise<ToolkitCatalog> =>
@@ -798,7 +798,7 @@ export const endpoints = {
 
   runToolkitQuery: (
     id: string,
-    maxRows = 200,
+    maxRows = 5000,
     params: Record<string, string> = {}
   ): Promise<ToolkitRunResult> =>
     api.post<ToolkitRunResult>("/toolkit/run", { id, max_rows: maxRows, params }),
@@ -838,7 +838,7 @@ export const endpoints = {
     profile?: string,
     server?: string,
     database?: string,
-    limit = 50
+    limit = 5000
   ): Promise<Snapshot[]> =>
     api.get<Snapshot[]>("/snapshots", {
       params: { profile, server, database, limit },
@@ -887,7 +887,7 @@ export const endpoints = {
 
   listTables: (
     schema: string,
-    limit = 100
+    limit = 5000
   ): Promise<TableSummary[]> =>
     api.get<TableSummary[]>(`/schemas/${schema}/tables`, {
       params: { limit },
@@ -906,7 +906,7 @@ export const endpoints = {
 
   listObjects: (
     schema: string,
-    limit = 200
+    limit = 5000
   ): Promise<DbObjectInfo[]> =>
     api.get<DbObjectInfo[]>(`/schemas/${schema}/objects`, {
       params: { limit },

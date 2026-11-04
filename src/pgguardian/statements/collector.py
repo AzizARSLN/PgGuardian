@@ -213,7 +213,7 @@ def list_statements(
     *,
     sort: str = "calls",
     descending: bool = True,
-    limit: int = 100,
+    limit: int = 5000,
     offset: int = 0,
     min_calls: int = 2,
     search: str | None = None,
