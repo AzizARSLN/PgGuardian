@@ -19,6 +19,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IfWriter } from "@/components/role-guard";
 import { CodeBlock } from "@/components/statements/code-block";
+import { ApiError } from "@/lib/api/client";
 import {
   pgbadgerApi,
   type ExportSection,
@@ -30,6 +31,7 @@ import {
   type TaskStatus,
 } from "@/lib/api/pgbadger";
 import { useRole } from "@/lib/hooks/use-role";
+import { OpStopButton, useOpControl } from "@/lib/hooks/use-op-control";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useProfileStore } from "@/store/useProfileStore";
@@ -298,17 +300,26 @@ export default function PgBadgerReportPage() {
   const queryClient = useQueryClient();
   const profile = useProfileStore((s) => s.selectedProfileName);
   const { isDBA } = useRole();
+  // Analyzing a large report is a long server-side job, so it can be stopped.
+  const analyzeOp = useOpControl();
   const key = ["pgbadger", profile, id, locale];
 
   const report = useQuery({ queryKey: key, queryFn: () => pgbadgerApi.detail(id, locale) });
 
   const analyze = useMutation({
-    mutationFn: () => pgbadgerApi.analyze(id, locale),
+    mutationFn: () => {
+      const handle = analyzeOp.begin("pgbadger");
+      return pgbadgerApi.analyze(id, locale, { opId: handle.opId, signal: handle.signal });
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(key, data);
       queryClient.invalidateQueries({ queryKey: ["pgbadger", profile] });
       toast.success(t("pgbadger.analyzed"));
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 499) return;
+    },
+    onSettled: () => analyzeOp.end(),
   });
 
   const setTask = useMutation({
@@ -385,6 +396,7 @@ export default function PgBadgerReportPage() {
                 {analyze.isPending ? <Loader2 className="animate-spin" /> : data.analyzed ? <RefreshCw /> : <Play />}
                 {t(analyze.isPending ? "pgbadger.analyzing" : data.analyzed ? "pgbadger.again" : "pgbadger.start")}
               </Button>
+              <OpStopButton control={analyzeOp} className="h-8" />
             </IfWriter>
           </div>
         )}

@@ -185,6 +185,7 @@
     "batchConfirmNameDesc": "Type the number of affected targets ({count}) to continue.",
     "batchApplied": "Batch operation completed",
     "batchSummary": "{ok} completed · {failed} failed",
+    "batchStopped": "Stopped · {ok} completed · {failed} failed",
     "batchResultsTitle": "Batch advice results",
     "batchResultsHint": "Applied targets and their command results",
     "batchProgress": "{done}/{total} done",
@@ -197,6 +198,7 @@
     "batchStatusRunning": "Running",
     "batchStatusOk": "Completed",
     "batchStatusFailed": "Failed",
+    "batchStatusStopped": "Stopped",
     "dropIndexConfirm": "This action cannot be undone; the index is removed permanently. Indexes that back a constraint (PK/UNIQUE) cannot be dropped this way."
   },
   "table": {
