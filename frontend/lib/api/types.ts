@@ -330,9 +330,23 @@ export interface TableSummary {
   table_name: string;
   owner?: string | null;
   total_size_bytes: number;
+  table_size_bytes: number;
+  indexes_size_bytes: number;
   live_tuples: number;
   dead_tuples: number;
   dead_tuple_percent: number;
+  inserted_rows: number;
+  updated_rows: number;
+  deleted_rows: number;
+  unused_index_count: number;
+  unused_index_size_bytes: number;
+}
+
+export interface IndexUsageInfo {
+  index_name: string;
+  size_bytes: number;
+  index_scans: number;
+  potentially_unused: boolean;
 }
 
 export interface ColumnInfo {
@@ -952,6 +966,12 @@ export const endpoints = {
     api.get<TableSummary[]>(`/schemas/${schema}/tables`, {
       params: { limit },
     }),
+
+  listTableIndexes: (
+    schema: string,
+    table: string
+  ): Promise<IndexUsageInfo[]> =>
+    api.get<IndexUsageInfo[]>(`/schemas/${schema}/tables/${table}/indexes`),
 
   listViews: (schema: string): Promise<ViewInfo[]> =>
     api.get<ViewInfo[]>(`/schemas/${schema}/views`),
