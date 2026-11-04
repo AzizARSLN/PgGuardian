@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
-from unittest.mock import MagicMock
 
-import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 from jwt import encode
@@ -28,7 +25,7 @@ UNREACHABLE = {
 
 
 def _token(user_id: int, email: str, role: str) -> str:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     return encode(
         {
             "sub": str(user_id),

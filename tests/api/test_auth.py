@@ -48,9 +48,9 @@ VIEWER_ROW = {
 
 
 def _make_access(user_id: int, email: str, role: str, name: str = "Tester") -> str:
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "email": email,
@@ -163,9 +163,9 @@ def test_logout_clears_cookie_and_204(client: TestClient, monkeypatch: pytest.Mo
 
 def test_refresh_with_cookie_issues_new_access(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """POST /refresh exchanges a valid cookie for a new access token."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     refresh_token = encode(
         {
             "sub": "2",

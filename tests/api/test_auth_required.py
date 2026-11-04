@@ -14,7 +14,7 @@ SECRET = "auth-required-secret-0123456789-0123456789-abcdef"
 
 
 def _token(role: str = "Viewer", **extra: object) -> str:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     claims = {
         "sub": "1",
         "email": "u@local",

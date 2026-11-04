@@ -32,7 +32,7 @@ UNREACHABLE = {
 
 
 def _tok(role: str, user_id: int = 99, email: str = "u@local") -> str:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     return encode(
         {
             "sub": str(user_id),
