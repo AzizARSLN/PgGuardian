@@ -79,6 +79,8 @@ const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
 const REPORT_LIMIT = 5000;
 /** Rows per page in the table maintenance list; keeps the grid responsive. */
 const TABLE_PAGE_SIZE = 100;
+/** Page-size choices (rows) for the table health list; capped at the report limit. */
+const HEALTH_PAGE_SIZE_OPTIONS = [100, 250, 500, 1000, 2500, 5000];
 
 const CELL = "px-2 py-1.5 text-xs";
 const HEAD = "h-8 px-2 text-xs";
@@ -1288,6 +1290,8 @@ function TableHealthTab({ op }: { op: OpControl }) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [threshold, setThreshold] = useState("10");
   const [batchRows, setBatchRows] = useState<BatchRow[] | null>(null);
+  const [pageSize, setPageSize] = useState(HEALTH_PAGE_SIZE_OPTIONS[0]);
+  const [pageIndex, setPageIndex] = useState(0);
 
   const formatPercent = (value: number) =>
     formatNumber(value / 100, { style: "percent", maximumFractionDigits: 1 });
@@ -1304,6 +1308,14 @@ function TableHealthTab({ op }: { op: OpControl }) {
   });
 
   const tables: TableSummary[] = tablesQuery.data ?? [];
+  const pageCount = Math.max(1, Math.ceil(tables.length / pageSize));
+  const pagedTables = useMemo(
+    () => tables.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+    [tables, pageIndex, pageSize]
+  );
+  useEffect(() => {
+    setPageIndex((current) => (current > pageCount - 1 ? pageCount - 1 : current));
+  }, [pageCount]);
   const selected = tables.find((row) => summaryKey(row) === selectedKey) ?? null;
   const selectedTable = selected?.table_name ?? "";
 
@@ -1622,6 +1634,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
               setSelectedKey("");
               setSelectedKeys(new Set());
               setBatchRows(null);
+              setPageIndex(0);
             }}
           >
             <SelectTrigger
@@ -1771,7 +1784,8 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </div>
           </div>
 
-          <div className="min-h-[240px] flex-1 overflow-auto rounded-md border border-border">
+          <div className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-md border border-border">
+          <div className="flex-1 overflow-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
@@ -1816,7 +1830,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tables.map((row) => {
+              {pagedTables.map((row) => {
                 const key = summaryKey(row);
                 const isSelected = key === selectedKey;
                 return (
@@ -1887,6 +1901,67 @@ function TableHealthTab({ op }: { op: OpControl }) {
               })}
             </TableBody>
           </Table>
+          </div>
+          {tables.length > 0 && (
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5">
+              <span className="font-mono text-xs text-muted-foreground">
+                {t("maintenance.pagination.summary", {
+                  page: formatNumber(pageIndex + 1),
+                  pages: formatNumber(pageCount),
+                  total: formatNumber(tables.length),
+                })}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">
+                  {t("maintenance.pagination.pageSize", { size: formatNumber(pageSize) })}
+                </span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(value) => {
+                    setPageSize(Number(value));
+                    setPageIndex(0);
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-[88px] font-mono text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HEALTH_PAGE_SIZE_OPTIONS.map((size) => (
+                      <SelectItem
+                        key={size}
+                        value={String(size)}
+                        className="py-1 font-mono text-xs"
+                      >
+                        {formatNumber(size)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+                  disabled={pageIndex === 0}
+                >
+                  <ChevronLeft className="mr-1 h-3 w-3" />
+                  {t("maintenance.pagination.previous")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}
+                  disabled={pageIndex >= pageCount - 1}
+                >
+                  {t("maintenance.pagination.next")}
+                  <ChevronRight className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
           </div>
         </>
       )}
