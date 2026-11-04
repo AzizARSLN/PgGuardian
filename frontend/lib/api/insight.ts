@@ -1,5 +1,5 @@
 import { api } from "@/lib/api/client";
-import type { Recommendation } from "@/lib/api/statements";
+import type { PlanResult, Recommendation } from "@/lib/api/statements";
 
 export interface InsightLocator {
   sqlcommenter: Record<string, string>;
@@ -27,10 +27,22 @@ export interface QueryInsight {
   locator: InsightLocator;
 }
 
+export interface ExplainPlanOptions {
+  analyze?: boolean;
+  verbose?: boolean;
+  costs?: boolean;
+  settings?: boolean;
+  buffers?: boolean;
+  wal?: boolean;
+  timing?: boolean;
+}
+
 export const insightApi = {
   advise: (sql: string, searchPath?: string): Promise<QueryInsight> =>
     api.post<QueryInsight>("/sql/advise", {
       sql,
       search_path: searchPath || undefined,
     }),
+  explain: (sql: string, options: ExplainPlanOptions): Promise<PlanResult> =>
+    api.post<PlanResult>("/sql/explain", { sql, ...options }),
 };

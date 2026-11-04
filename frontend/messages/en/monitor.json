@@ -238,6 +238,11 @@
     "title": "Query analysis",
     "subtitle": "This query's plan cost and the cheaper rewrite that lowers it",
     "openHint": "Open query analysis",
+    "tabs": {
+      "overview": "Overview",
+      "plan": "Execution Plan",
+      "session": "Session Detail"
+    },
     "wait": "Wait event",
     "seconds": "{value} s",
     "costTitle": "Plan cost",
@@ -249,7 +254,40 @@
     "suggestionTitle": "Query change suggestion",
     "noSuggestion": "No safe rewrite that lowers the cost was found.",
     "findingsTitle": "Findings",
-    "analyzing": "Analysing the query..."
+    "analyzing": "Analysing the query...",
+    "plan": {
+      "title": "Execution Plan",
+      "subtitle": "Configure plan options and inspect the result in a modern plan tree.",
+      "run": "Run plan",
+      "running": "Running plan",
+      "mode": "Plan mode",
+      "planningTime": "Planning time",
+      "executionTime": "Execution time",
+      "optionAnalyze": "Actually runs the query; only valid for read statements.",
+      "optionVerbose": "Shows expanded node and relation detail.",
+      "optionCosts": "Shows estimated cost and row counts.",
+      "optionSettings": "Includes settings that affected the planner.",
+      "optionBuffers": "Adds buffer usage; enabled when ANALYZE is on.",
+      "optionWal": "Adds WAL activity; enabled when ANALYZE is on.",
+      "optionTiming": "Timing stays enabled for consistent DBA output."
+    },
+    "session": {
+      "general": "General",
+      "client": "Client",
+      "timings": "Timings",
+      "runtime": "Runtime",
+      "backendType": "Backend Type",
+      "clientHost": "Client Host",
+      "clientIp": "Client IP",
+      "clientPort": "Client Port",
+      "backendStart": "Backend Start",
+      "xactStart": "Xact Start",
+      "queryStart": "Query Start",
+      "stateChange": "State Change",
+      "backendAge": "Backend Age",
+      "blockedBy": "Blocked By",
+      "none": "None"
+    }
   },
   "liveQueries": {
     "title": "Live Queries",
@@ -278,6 +316,7 @@
       "application": "Application"
     },
     "actions": {
+      "sessionDetail": "Session Detail",
       "cancel": "Cancel",
       "terminate": "Terminate"
     },

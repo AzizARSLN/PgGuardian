@@ -15,6 +15,10 @@ import { AlertTriangle, ArrowDown, ArrowUp, Power, RefreshCw, Search, Skull } fr
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  QueryInsightDialog,
+  type QueryInsightTarget,
+} from '@/components/query-insight/query-insight-dialog';
 import { RiskBadge } from '@/components/ui/risk-badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -109,6 +113,7 @@ export default function QueryManagementPage() {
 
   const [filter, setFilter] = React.useState<StateGroup | 'all'>('all');
   const [search, setSearch] = React.useState('');
+  const [insightTarget, setInsightTarget] = React.useState<QueryInsightTarget | null>(null);
 
   const sessionsQuery = useQuery({
     queryKey: qk.diagnostics.queries.sessions(),
@@ -207,6 +212,33 @@ export default function QueryManagementPage() {
     [confirm, terminateBackend, t]
   );
 
+  const openInsight = React.useCallback((row: SessionInfo) => {
+    if (!row.query) return;
+    setInsightTarget({
+      query: row.query,
+      pid: row.pid,
+      user: row.username,
+      database: row.database,
+      state: row.state,
+      duration_seconds: row.state_seconds,
+      application_name: row.application_name,
+      client_addr: row.client_addr,
+      client_hostname: row.client_hostname,
+      client_port: row.client_port,
+      backend_type: row.backend_type,
+      state_seconds: row.state_seconds,
+      xact_seconds: row.xact_seconds,
+      backend_seconds: row.backend_seconds,
+      backend_start: row.backend_start,
+      xact_start: row.xact_start,
+      query_start: row.query_start,
+      state_change: row.state_change,
+      blocked_by: row.blocked_by,
+      wait_event_type: row.wait_event_type,
+      wait_event: row.wait_event,
+    });
+  }, []);
+
   const columns = React.useMemo<ColumnDef<SessionInfo>[]>(
     () => [
       {
@@ -214,7 +246,15 @@ export default function QueryManagementPage() {
         header: () => 'PID',
         size: 70,
         cell: ({ row }) => (
-          <span className={`${METRIC} font-semibold text-foreground`}>{row.original.pid}</span>
+          <button
+            type="button"
+            onClick={() => openInsight(row.original)}
+            disabled={!row.original.query}
+            className={`${METRIC} font-semibold text-info underline-offset-2 hover:underline`}
+            title={t('queryInsight.openHint')}
+          >
+            {row.original.pid}
+          </button>
         ),
       },
       {
@@ -357,7 +397,7 @@ export default function QueryManagementPage() {
       {
         id: 'actions',
         header: () => <IfWriter>{t('liveQueries.columns.actions')}</IfWriter>,
-        size: 170,
+        size: 260,
         enableSorting: false,
         cell: ({ row }) => {
           const group = stateGroup(row.original.state);
@@ -366,6 +406,15 @@ export default function QueryManagementPage() {
           return (
           <IfWriter>
             <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openInsight(row.original)}
+                disabled={!row.original.query}
+                className="h-6 px-1.5 text-[11px]"
+              >
+                {t('liveQueries.actions.sessionDetail')}
+              </Button>
               {group === 'active' && (
               <Button
                 variant="outline"
@@ -394,7 +443,7 @@ export default function QueryManagementPage() {
         },
       },
     ],
-    [handleCancel, handleTerminate, cancelling, terminating, t]
+    [handleCancel, handleTerminate, cancelling, terminating, openInsight, t]
   );
 
   const table = useReactTable({
@@ -593,6 +642,7 @@ export default function QueryManagementPage() {
           </div>
         )}
       </section>
+      <QueryInsightDialog target={insightTarget} onClose={() => setInsightTarget(null)} />
     </div>
   );
 }

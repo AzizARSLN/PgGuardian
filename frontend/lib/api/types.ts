@@ -285,6 +285,12 @@ export interface SqlFormatResponse {
 export interface ExplainRequest {
   sql: string;
   analyze?: boolean;
+  verbose?: boolean;
+  costs?: boolean;
+  settings?: boolean;
+  buffers?: boolean;
+  wal?: boolean;
+  timing?: boolean;
 }
 
 export interface DatabaseInfo {
@@ -543,8 +549,11 @@ export interface TableAnalyzeResult {
 }
 
 export interface ExplainResult {
+  status: "ok" | "failed" | "not_explainable";
   plan: unknown;
-  analyze: boolean;
+  mode: "generic" | "custom";
+  reason: string | null;
+  message: string | null;
 }
 
 export interface ReportDict {
@@ -622,6 +631,10 @@ export interface SessionInfo {
   client_port: number | null;
   wait_event_type: string | null;
   wait_event: string | null;
+  backend_start: string | null;
+  xact_start: string | null;
+  query_start: string | null;
+  state_change: string | null;
   state_seconds: number | null;
   xact_seconds: number | null;
   backend_seconds: number | null;

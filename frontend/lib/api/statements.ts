@@ -160,6 +160,16 @@ export const statementsApi = {
     ),
   explain: (
     queryid: string,
-    body: { params?: string[]; search_path?: string; analyze?: boolean }
+    body: {
+      params?: string[];
+      search_path?: string;
+      analyze?: boolean;
+      verbose?: boolean;
+      costs?: boolean;
+      settings?: boolean;
+      buffers?: boolean;
+      wal?: boolean;
+      timing?: boolean;
+    }
   ): Promise<PlanResult> => api.post<PlanResult>(`/statements/${queryid}/explain`, body),
 };

@@ -27,6 +27,7 @@ from pgguardian.sqlexec.classifier import (
 )
 from pgguardian.sqlexec.executor import DEFAULT_MAX_ROWS, HARD_MAX_ROWS, SqlResult, run_sql
 from pgguardian.sqlexec.formatter import format_sql
+from pgguardian.statements.explain import explain
 from pgguardian.statements.insight import build_insight
 
 router = APIRouter(prefix="/api/v1/sql", tags=["sql"])
@@ -77,6 +78,12 @@ class ExplainRequest(BaseModel):
 
     sql: str = Field(description="SQL to EXPLAIN")
     analyze: bool = Field(default=False, description="EXPLAIN ANALYZE (runs query)")
+    verbose: bool = Field(default=True)
+    costs: bool = Field(default=True)
+    settings: bool = Field(default=True)
+    buffers: bool = Field(default=False)
+    wal: bool = Field(default=False)
+    timing: bool = Field(default=True, description="Kept on for stable DBA timing output.")
 
 
 @router.post("/explain")
@@ -86,12 +93,10 @@ def explain_sql(
     settings: ApiSettings = Depends(get_api_settings),
 ) -> dict:
     """EXPLAIN (ANALYZE) a query - read-only, capped; ANALYZE needs writes."""
-    # EXPLAIN without ANALYZE is read-only; with ANALYZE it actually runs
     if body.analyze and not settings.allow_writes:
         raise HTTPException(
             status_code=403, detail="EXPLAIN ANALYZE needs PGGUARDIAN_ALLOW_WRITES=1"
         )
-    prefix = "EXPLAIN (FORMAT JSON) " if not body.analyze else "EXPLAIN (ANALYZE, FORMAT JSON) "
     try:
         kind = classify(body.sql)
         statements = split_statements(body.sql)
@@ -106,20 +111,20 @@ def explain_sql(
             detail=f"EXPLAIN ANALYZE only runs read statements; this one is {kind.value}.",
         )
     with mapped_errors(settings):
-        client.ping()
-        with client.connection() as conn:
-            conn.autocommit = False
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SET TRANSACTION READ ONLY")
-                    cur.execute(prefix + statements[0])
-                    row = cur.fetchone()
-            finally:
-                conn.rollback()
-        if row:
-            val = next(iter(row.values())) if isinstance(row, dict) else row[0]
-            return {"plan": val, "analyze": body.analyze}
-        return {"plan": [], "analyze": body.analyze}
+        _, version = client.ping()
+        plan = explain(
+            client,
+            statements[0],
+            version=version,
+            analyze=body.analyze,
+            verbose=body.verbose,
+            costs=body.costs,
+            settings=body.settings,
+            buffers=body.buffers,
+            wal=body.wal,
+            timing=True,
+        )
+        return plan.as_dict()
 
 
 class SqlAdviseRequest(BaseModel):

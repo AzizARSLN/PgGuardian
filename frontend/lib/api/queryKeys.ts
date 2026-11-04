@@ -45,7 +45,7 @@ export const qk = {
 
   sql: {
     format: () => ["sql", "format"] as const,
-    explain: () => ["sql", "explain"] as const,
+    explain: (sql?: string, options?: object) => ["sql", "explain", sql, options] as const,
     execute: () => ["sql", "execute"] as const,
     advise: (sql: string) => ["sql", "advise", sql] as const,
   },

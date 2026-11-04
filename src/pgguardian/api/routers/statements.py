@@ -27,6 +27,12 @@ class ExplainBody(BaseModel):
     params: list[str] | None = Field(default=None, description="Values for $1, $2, ...")
     search_path: str | None = Field(default=None, max_length=200)
     analyze: bool = Field(default=False, description="Really runs the read statement.")
+    verbose: bool = Field(default=True)
+    costs: bool = Field(default=True)
+    settings: bool = Field(default=True)
+    buffers: bool = Field(default=False)
+    wal: bool = Field(default=False)
+    timing: bool = Field(default=True, description="Kept on for stable DBA timing output.")
 
 
 def _ready_status(client: DbClient) -> dict[str, Any]:
@@ -119,6 +125,12 @@ def statement_plan(
             params=body.params,
             search_path=body.search_path,
             analyze=body.analyze,
+            verbose=body.verbose,
+            costs=body.costs,
+            settings=body.settings,
+            buffers=body.buffers,
+            wal=body.wal,
+            timing=True,
         )
     return outcome.as_dict()
 

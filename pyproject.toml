@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "pgguardian"
 version = "0.1.0"
-description = "PostgreSQL diagnostics without the complexity — health, connections, queries, locks, storage, indexes and maintenance from your terminal."
+description = "PostgreSQL DBA and diagnostics toolkit with a web dashboard, query analysis, execution plans, connection management, backups and maintenance automation."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "PgGuardian Contributors" }]
-keywords = ["postgresql", "diagnostics", "health", "dba", "cli", "devops"]
+keywords = ["postgresql", "dba", "diagnostics", "query analyzer", "execution plan", "database monitoring", "fastapi", "nextjs", "devops", "pgadmin alternative"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -55,9 +55,9 @@ dev = [
 pgguardian = "pgguardian.cli.app:app"
 
 [project.urls]
-Homepage = "https://github.com/anomalyco/pgGuardian"
-Documentation = "https://github.com/anomalyco/pgGuardian/tree/main/docs"
-Issues = "https://github.com/anomalyco/pgGuardian/issues"
+Homepage = "https://github.com/AzizARSLN/PgGuardian"
+Documentation = "https://github.com/AzizARSLN/PgGuardian/tree/main/docs"
+Issues = "https://github.com/AzizARSLN/PgGuardian/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pgguardian"]

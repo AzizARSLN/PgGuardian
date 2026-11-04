@@ -10,8 +10,21 @@ import type { Locale } from "@/messages";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "PgGuardian",
-  description: "PostgreSQL administration and diagnostics for DBAs",
+  title: "PgGuardian | PostgreSQL DBA Dashboard and Query Analyzer",
+  description:
+    "PgGuardian is a PostgreSQL DBA dashboard, query analyzer and diagnostics platform for execution plans, live sessions, maintenance, backups and performance tuning.",
+  keywords: [
+    "PostgreSQL DBA",
+    "PostgreSQL dashboard",
+    "query analyzer",
+    "execution plan",
+    "pg_stat_activity",
+    "database monitoring",
+    "PostgreSQL diagnostics",
+    "pgAdmin alternative",
+    "FastAPI",
+    "Next.js",
+  ],
 };
 
 export default async function RootLayout({
