@@ -33,6 +33,7 @@ import {
   type MaintenanceActionResult,
   type MutationRequest,
   type ReindexRequest,
+  type SqlResult,
   type TableMaintenance,
   type TableSummary,
   type VacuumRequest,
@@ -133,6 +134,9 @@ function deadTone(percent: number): string {
 
 /** Stable identity for a report row; also the selection key. */
 const tableKey = (row: TableMaintenance) => `${row.schema_name ?? ""}.${row.table_name}`;
+
+/** Stable identity for a schema table row; also its selection key. */
+const summaryKey = (row: TableSummary) => `${row.schema_name}.${row.table_name}`;
 
 const RISKY_STATUSES: TableMaintenance["status"][] = ["WARNING", "CRITICAL"];
 
@@ -877,6 +881,10 @@ export default function MaintenancePage() {
         </Tabs>
       </div>
 
+      {/* The health tab carries its own bulk actions, so the legacy
+          "Tablo bakım durumu" panel is hidden while it is open. */}
+      {tab !== "health" && (
+        <>
       {batchRows && batchRows.length > 0 && (
         <div className={cn(PANEL, "shrink-0 overflow-hidden")}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -1164,23 +1172,56 @@ export default function MaintenancePage() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
 
+type HealthBatchAction = "vacuumFull" | "analyze" | "reindex";
+
+/** Backend maintenance endpoint for a bulk action. */
+const HEALTH_ENDPOINT: Record<HealthBatchAction, "vacuum" | "analyze" | "reindex"> = {
+  vacuumFull: "vacuum",
+  analyze: "analyze",
+  reindex: "reindex",
+};
+
+const HEALTH_COMMAND: Record<HealthBatchAction, string> = {
+  vacuumFull: "VACUUM FULL",
+  analyze: "ANALYZE",
+  reindex: "REINDEX",
+};
+
+/** Body scope for one bulk target (schema + table) by action. */
+function healthScopeBody(action: HealthBatchAction, schemaName: string, tableName: string) {
+  if (action === "analyze") return { schema_name: schemaName, table_name: tableName };
+  if (action === "reindex")
+    return { schema_name: schemaName, table_name: tableName, concurrently: true };
+  return { schema_name: schemaName, table_name: tableName, full: true, analyze: true, freeze: false };
+}
+
 /**
  * Schema-scoped table overview: sizes, tuple/write counters and never-used
- * indexes, with VACUUM / ANALYZE / REINDEX actions on the selected table.
- * Every write action runs a dry run first and shows the SQL in the confirmation.
+ * indexes. Tables can be multi-selected for bulk VACUUM FULL / ANALYZE /
+ * REINDEX, and a single focused table keeps its own action panel. Every write
+ * runs a dry run first; the confirmation shows the SQL, and single-table runs
+ * keep that SQL editable (an edited statement goes through the SQL endpoint,
+ * otherwise the structured maintenance endpoint is used).
  */
 function TableHealthTab({ op }: { op: OpControl }) {
   const t = useT();
   const queryClient = useQueryClient();
   const { formatNumber } = useI18n();
-  const { confirm, Component: ConfirmDialog } = useConfirm();
+  const { confirmSql, Component: ConfirmDialog } = useConfirm();
+  // The bulk run loops over many tables, so it tracks its own operation.
+  const bulkOp = useOpControl();
 
   const [schema, setSchema] = useState("");
   const [selectedKey, setSelectedKey] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [threshold, setThreshold] = useState("10");
+  const [batchRows, setBatchRows] = useState<BatchRow[] | null>(null);
 
   const formatPercent = (value: number) =>
     formatNumber(value / 100, { style: "percent", maximumFractionDigits: 1 });
@@ -1197,8 +1238,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
   });
 
   const tables: TableSummary[] = tablesQuery.data ?? [];
-  const selected =
-    tables.find((row) => `${row.schema_name}.${row.table_name}` === selectedKey) ?? null;
+  const selected = tables.find((row) => summaryKey(row) === selectedKey) ?? null;
   const selectedTable = selected?.table_name ?? "";
 
   const indexesQuery = useQuery({
@@ -1218,92 +1258,288 @@ function TableHealthTab({ op }: { op: OpControl }) {
   const analyzeMutation = useMaintenanceAction<AnalyzeRequest>(op, "analyze", "ANALYZE", invalidateTables);
   const reindexMutation = useMaintenanceAction<ReindexRequest>(op, "reindex", "REINDEX", invalidateTables);
 
-  const previewAndConfirm = async (
+  // --- single-table actions (dry run → editable SQL → confirm) ---
+
+  const runStructured = (path: "vacuum" | "analyze" | "reindex", body: MutationRequest) => {
+    if (path === "vacuum") vacuumMutation.mutate({ ...(body as VacuumRequest), confirm: true });
+    else if (path === "analyze") analyzeMutation.mutate({ ...(body as AnalyzeRequest), confirm: true });
+    else reindexMutation.mutate({ ...(body as ReindexRequest), confirm: true });
+  };
+
+  /** Run an edited statement as-is; the SQL endpoint accepts one statement. */
+  const executeEditedSql = async (sql: string, command: string) => {
+    const handle = op.begin("sql");
+    try {
+      await api.post<SqlResult | DryRunResult>(
+        "/sql",
+        { sql, readonly: false, confirm: true },
+        { timeout: LONG_ACTION_TIMEOUT_MS, opId: handle.opId, signal: handle.signal }
+      );
+      toast.success(t("maintenance.toast.done", { command }));
+      invalidateTables();
+    } catch (error) {
+      // 499 is our own client abort ("Durdur"); the API client stays quiet too.
+      if (error instanceof ApiError && error.status === 499) return;
+      // The API client has already surfaced the error.
+    } finally {
+      op.end();
+    }
+  };
+
+  const executeSingle = async (
     path: "vacuum" | "analyze" | "reindex",
-    body: MutationRequest,
+    body: VacuumRequest | AnalyzeRequest | ReindexRequest,
     command: string,
     descriptionKey: string
   ) => {
     try {
-      const result = await api.post<DryRunResult>(
+      const dry = await api.post<DryRunResult>(
         `/maintenance/${path}`,
         { ...body, dry_run: true },
         { skipToast: true }
       );
-      const preview = toPreview(result);
-      if (!preview) return false;
-      return await confirm({
+      const preview = toPreview(dry);
+      if (!preview) return;
+      const generated = preview.sql.join("\n\n").trim();
+      const result = await confirmSql({
         title: t("maintenance.confirm.title", { command }),
         description: t(descriptionKey),
         risk_level: preview.risk,
         sql_preview: preview.sql,
+        sql_editable: true,
         confirm_label: t("maintenance.confirm.run", { command }),
         cancel_label: t("common.cancel"),
       });
+      if (!result.confirmed) return;
+      const edited = (result.sql ?? "").trim();
+      if (edited && edited !== generated) {
+        await executeEditedSql(edited, command);
+        return;
+      }
+      runStructured(path, body);
     } catch {
       // The API client has already surfaced the error.
-      return false;
     }
   };
 
-  const runVacuum = async (full: boolean) => {
+  const runVacuum = (full: boolean) => {
     if (!selected) return;
-    const body: VacuumRequest = {
-      schema_name: selected.schema_name,
-      table_name: selected.table_name,
-      full,
-      analyze: true,
-      freeze: false,
-    };
-    const ok = await previewAndConfirm(
+    void executeSingle(
       "vacuum",
-      body,
+      {
+        schema_name: selected.schema_name,
+        table_name: selected.table_name,
+        full,
+        analyze: true,
+        freeze: false,
+      },
       "VACUUM",
       full ? "maintenance.confirm.vacuumFull" : "maintenance.confirm.vacuum"
     );
-    if (ok) vacuumMutation.mutate({ ...body, confirm: true });
   };
 
-  const runAnalyze = async () => {
+  const runAnalyze = () => {
     if (!selected) return;
-    const body: AnalyzeRequest = {
-      schema_name: selected.schema_name,
-      table_name: selected.table_name,
-    };
-    const ok = await previewAndConfirm("analyze", body, "ANALYZE", "maintenance.confirm.analyze");
-    if (ok) analyzeMutation.mutate({ ...body, confirm: true });
+    void executeSingle(
+      "analyze",
+      { schema_name: selected.schema_name, table_name: selected.table_name },
+      "ANALYZE",
+      "maintenance.confirm.analyze"
+    );
   };
 
-  const runReindexTable = async () => {
+  const runReindexTable = () => {
     if (!selected) return;
-    const body: ReindexRequest = {
-      schema_name: selected.schema_name,
-      table_name: selected.table_name,
-      concurrently: true,
-    };
-    const ok = await previewAndConfirm(
+    void executeSingle(
       "reindex",
-      body,
+      { schema_name: selected.schema_name, table_name: selected.table_name, concurrently: true },
       "REINDEX",
       "maintenance.confirm.reindexConcurrent"
     );
-    if (ok) reindexMutation.mutate({ ...body, confirm: true });
   };
 
-  const runReindexIndex = async (indexName: string) => {
-    const body: ReindexRequest = { schema_name: schema, index_name: indexName, concurrently: true };
-    const ok = await previewAndConfirm(
+  const runReindexIndex = (indexName: string) => {
+    void executeSingle(
       "reindex",
-      body,
+      { schema_name: schema, index_name: indexName, concurrently: true },
       "REINDEX",
       "maintenance.confirm.reindexConcurrent"
     );
-    if (ok) reindexMutation.mutate({ ...body, confirm: true });
+  };
+
+  // --- multi-select + bulk actions ---
+
+  const selectedRows = tables.filter((row) => selectedKeys.has(summaryKey(row)));
+  const allSelected = tables.length > 0 && tables.every((row) => selectedKeys.has(summaryKey(row)));
+
+  const toggleSelect = (key: string) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const selectAll = () => setSelectedKeys(new Set(tables.map(summaryKey)));
+  const selectNone = () => setSelectedKeys(new Set());
+  /** Select tables whose dead-tuple ratio meets the user's threshold (%). */
+  const selectCritical = () => {
+    const limit = Number(threshold.replace(",", "."));
+    if (!Number.isFinite(limit)) {
+      toast.error(t("maintenance.health.batch.thresholdInvalid"));
+      return;
+    }
+    const picks = tables.filter((row) => row.dead_tuple_percent >= limit);
+    if (picks.length === 0) {
+      toast.info(t("maintenance.health.batch.noCritical", { threshold }));
+      return;
+    }
+    setSelectedKeys(new Set(picks.map(summaryKey)));
+  };
+
+  // One request per table (the API takes a single scope); progress is reported
+  // per row so a long run over many tables stays observable.
+  const bulkMutation = useMutation({
+    mutationFn: async ({
+      action,
+      command,
+      targets,
+    }: {
+      action: HealthBatchAction;
+      command: string;
+      targets: TableSummary[];
+    }) => {
+      const patch = (key: string, update: Partial<BatchRow>) =>
+        setBatchRows((prev) =>
+          prev ? prev.map((row) => (row.key === key ? { ...row, ...update } : row)) : prev
+        );
+      const markPendingStopped = () =>
+        setBatchRows((prev) =>
+          prev
+            ? prev.map((row) =>
+                row.status === "pending" ? { ...row, status: "stopped" as BatchStatus } : row
+              )
+            : prev
+        );
+
+      setBatchRows(
+        targets.map((row) => ({
+          key: summaryKey(row),
+          label: summaryKey(row),
+          status: "pending" as BatchStatus,
+          detail: "",
+        }))
+      );
+
+      // A fresh op id tags every request in the run; aborting it (via "Durdur")
+      // releases the in-flight request and ends the loop.
+      const endpoint = HEALTH_ENDPOINT[action];
+      const handle = bulkOp.begin("health-batch");
+      let ok = 0;
+      let failed = 0;
+
+      for (const row of targets) {
+        if (handle.signal.aborted) {
+          markPendingStopped();
+          break;
+        }
+        const key = summaryKey(row);
+        patch(key, { status: "running" });
+        try {
+          const result = await api.post<MaintenanceActionResult>(
+            `/maintenance/${endpoint}`,
+            { ...healthScopeBody(action, row.schema_name, row.table_name), confirm: true },
+            {
+              timeout: LONG_ACTION_TIMEOUT_MS,
+              skipToast: true,
+              opId: handle.opId,
+              signal: handle.signal,
+            }
+          );
+          ok += 1;
+          patch(key, { status: "ok", detail: result?.command_status ?? "" });
+        } catch (error) {
+          // 499 is our own client abort ("Durdur"), not a failure.
+          if (error instanceof ApiError && error.status === 499) {
+            patch(key, { status: "stopped" });
+            markPendingStopped();
+            break;
+          }
+          failed += 1;
+          patch(key, {
+            status: "failed",
+            detail: error instanceof Error ? error.message : "",
+          });
+        }
+      }
+      return { ok, failed, stopped: targets.length - ok - failed, command };
+    },
+    onSuccess: ({ ok, failed, stopped, command }) => {
+      if (stopped > 0) {
+        toast.info(t("maintenance.batch.stoppedToast", { ok, failed }));
+      } else {
+        toast.success(t("maintenance.toast.done", { command }), {
+          description: t("maintenance.batch.summary", { ok, failed }),
+        });
+      }
+      setSelectedKeys(new Set());
+      invalidateTables();
+    },
+    onSettled: () => bulkOp.end(),
+  });
+
+  const runBulk = async (action: HealthBatchAction) => {
+    const targets = selectedRows;
+    if (targets.length === 0) {
+      toast.error(t("maintenance.health.batch.noSelection"));
+      return;
+    }
+    const endpoint = HEALTH_ENDPOINT[action];
+    // Show the SQL the API will actually run, bounded so a big selection stays fast.
+    const previews = await Promise.all(
+      targets.slice(0, PREVIEW_LIMIT).map(async (row) => {
+        try {
+          const result = await api.post<DryRunResult>(
+            `/maintenance/${endpoint}`,
+            { ...healthScopeBody(action, row.schema_name, row.table_name), dry_run: true },
+            { skipToast: true }
+          );
+          return result?.sql ?? [];
+        } catch {
+          return [];
+        }
+      })
+    );
+    const extra =
+      targets.length > PREVIEW_LIMIT
+        ? `\n${t("maintenance.health.batch.andMore", { count: targets.length - PREVIEW_LIMIT })}`
+        : "";
+    const command = HEALTH_COMMAND[action];
+
+    const result = await confirmSql({
+      title: t("maintenance.health.batch.confirmTitle", { command, count: targets.length }),
+      description:
+        t(
+          action === "vacuumFull"
+            ? "maintenance.health.batch.confirmDescFull"
+            : "maintenance.health.batch.confirmDesc",
+          { command }
+        ) + extra,
+      risk_level: action === "vacuumFull" ? "DANGEROUS" : "MAINTENANCE",
+      sql_preview: previews.flat(),
+      confirm_label: t("maintenance.health.batch.apply", { command }),
+      cancel_label: t("common.cancel"),
+    });
+    if (result.confirmed) bulkMutation.mutate({ action, command, targets });
   };
 
   const busy = vacuumMutation.isPending || analyzeMutation.isPending || reindexMutation.isPending;
+  const bulkBusy = bulkMutation.isPending;
   const schemaOptions = (schemasQuery.data ?? []).filter((row) => !row.is_system);
   const totalSize = tables.reduce((sum, row) => sum + row.total_size_bytes, 0);
+  const okCount = batchRows?.filter((row) => row.status === "ok").length ?? 0;
+  const failedCount = batchRows?.filter((row) => row.status === "failed").length ?? 0;
+  const stoppedCount = batchRows?.filter((row) => row.status === "stopped").length ?? 0;
+  const doneCount = okCount + failedCount + stoppedCount;
 
   return (
     <div className="space-y-3">
@@ -1316,6 +1552,8 @@ function TableHealthTab({ op }: { op: OpControl }) {
             onValueChange={(value) => {
               setSchema(value);
               setSelectedKey("");
+              setSelectedKeys(new Set());
+              setBatchRows(null);
             }}
           >
             <SelectTrigger
@@ -1369,10 +1607,105 @@ function TableHealthTab({ op }: { op: OpControl }) {
       ) : tables.length === 0 ? (
         <HintBox icon={<Table2 className="h-4 w-4" />} text={t("maintenance.health.empty")} />
       ) : (
-        <div className="max-h-[320px] overflow-auto rounded-md border border-border">
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs text-muted-foreground">
+                {t("maintenance.health.batch.selected", { count: selectedKeys.size })}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="health-threshold" className="text-xs text-muted-foreground">
+                  {t("maintenance.health.batch.thresholdLabel")}
+                </Label>
+                <Input
+                  id="health-threshold"
+                  value={threshold}
+                  onChange={(event) => setThreshold(event.target.value)}
+                  inputMode="decimal"
+                  className="h-7 w-16 text-center font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={selectCritical}
+                >
+                  <Target className="mr-1 h-3 w-3" />
+                  {t("maintenance.health.batch.selectCritical")}
+                </Button>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={allSelected ? selectNone : selectAll}
+              >
+                {allSelected ? t("maintenance.batch.selectNone") : t("maintenance.batch.selectAll")}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <IfWriter>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 text-xs"
+                  onClick={() => void runBulk("vacuumFull")}
+                  disabled={selectedKeys.size === 0 || busy || bulkBusy}
+                >
+                  <Trash2 className="mr-1.5 h-3 w-3" />
+                  {t("maintenance.health.actions.vacuumFull")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => void runBulk("analyze")}
+                  disabled={selectedKeys.size === 0 || busy || bulkBusy}
+                >
+                  <Sparkles className="mr-1.5 h-3 w-3" />
+                  {t("maintenance.health.actions.analyze")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => void runBulk("reindex")}
+                  disabled={selectedKeys.size === 0 || busy || bulkBusy}
+                >
+                  <Database className="mr-1.5 h-3 w-3" />
+                  {t("maintenance.health.actions.reindex")}
+                </Button>
+              </IfWriter>
+              {bulkBusy && (
+                <>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {t("maintenance.health.batch.running", {
+                      done: doneCount,
+                      total: batchRows?.length ?? 0,
+                    })}
+                  </span>
+                  <OpStopButton control={bulkOp} className="h-7 text-xs" />
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-[320px] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
+                <TableHead className={cn(HEAD, "w-8")}>
+                  <Checkbox
+                    aria-label={t("maintenance.batch.selectAll")}
+                    checked={allSelected ? true : selectedKeys.size > 0 ? "indeterminate" : false}
+                    onCheckedChange={(value) => (value ? selectAll() : selectNone())}
+                  />
+                </TableHead>
                 <TableHead className={HEAD}>{t("maintenance.health.columns.table")}</TableHead>
                 <TableHead className={cn(HEAD, "text-right")}>
                   {t("maintenance.health.columns.total")}
@@ -1408,7 +1741,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </TableHeader>
             <TableBody>
               {tables.map((row) => {
-                const key = `${row.schema_name}.${row.table_name}`;
+                const key = summaryKey(row);
                 const isSelected = key === selectedKey;
                 return (
                   <TableRow
@@ -1417,6 +1750,13 @@ function TableHealthTab({ op }: { op: OpControl }) {
                     data-state={isSelected ? "selected" : undefined}
                     onClick={() => setSelectedKey(isSelected ? "" : key)}
                   >
+                    <TableCell className={CELL} onClick={(event) => event.stopPropagation()}>
+                      <Checkbox
+                        aria-label={key}
+                        checked={selectedKeys.has(key)}
+                        onCheckedChange={() => toggleSelect(key)}
+                      />
+                    </TableCell>
                     <TableCell className={cn(CELL, "font-mono")}>
                       <span className="text-muted-foreground">{row.schema_name}.</span>
                       {row.table_name}
@@ -1471,6 +1811,67 @@ function TableHealthTab({ op }: { op: OpControl }) {
               })}
             </TableBody>
           </Table>
+          </div>
+        </>
+      )}
+
+      {batchRows && batchRows.length > 0 && (
+        <div className="overflow-hidden rounded-md border border-border">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+            <div>
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                <ListChecks className="h-3.5 w-3.5 text-success" />
+                {t("maintenance.health.batch.resultsTitle")}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {t("maintenance.health.batch.resultsHint")}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" size="sm" className="font-mono">
+                {t("maintenance.batch.summary", { ok: okCount, failed: failedCount })}
+              </Badge>
+              {stoppedCount > 0 && (
+                <Badge variant="outline" size="sm" className="font-mono text-muted-foreground">
+                  {t("maintenance.batch.statusStopped")}: {formatNumber(stoppedCount)}
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setBatchRows(null)}
+              >
+                <X className="mr-1 h-3 w-3" />
+                {t("maintenance.batch.clearResults")}
+              </Button>
+            </div>
+          </div>
+          <OpBlockedHint control={bulkOp} />
+          <div className="max-h-40 overflow-auto">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow>
+                  <TableHead className={HEAD}>{t("maintenance.table.status")}</TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.table.table")}</TableHead>
+                  <TableHead className={HEAD}>{t("maintenance.result")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {batchRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className={CELL}>
+                      <BatchStatusBadge status={row.status} />
+                    </TableCell>
+                    <TableCell className={cn(CELL, "font-mono")}>{row.label}</TableCell>
+                    <TableCell className={cn(CELL, "font-mono text-muted-foreground")}>
+                      {row.detail || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
 
