@@ -47,10 +47,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { IfWriter } from '@/components/role-guard';
+import { ApiError } from '@/lib/api/client';
 import { endpoints, type SqlResult, type DryRunResult } from '@/lib/api/types';
 import { qk } from '@/lib/api/queryKeys';
 import { useI18n, useT } from '@/lib/i18n';
 import { useRole } from '@/lib/hooks/use-role';
+import { OpBlockedHint, OpStopButton, useOpControl } from '@/lib/hooks/use-op-control';
 import { cn } from '@/lib/utils';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 
@@ -250,6 +252,8 @@ export default function SqlEditorPage() {
   const { resolvedTheme } = useTheme();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const canWrite = hasRole(['Admin', 'DBA']);
+  // Tracks the running statement so it can be stopped (client abort + backend cancel).
+  const op = useOpControl();
 
   const [sqlText, setSqlText] = React.useState<string>(
     () => `-- ${t('sqlEditor.editor.starterComment')}\nSELECT * FROM information_schema.tables LIMIT 50;`
@@ -309,12 +313,20 @@ export default function SqlEditorPage() {
     mutationFn: async (text: string): Promise<SqlResult | null> => {
       let result: SqlResult | DryRunResult;
       if (!canWrite) {
-        result = await endpoints.executeSql({ sql: text, readonly: true });
+        const handle = op.begin('sql');
+        result = await endpoints.executeSql(
+          { sql: text, readonly: true },
+          { opId: handle.opId, signal: handle.signal }
+        );
       } else {
         const plan = await endpoints.executeSql({ sql: text, dry_run: true, readonly: false });
         if (isSqlResult(plan)) return plan;
         if (plan.risk === 'READ') {
-          result = await endpoints.executeSql({ sql: text, readonly: true });
+          const handle = op.begin('sql');
+          result = await endpoints.executeSql(
+            { sql: text, readonly: true },
+            { opId: handle.opId, signal: handle.signal }
+          );
         } else {
           const ok = await confirm({
             title: t('sqlEditor.confirm.title'),
@@ -325,7 +337,11 @@ export default function SqlEditorPage() {
             cancel_label: t('common.cancel'),
           });
           if (!ok) return null;
-          result = await endpoints.executeSql({ sql: text, confirm: true, readonly: false });
+          const handle = op.begin('sql');
+          result = await endpoints.executeSql(
+            { sql: text, confirm: true, readonly: false },
+            { opId: handle.opId, signal: handle.signal }
+          );
         }
       }
       return isSqlResult(result) ? result : null;
@@ -361,15 +377,24 @@ export default function SqlEditorPage() {
       }
     },
     onError: (err, text) => {
+      // 499 is our own client abort ("Durdur"); stay quiet.
+      if (err instanceof ApiError && err.status === 499) {
+        log(t('sqlEditor.messages.cancelled'));
+        return;
+      }
       const message = errorText(err, t('sqlEditor.unknownError'));
       log(t('sqlEditor.messages.failed', { message }));
       setRunError({ message, retry: () => executeMutation.mutate(text) });
       setResultTab('results');
     },
+    onSettled: () => op.end(),
   });
 
   const explainMutation = useMutation({
-    mutationFn: (body: { sql: string; analyze: boolean }) => endpoints.explainSql(body),
+    mutationFn: (body: { sql: string; analyze: boolean }) => {
+      const handle = op.begin('explain');
+      return endpoints.explainSql(body, { opId: handle.opId, signal: handle.signal });
+    },
     onMutate: (vars) => {
       setRunError(null);
       log(t('sqlEditor.messages.explaining', { command: vars.analyze ? 'EXPLAIN ANALYZE' : 'EXPLAIN' }));
@@ -389,11 +414,16 @@ export default function SqlEditorPage() {
       toast.success(t('sqlEditor.toast.explained', { command }));
     },
     onError: (err, vars) => {
+      if (err instanceof ApiError && err.status === 499) {
+        log(t('sqlEditor.messages.cancelled'));
+        return;
+      }
       const message = errorText(err, t('sqlEditor.unknownError'));
       log(t('sqlEditor.messages.failed', { message }));
       setRunError({ message, retry: () => explainMutation.mutate(vars) });
       setResultTab('results');
     },
+    onSettled: () => op.end(),
   });
 
   const formatMutation = useMutation({
@@ -616,11 +646,14 @@ export default function SqlEditorPage() {
                 style={{ fontSize: 13 }}
               />
 
+              <OpBlockedHint control={op} className="mx-3 mt-1.5" />
+
               <div className="flex flex-wrap items-center gap-1.5 border-y border-border bg-muted/40 px-3 py-1.5">
                 <Button size="sm" onClick={handleExecute} disabled={busy}>
                   <Play className="h-3.5 w-3.5" />
                   {executeMutation.isPending ? t('sqlEditor.actions.running') : t('sqlEditor.actions.execute')}
                 </Button>
+                <OpStopButton control={op} />
                 <Button variant="outline" size="sm" onClick={() => handleExplain(false)} disabled={busy}>
                   <Info className="h-3.5 w-3.5" />
                   EXPLAIN

@@ -32,8 +32,10 @@ import {
 import { IfWriter } from "@/components/role-guard";
 
 import { endpoints, Snapshot } from "@/lib/api/types";
+import { ApiError } from "@/lib/api/client";
 import { qk } from "@/lib/api/queryKeys";
 import useConfirm from "@/lib/hooks/useConfirm";
+import { OpStopButton, useOpControl } from "@/lib/hooks/use-op-control";
 import { useI18n, useT } from "@/lib/i18n";
 import { cn, formatBytes } from "@/lib/utils";
 import { useProfileStore } from "@/store/useProfileStore";
@@ -90,6 +92,9 @@ export default function SnapshotsPage() {
   const formatAgo = useFormatAgo();
   const qc = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
+  // Capture and prune each run server-side work, so each gets its own control.
+  const captureOp = useOpControl();
+  const pruneOp = useOpControl();
   const pollInterval = useUIPrefsStore((s) => s.pollInterval);
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
   const profile = useProfileStore((s) => s.selectedProfileName) ?? undefined;
@@ -107,23 +112,43 @@ export default function SnapshotsPage() {
   const captureMutation = useMutation({
     // The store labels a snapshot with this name; without it the snapshot would
     // not show up in this profile's list.
-    mutationFn: () => endpoints.captureSnapshot(profile),
+    mutationFn: () => {
+      const handle = captureOp.begin("snapshot");
+      return endpoints.captureSnapshot(profile, undefined, {
+        opId: handle.opId,
+        signal: handle.signal,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: SNAPSHOTS_PREFIX });
       toast.success(t("snapshots.toast.captured"));
     },
-    onError: () => toast.error(t("snapshots.toast.captureFailed")),
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 499) return;
+      toast.error(t("snapshots.toast.captureFailed"));
+    },
+    onSettled: () => captureOp.end(),
   });
 
   const pruneMutation = useMutation({
-    mutationFn: () => endpoints.pruneSnapshots(PRUNE_DAYS),
+    mutationFn: () => {
+      const handle = pruneOp.begin("prune");
+      return endpoints.pruneSnapshots(PRUNE_DAYS, {
+        opId: handle.opId,
+        signal: handle.signal,
+      });
+    },
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: SNAPSHOTS_PREFIX });
       toast.success(
         t("snapshots.toast.pruned", { removed: result.removed, days: result.keep_days })
       );
     },
-    onError: () => toast.error(t("snapshots.toast.pruneFailed")),
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 499) return;
+      toast.error(t("snapshots.toast.pruneFailed"));
+    },
+    onSettled: () => pruneOp.end(),
   });
 
   const sortedSnapshots = useMemo(() => {
@@ -245,6 +270,7 @@ export default function SnapshotsPage() {
               )}
               {t("snapshots.prune", { days: PRUNE_DAYS })}
             </Button>
+            <OpStopButton control={pruneOp} className="h-8 text-xs" />
             <Button
               size="sm"
               className="h-8 text-xs"
@@ -258,6 +284,7 @@ export default function SnapshotsPage() {
               )}
               {t("snapshots.capture")}
             </Button>
+            <OpStopButton control={captureOp} className="h-8 text-xs" />
           </IfWriter>
         </div>
       </div>

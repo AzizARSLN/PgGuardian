@@ -41,6 +41,7 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
+  Square,
   Table2,
   Users,
   X,
@@ -48,7 +49,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api/client";
+import { ApiError, api } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/types";
 import type {
   BackendActionResult,
@@ -84,6 +85,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useConfirm, type ConfirmOptions } from "@/lib/hooks/useConfirm";
+import { OpBlockedHint, OpStopButton, useOpControl, type OpControl } from "@/lib/hooks/use-op-control";
 import { cn } from "@/lib/utils";
 import { useI18n, useT } from "@/lib/i18n";
 
@@ -108,7 +110,7 @@ const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
 /** Cap the SQL preview shown in the batch confirmation so a big selection stays fast. */
 const BATCH_PREVIEW_LIMIT = 10;
 
-type AdviceBatchStatus = "pending" | "running" | "ok" | "failed";
+type AdviceBatchStatus = "pending" | "running" | "ok" | "failed" | "stopped";
 
 interface AdviceBatchRow {
   key: string;
@@ -123,7 +125,7 @@ type AdviceResult = DryRunResult | MaintenanceActionResult | BackendActionResult
 function runAdviceRequest(
   advice: ToolkitAdvice,
   body: Record<string, unknown>,
-  options: { timeout?: number; skipToast?: boolean } = {}
+  options: { timeout?: number; skipToast?: boolean; opId?: string; signal?: AbortSignal } = {}
 ): Promise<AdviceResult> {
   switch (advice.action) {
     case "vacuum":
@@ -591,6 +593,8 @@ function AdviceCard({
   selectedCount,
   busy,
   batchBusy,
+  control,
+  batchControl,
   onApply,
   onApplyBatch,
 }: {
@@ -601,6 +605,8 @@ function AdviceCard({
   selectedCount: number;
   busy: boolean;
   batchBusy: boolean;
+  control: OpControl;
+  batchControl: OpControl;
   onApply: (advice: ToolkitAdvice) => void;
   onApplyBatch: (advice: ToolkitAdvice) => void;
 }) {
@@ -673,9 +679,14 @@ function AdviceCard({
                 {t("toolkit.applyToSelected", { count: selectedCount })}
               </Button>
             )}
+            <OpStopButton control={control} className="h-7 px-2 text-xs" />
+            <OpStopButton control={batchControl} className="h-7 px-2 text-xs" />
           </>
         )}
       </div>
+
+      <OpBlockedHint control={control} className="mt-2" />
+      <OpBlockedHint control={batchControl} className="mt-2" />
     </div>
   );
 }
@@ -695,6 +706,14 @@ function AdviceBatchStatusBadge({ status }: { status: AdviceBatchStatus }) {
       <span className="inline-flex items-center gap-1 text-xs text-destructive">
         <XCircle className="h-3.5 w-3.5" />
         {t("toolkit.batchStatusFailed")}
+      </span>
+    );
+  }
+  if (status === "stopped") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <Square className="h-3.5 w-3.5" />
+        {t("toolkit.batchStatusStopped")}
       </span>
     );
   }
@@ -719,6 +738,10 @@ export default function ToolkitPage() {
   const { formatNumber } = useI18n();
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
+  // Tracks a running catalog query / advice so it can be stopped.
+  const op = useOpControl();
+  // The batch run loops over many rows, so it tracks its own operation.
+  const batchOp = useOpControl();
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -790,12 +813,22 @@ export default function ToolkitPage() {
     );
 
   const { mutate: runQuery, isPending: running } = useMutation({
-    mutationFn: ({ query, params }: { query: ToolkitQuery; params: Record<string, string> }) =>
-      endpoints.runToolkitQuery(query.id, query.max_rows, params),
+    mutationFn: ({ query, params }: { query: ToolkitQuery; params: Record<string, string> }) => {
+      const handle = op.begin("toolkit");
+      return endpoints.runToolkitQuery(query.id, query.max_rows, params, {
+        opId: handle.opId,
+        signal: handle.signal,
+      });
+    },
     onSuccess: (data) => {
       setResult(data);
       setSelected([]);
     },
+    onError: (error) => {
+      // 499 is our own client abort ("Durdur"); stay quiet.
+      if (error instanceof ApiError && error.status === 499) return;
+    },
+    onSettled: () => op.end(),
   });
 
   const { mutate: applyAdvice, isPending: applying, variables } = useMutation({
@@ -805,7 +838,10 @@ export default function ToolkitPage() {
     }: {
       advice: ToolkitAdvice;
       body: Record<string, unknown>;
-    }): Promise<AdviceResult> => runAdviceRequest(advice, body),
+    }): Promise<AdviceResult> => {
+      const handle = op.begin("toolkit");
+      return runAdviceRequest(advice, body, { opId: handle.opId, signal: handle.signal });
+    },
     onSuccess: (_data, { advice, body }) => {
       toast.success(t("toolkit.applied"), {
         description: t("toolkit.appliedDesc", {
@@ -816,6 +852,10 @@ export default function ToolkitPage() {
       queryClient.invalidateQueries({ queryKey: qk.toolkit.all() });
       if (activeQuery) runQuery({ query: activeQuery, params: paramValues });
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 499) return;
+    },
+    onSettled: () => op.end(),
   });
 
   // One request per selected row: the API is single-scope, so progress is
@@ -836,6 +876,12 @@ export default function ToolkitPage() {
         setBatchRows((prev) =>
           prev ? prev.map((row) => (row.key === key ? { ...row, ...update } : row)) : prev
         );
+      const markPendingStopped = () =>
+        setBatchRows((prev) =>
+          prev
+            ? prev.map((row) => (row.status === "pending" ? { ...row, status: "stopped" } : row))
+            : prev
+        );
 
       setBatchRows(
         targets.map((row) => ({
@@ -846,9 +892,16 @@ export default function ToolkitPage() {
         }))
       );
 
+      // A fresh op id tags every request in the run; aborting it (via "Durdur")
+      // releases the in-flight request and ends the loop.
+      const handle = batchOp.begin("batch");
       let ok = 0;
       let failed = 0;
       for (const row of targets) {
+        if (handle.signal.aborted) {
+          markPendingStopped();
+          break;
+        }
         const key = String(row.index);
         patch(key, { status: "running" });
         const { body, missing } = resolveAdviceBody(advice, row, resultColumns);
@@ -861,11 +914,19 @@ export default function ToolkitPage() {
           const response = await runAdviceRequest(advice, body, {
             timeout: LONG_ACTION_TIMEOUT_MS,
             skipToast: true,
+            opId: handle.opId,
+            signal: handle.signal,
           });
           ok += 1;
           const status = "command_status" in response ? response.command_status : "";
           patch(key, { status: "ok", detail: status ?? "" });
         } catch (error) {
+          // 499 is our own client abort ("Durdur"), not a failure.
+          if (error instanceof ApiError && error.status === 499) {
+            patch(key, { status: "stopped" });
+            markPendingStopped();
+            break;
+          }
           failed += 1;
           patch(key, {
             status: "failed",
@@ -873,15 +934,20 @@ export default function ToolkitPage() {
           });
         }
       }
-      return { ok, failed };
+      return { ok, failed, stopped: targets.length - ok - failed };
     },
-    onSuccess: ({ ok, failed }) => {
-      toast.success(t("toolkit.batchApplied"), {
-        description: t("toolkit.batchSummary", { ok, failed }),
-      });
+    onSuccess: ({ ok, failed, stopped }) => {
+      if (stopped > 0) {
+        toast.info(t("toolkit.batchStopped", { ok, failed }));
+      } else {
+        toast.success(t("toolkit.batchApplied"), {
+          description: t("toolkit.batchSummary", { ok, failed }),
+        });
+      }
       queryClient.invalidateQueries({ queryKey: qk.toolkit.all() });
       if (activeQuery) runQuery({ query: activeQuery, params: paramValues });
     },
+    onSettled: () => batchOp.end(),
   });
 
   const selectQuery = (id: string) => {
@@ -1271,6 +1337,7 @@ export default function ToolkitPage() {
                     <Play className="h-3 w-3" />
                     {running ? t("toolkit.running") : t("toolkit.run")}
                   </Button>
+                  <OpStopButton control={op} className="h-7 px-2 text-xs" />
                   <Button
                     variant="outline"
                     size="sm"
@@ -1402,6 +1469,7 @@ export default function ToolkitPage() {
                           ? t("toolkit.batchRunning", { done: batchDone, total: batchRows.length })
                           : t("toolkit.batchProgress", { done: batchDone, total: batchRows.length })}
                       </Badge>
+                      <OpStopButton control={batchOp} className="h-6 px-1.5 text-[11px]" />
                       {!applyingBatch && (
                         <Button
                           variant="ghost"
@@ -1475,6 +1543,8 @@ export default function ToolkitPage() {
                         selectedCount={selected.length}
                         busy={applying && selectedAdviceId === advice.id}
                         batchBusy={applyingBatch && batchAdviceId === advice.id}
+                        control={op}
+                        batchControl={batchOp}
                         onApply={handleApply}
                         onApplyBatch={handleApplyBatch}
                       />
