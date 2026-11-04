@@ -12,11 +12,9 @@ from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client,
 from pgguardian.api.settings import ApiSettings
 from pgguardian.database.connection import DbClient
 from pgguardian.sqlexec.formatter import format_sql
-from pgguardian.statements import advisor, collector
+from pgguardian.statements import collector
 from pgguardian.statements.explain import explain as explain_statement
-from pgguardian.statements.plan import flatten, total_cost
-from pgguardian.statements.sqlast import parse_facts
-from pgguardian.utils.security import sanitize_error
+from pgguardian.statements.insight import build_insight
 
 router = APIRouter(prefix="/api/v1/statements", tags=["statements"])
 
@@ -29,6 +27,12 @@ class ExplainBody(BaseModel):
     params: list[str] | None = Field(default=None, description="Values for $1, $2, ...")
     search_path: str | None = Field(default=None, max_length=200)
     analyze: bool = Field(default=False, description="Really runs the read statement.")
+    verbose: bool = Field(default=True)
+    costs: bool = Field(default=True)
+    settings: bool = Field(default=True)
+    buffers: bool = Field(default=False)
+    wal: bool = Field(default=False)
+    timing: bool = Field(default=True, description="Kept on for stable DBA timing output.")
 
 
 def _ready_status(client: DbClient) -> dict[str, Any]:
@@ -121,6 +125,12 @@ def statement_plan(
             params=body.params,
             search_path=body.search_path,
             analyze=body.analyze,
+            verbose=body.verbose,
+            costs=body.costs,
+            settings=body.settings,
+            buffers=body.buffers,
+            wal=body.wal,
+            timing=True,
         )
     return outcome.as_dict()
 
@@ -136,52 +146,11 @@ def statement_recommendations(
         client.ping()
         info = _ready_status(client)
         statement = _statement_or_404(client, info, queryid)
-        query = str(statement["query"])
         version = int(info["server_version_num"] or 0)
-        outcome = explain_statement(client, query, version=version, search_path=search_path)
-        nodes = flatten(outcome.plan) if outcome.status == "ok" else []
-        facts = parse_facts(query)
-        tables = _table_contexts(client, nodes, facts)
-        found = advisor.build_recommendations(statement, facts, nodes, tables)
-        suggested, applied = advisor.suggested_sql(query, found)
-        comparison = _compare_cost(client, suggested, version, search_path, nodes)
-    return {
-        "recommendations": advisor.to_dicts(found),
-        "suggested_sql": suggested,
-        "applied": applied,
-        "cost": comparison,
-        "plan_status": outcome.status,
-        "plan_reason": outcome.reason,
-        "plan_cost": total_cost(nodes) if nodes else None,
-        "parsed": facts is not None,
-        "locator": advisor.locate_in_code(query, facts, statement.get("sources") or []),
-    }
-
-
-def _table_contexts(client: DbClient, nodes: list, facts: Any) -> dict[str, advisor.TableContext]:
-    relations = {(n.schema or "public", n.relation) for n in nodes if n.relation}
-    if facts is not None:
-        known = {name for _, name in relations}
-        relations |= {("public", name) for name in facts.tables if name not in known}
-    contexts: dict[str, advisor.TableContext] = {}
-    for schema, name in relations:
-        try:
-            context = advisor.load_table_context(client, schema, name)
-        except Exception as exc:
-            sanitize_error(exc)
-            continue
-        if context is not None:
-            contexts[name] = context
-    return contexts
-
-
-def _compare_cost(
-    client: DbClient, suggested: str | None, version: int, search_path: str | None, nodes: list
-) -> dict[str, float] | None:
-    """The suggestion must still plan; report before/after only when it does."""
-    if not suggested or not nodes:
-        return None
-    outcome = explain_statement(client, suggested, version=version, search_path=search_path)
-    if outcome.status != "ok":
-        return None
-    return {"before": total_cost(nodes), "after": total_cost(flatten(outcome.plan))}
+        return build_insight(
+            client,
+            str(statement["query"]),
+            version=version,
+            search_path=search_path,
+            metrics=statement,
+        )

@@ -133,7 +133,22 @@
       "usage": "Usage",
       "emptyTitle": "No connections",
       "emptyDesc": "No PostgreSQL connections found.",
-      "search": "Search PID, user, database or client..."
+      "search": "Search PID, user, database or client...",
+      "groupBy": "Group by",
+      "groupNone": "Ungrouped",
+      "groupSummary": "{groups} groups · {count} connections",
+      "groupCount": "Count",
+      "groupBreakdown": "Breakdown",
+      "groupUnset": "(unset)",
+      "groupCancelAll": "Cancel all",
+      "groupTerminateAll": "Terminate all",
+      "batchCancelTitle": "Cancel {count} connections in {group}?",
+      "batchTerminateTitle": "Terminate {count} connections in {group}?",
+      "batchCancelDesc": "pg_cancel_backend() cancels the active query on {count} connections. The connections stay open.",
+      "batchTerminateDesc": "pg_terminate_backend() closes {count} connections and rolls back active transactions. This cannot be undone.",
+      "typeCount": "Type {count} to confirm",
+      "batchProgress": "{done}/{total} processed",
+      "batchSummary": "{ok} done · {failed} failed"
     },
     "active": {
       "emptyTitle": "No active queries",
@@ -219,6 +234,61 @@
       "search": "Search sequence..."
     }
   },
+  "queryInsight": {
+    "title": "Query analysis",
+    "subtitle": "This query's plan cost and the cheaper rewrite that lowers it",
+    "openHint": "Open query analysis",
+    "tabs": {
+      "overview": "Overview",
+      "plan": "Execution Plan",
+      "session": "Session Detail"
+    },
+    "wait": "Wait event",
+    "seconds": "{value} s",
+    "costTitle": "Plan cost",
+    "noCost": "No plan for this query; the cost could not be computed.",
+    "currentPlanCost": "current plan cost",
+    "costHint": "suggested plan cost",
+    "cheaper": "{percent}% cheaper",
+    "costlier": "{percent}% costlier",
+    "suggestionTitle": "Query change suggestion",
+    "noSuggestion": "No safe rewrite that lowers the cost was found.",
+    "findingsTitle": "Findings",
+    "analyzing": "Analysing the query...",
+    "plan": {
+      "title": "Execution Plan",
+      "subtitle": "Configure plan options and inspect the result in a modern plan tree.",
+      "run": "Run plan",
+      "running": "Running plan",
+      "mode": "Plan mode",
+      "planningTime": "Planning time",
+      "executionTime": "Execution time",
+      "optionAnalyze": "Actually runs the query; only valid for read statements.",
+      "optionVerbose": "Shows expanded node and relation detail.",
+      "optionCosts": "Shows estimated cost and row counts.",
+      "optionSettings": "Includes settings that affected the planner.",
+      "optionBuffers": "Adds buffer usage; enabled when ANALYZE is on.",
+      "optionWal": "Adds WAL activity; enabled when ANALYZE is on.",
+      "optionTiming": "Timing stays enabled for consistent DBA output."
+    },
+    "session": {
+      "general": "General",
+      "client": "Client",
+      "timings": "Timings",
+      "runtime": "Runtime",
+      "backendType": "Backend Type",
+      "clientHost": "Client Host",
+      "clientIp": "Client IP",
+      "clientPort": "Client Port",
+      "backendStart": "Backend Start",
+      "xactStart": "Xact Start",
+      "queryStart": "Query Start",
+      "stateChange": "State Change",
+      "backendAge": "Backend Age",
+      "blockedBy": "Blocked By",
+      "none": "None"
+    }
+  },
   "liveQueries": {
     "title": "Live Queries",
     "subtitle": "Watch running queries; cancel or terminate them when needed",
@@ -246,6 +316,7 @@
       "application": "Application"
     },
     "actions": {
+      "sessionDetail": "Session Detail",
       "cancel": "Cancel",
       "terminate": "Terminate"
     },

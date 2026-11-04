@@ -133,7 +133,22 @@
       "usage": "Kullanım",
       "emptyTitle": "Bağlantı yok",
       "emptyDesc": "PostgreSQL bağlantısı bulunamadı.",
-      "search": "PID, kullanıcı, veritabanı veya istemci ara..."
+      "search": "PID, kullanıcı, veritabanı veya istemci ara...",
+      "groupBy": "Gruplama",
+      "groupNone": "Gruplanmamış",
+      "groupSummary": "{groups} grup · {count} bağlantı",
+      "groupCount": "Adet",
+      "groupBreakdown": "Dağılım",
+      "groupUnset": "(tanımsız)",
+      "groupCancelAll": "Hepsini iptal et",
+      "groupTerminateAll": "Hepsini sonlandır",
+      "batchCancelTitle": "{group} grubundaki {count} bağlantı iptal edilsin mi?",
+      "batchTerminateTitle": "{group} grubundaki {count} bağlantı sonlandırılsın mı?",
+      "batchCancelDesc": "pg_cancel_backend() ile {count} bağlantının aktif sorgusu iptal edilir. Bağlantılar açık kalır.",
+      "batchTerminateDesc": "pg_terminate_backend() ile {count} bağlantı kapatılır ve aktif transaction'lar rollback edilir. Geri alınamaz.",
+      "typeCount": "Onaylamak için {count} yazın",
+      "batchProgress": "{done}/{total} işlendi",
+      "batchSummary": "{ok} tamamlandı · {failed} hatalı"
     },
     "active": {
       "emptyTitle": "Aktif sorgu yok",
@@ -219,6 +234,61 @@
       "search": "Sequence ara..."
     }
   },
+  "queryInsight": {
+    "title": "Sorgu analizi",
+    "subtitle": "Bu sorgunun plan maliyeti ve maliyeti düşüren sorgu değişikliği",
+    "openHint": "Sorgu analizini aç",
+    "tabs": {
+      "overview": "Genel Bakış",
+      "plan": "Execution Plan",
+      "session": "Session Detail"
+    },
+    "wait": "Wait event",
+    "seconds": "{value} sn",
+    "costTitle": "Plan maliyeti",
+    "noCost": "Bu sorgu için plan alınamadı; maliyet hesaplanamadı.",
+    "currentPlanCost": "mevcut plan maliyeti",
+    "costHint": "önerilen sorgunun plan maliyeti",
+    "cheaper": "%{percent} daha ucuz",
+    "costlier": "%{percent} daha pahalı",
+    "suggestionTitle": "Sorgu değişikliği önerisi",
+    "noSuggestion": "Maliyeti düşürecek güvenli bir sorgu değişikliği bulunamadı.",
+    "findingsTitle": "Bulgular",
+    "analyzing": "Sorgu analiz ediliyor...",
+    "plan": {
+      "title": "Execution Plan",
+      "subtitle": "Plan seçeneklerini yapılandırın ve sonucu modern ağaç görünümünde inceleyin.",
+      "run": "Planı getir",
+      "running": "Plan çalışıyor",
+      "mode": "Plan modu",
+      "planningTime": "Planning time",
+      "executionTime": "Execution time",
+      "optionAnalyze": "Sorguyu gerçekten çalıştırır; yalnızca okuma sorgularında kullanılabilir.",
+      "optionVerbose": "Düğüm ve relation detaylarını geniş gösterir.",
+      "optionCosts": "Tahmini maliyet ve satır sayılarını gösterir.",
+      "optionSettings": "Planner kararını etkileyen ayarları ekler.",
+      "optionBuffers": "Buffer kullanımını getirir; ANALYZE açıkken etkindir.",
+      "optionWal": "WAL üretimini getirir; ANALYZE açıkken etkindir.",
+      "optionTiming": "Zamanlama ölçümü zorunlu açık tutulur."
+    },
+    "session": {
+      "general": "Genel",
+      "client": "Client",
+      "timings": "Timings",
+      "runtime": "Runtime",
+      "backendType": "Backend Type",
+      "clientHost": "Client Host",
+      "clientIp": "Client IP",
+      "clientPort": "Client Port",
+      "backendStart": "Backend Start",
+      "xactStart": "Xact Start",
+      "queryStart": "Query Start",
+      "stateChange": "State Change",
+      "backendAge": "Backend Age",
+      "blockedBy": "Blocked By",
+      "none": "Yok"
+    }
+  },
   "liveQueries": {
     "title": "Canlı Sorgular",
     "subtitle": "Çalışan sorguları izleyin; gerekirse iptal edin veya sonlandırın",
@@ -246,6 +316,7 @@
       "application": "Uygulama"
     },
     "actions": {
+      "sessionDetail": "Session Detail",
       "cancel": "İptal et",
       "terminate": "Sonlandır"
     },

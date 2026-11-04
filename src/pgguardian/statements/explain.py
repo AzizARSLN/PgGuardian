@@ -72,6 +72,12 @@ def explain(
     params: list[str] | None = None,
     search_path: str | None = None,
     analyze: bool = False,
+    verbose: bool = True,
+    costs: bool = True,
+    settings: bool = True,
+    buffers: bool = False,
+    wal: bool = False,
+    timing: bool = True,
 ) -> PlanOutcome:
     """Plan one read statement. ``params`` switches to a custom plan with real values."""
     statement, reason = gate(query)
@@ -90,7 +96,19 @@ def explain(
                         cur.execute(
                             "SELECT set_config('search_path', %s, true)", (search_path,)
                         )
-                    plan = _run(cur, statement, version, params, analyze)
+                    plan = _run(
+                        cur,
+                        statement,
+                        version,
+                        params,
+                        analyze,
+                        verbose,
+                        costs,
+                        settings,
+                        buffers,
+                        wal,
+                        timing,
+                    )
             finally:
                 conn.rollback()
                 _deallocate(conn)
@@ -118,10 +136,29 @@ def _first_value(row: Any) -> Any:
 
 
 def _run(
-    cur: Any, statement: str, version: int, params: list[str] | None, analyze: bool
+    cur: Any,
+    statement: str,
+    version: int,
+    params: list[str] | None,
+    analyze: bool,
+    verbose: bool,
+    costs: bool,
+    settings: bool,
+    buffers: bool,
+    wal: bool,
+    timing: bool,
 ) -> Any:
+    options = _options(
+        analyze=analyze,
+        verbose=verbose,
+        costs=costs,
+        settings=settings,
+        buffers=buffers,
+        wal=wal,
+        timing=timing,
+    )
     if params is None and not analyze and version >= 160000:
-        cur.execute(f"EXPLAIN (GENERIC_PLAN, VERBOSE, SETTINGS, FORMAT JSON) {statement}")
+        cur.execute(f"EXPLAIN (GENERIC_PLAN, {options}) {statement}")
         return _first_value(cur.fetchone())
 
     cache_mode = "force_generic_plan" if params is None else "force_custom_plan"
@@ -136,12 +173,43 @@ def _run(
     if params is not None and len(values) != count:
         raise pgerrors.IndeterminateDatatype(f"Statement expects {count} parameter value(s).")
     arguments = [Literal(v) for v in values] if params is not None else [SQL("NULL")] * count
-    options = "ANALYZE, BUFFERS, VERBOSE, FORMAT JSON" if analyze else "VERBOSE, SETTINGS, FORMAT JSON"
     execute = SQL("EXPLAIN ({}) EXECUTE {}").format(SQL(options), SQL(_PREPARED))
     if arguments:
         execute = SQL("{} ({})").format(execute, SQL(", ").join(arguments))
     cur.execute(execute)
     return _first_value(cur.fetchone())
+
+
+def _bool_option(name: str, enabled: bool) -> str:
+    return f"{name} {'true' if enabled else 'false'}"
+
+
+def _options(
+    *,
+    analyze: bool,
+    verbose: bool,
+    costs: bool,
+    settings: bool,
+    buffers: bool,
+    wal: bool,
+    timing: bool,
+) -> str:
+    parts = [
+        _bool_option("VERBOSE", verbose),
+        _bool_option("COSTS", costs),
+        _bool_option("SETTINGS", settings),
+    ]
+    if analyze:
+        parts.extend(
+            [
+                "ANALYZE true",
+                _bool_option("BUFFERS", buffers),
+                _bool_option("WAL", wal),
+                _bool_option("TIMING", timing),
+            ]
+        )
+    parts.append("FORMAT JSON")
+    return ", ".join(parts)
 
 
 def _deallocate(conn: Any) -> None:

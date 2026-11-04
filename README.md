@@ -1,11 +1,17 @@
-﻿# PgGuardian
+# PgGuardian
 
-PostgreSQL diagnostics without the complexity — a CLI-first tool for
-developers, DBAs and DevOps that inspects health, connections, queries,
-locks, storage, indexes and maintenance. Read-only by default, with an
-expert **backend API** (FastAPI) for full server/database management,
-saved connection **profiles**, ad-hoc **SQL execution** and **snapshot
-tracking** for large estates. A UI will consume the API later.
+**PgGuardian** is a PostgreSQL DBA tool, diagnostics dashboard, query
+analyzer and execution-plan explorer for developers, DBAs and DevOps
+teams. It combines a read-only-by-default CLI, a FastAPI backend and a
+modern Next.js web UI for PostgreSQL monitoring, live session analysis,
+query tuning, backups, maintenance, replication checks and secure expert
+operations.
+
+If you search GitHub for terms like **PostgreSQL DBA**, **PostgreSQL
+diagnostics**, **query analyzer**, **execution plan**, **database
+monitoring**, **pg_stat_activity viewer**, **pgAdmin alternative** or
+**PostgreSQL dashboard**, this repository is built to match those use
+cases directly.
 
 ```text
 PgGuardian — PostgreSQL Diagnostics
@@ -52,6 +58,14 @@ Status           HEALTHY
   databases, schemas/tables, roles/grants, cancel/terminate, vacuum/reindex,
   config, replication, pg_dump backups; mutations need opt-in + confirmation
 - **PostgreSQL 13+** — unsupported checks degrade to `UNKNOWN`, never crash
+
+## Why PgGuardian
+
+- **PostgreSQL DBA dashboard** for diagnostics, maintenance and live monitoring
+- **Query analysis + execution plan UI** for active sessions and repeated statements
+- **pg_stat_activity and pg_stat_statements explorer** with safe cancel/terminate controls
+- **pgAdmin alternative** focused on operations, performance and safe workflows
+- **FastAPI + Next.js architecture** for teams that want both API automation and a modern UI
 
 ## Requirements
 
