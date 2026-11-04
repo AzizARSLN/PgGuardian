@@ -20,12 +20,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from pgguardian.database.connection import DbClient
 from pgguardian.sqlexec.classifier import StatementKind, classify, ensure_allowed
 
-# These refuse to run inside a transaction block.
+# These refuse to run inside an explicit transaction block, or manage their
+# own transactions internally (a ``DO``/``CALL`` body may COMMIT/ROLLBACK).
+# Running them with autocommit (no wrapping BEGIN) is what the server expects;
+# otherwise a COMMIT inside the body fails with "invalid transaction
+# termination".
 _NON_TRANSACTIONAL = re.compile(
     r"^\s*(VACUUM\b|CREATE\s+DATABASE\b|DROP\s+DATABASE\b|ALTER\s+SYSTEM\b"
     r"|CREATE\s+TABLESPACE\b|DROP\s+TABLESPACE\b"
     r"|REINDEX\b.*\bCONCURRENTLY\b|CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY\b"
-    r"|DROP\s+INDEX\s+CONCURRENTLY\b)",
+    r"|DROP\s+INDEX\s+CONCURRENTLY\b|DO\b|CALL\b)",
     re.I | re.S,
 )
 
