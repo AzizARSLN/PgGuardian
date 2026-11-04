@@ -149,6 +149,22 @@
         "empty": "No unused indexes.",
         "scans": "Scans",
         "reindex": "REINDEX INDEX"
+      },
+      "batch": {
+        "selected": "Selected: {count}",
+        "thresholdLabel": "Critical threshold (dead %)",
+        "thresholdInvalid": "Enter a valid threshold value.",
+        "selectCritical": "Select critical",
+        "noCritical": "No table exceeds the {threshold}% threshold.",
+        "running": "Applying · {done}/{total}",
+        "andMore": "+{count} more tables",
+        "apply": "Run {command}",
+        "confirmTitle": "Run {command} on {count} tables?",
+        "confirmDesc": "{command} will be applied to the selected tables.",
+        "confirmDescFull": "{command} will be applied to the selected tables. Each table takes an ACCESS EXCLUSIVE LOCK; run it during low traffic.",
+        "noSelection": "Select at least one table from the list first.",
+        "resultsTitle": "Bulk action result",
+        "resultsHint": "Tables processed and their command results"
       }
     }
   },

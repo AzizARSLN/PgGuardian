@@ -15,7 +15,9 @@
     "retry": "Tekrar dene",
     "loading": "Yükleniyor...",
     "noData": "Kayıt yok",
-    "loadFailed": "Veri alınamadı"
+    "loadFailed": "Veri alınamadı",
+    "sqlPreview": "SQL önizlemesi",
+    "sqlEditableHint": "Düzenlenebilir; bıraktığınız SQL çalıştırılır"
   },
   "api": {
     "sessionExpired": "Oturumunuzun süresi doldu, lütfen tekrar giriş yapın.",

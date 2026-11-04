@@ -149,6 +149,22 @@
         "empty": "Kullanılmayan indeks yok.",
         "scans": "Tarama",
         "reindex": "REINDEX INDEX"
+      },
+      "batch": {
+        "selected": "Seçili: {count}",
+        "thresholdLabel": "Kritik eşiği (ölü %)",
+        "thresholdInvalid": "Geçerli bir eşik değeri girin.",
+        "selectCritical": "Kritik olanları seç",
+        "noCritical": "%{threshold} eşiğini aşan tablo yok.",
+        "running": "Uygulanıyor · {done}/{total}",
+        "andMore": "+{count} tablo daha",
+        "apply": "{command} uygula",
+        "confirmTitle": "{count} tabloda {command} çalıştırılsın mı?",
+        "confirmDesc": "Seçilen tablolara {command} uygulanacak.",
+        "confirmDescFull": "Seçilen tablolara {command} uygulanacak. Her tablo ACCESS EXCLUSIVE LOCK alır; düşük trafikte çalıştırın.",
+        "noSelection": "Önce listeden en az bir tablo seçin.",
+        "resultsTitle": "Toplu işlem sonucu",
+        "resultsHint": "İşlem uygulanan tablolar ve komut sonuçları"
       }
     }
   },

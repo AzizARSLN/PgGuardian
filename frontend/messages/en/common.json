@@ -15,7 +15,9 @@
     "retry": "Retry",
     "loading": "Loading...",
     "noData": "No records",
-    "loadFailed": "Could not load data"
+    "loadFailed": "Could not load data",
+    "sqlPreview": "SQL preview",
+    "sqlEditableHint": "Editable; the SQL you leave here is what runs"
   },
   "api": {
     "sessionExpired": "Your session has expired, please sign in again.",
