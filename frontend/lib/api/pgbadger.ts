@@ -1,4 +1,5 @@
 import { api } from "@/lib/api/client";
+import type { CallOptions } from "@/lib/api/types";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type Role = "backend" | "ui" | "db";
@@ -72,13 +73,16 @@ const LONG = { timeout: 5 * 60 * 1000 };
 export const pgbadgerApi = {
   list: () => api.get<ReportListItem[]>(BASE),
   detail: (id: string, lang: string) => api.get<ReportDetail>(`${BASE}/${id}?lang=${lang}`),
-  upload: (file: File) => {
+  upload: (file: File, options?: CallOptions) => {
     const form = new FormData();
     form.append("file", file);
-    return api.post<{ id: string }>(BASE, form, LONG);
+    return api.post<{ id: string }>(BASE, form, { ...LONG, ...options });
   },
-  analyze: (id: string, lang: string) =>
-    api.post<ReportDetail>(`${BASE}/${id}/analyze?lang=${lang}`, undefined, LONG),
+  analyze: (id: string, lang: string, options?: CallOptions) =>
+    api.post<ReportDetail>(`${BASE}/${id}/analyze?lang=${lang}`, undefined, {
+      ...LONG,
+      ...options,
+    }),
   setTask: (id: string, taskId: string, status: TaskStatus) =>
     api.put<unknown>(`${BASE}/${id}/tasks/${taskId}`, { status }),
   remove: (id: string) => api.delete<unknown>(`${BASE}/${id}`),

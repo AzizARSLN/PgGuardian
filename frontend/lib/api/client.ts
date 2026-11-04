@@ -86,6 +86,12 @@ export interface RequestOptions extends RequestInit {
   skipAuth?: boolean;
   skipToast?: boolean;
   params?: Record<string, string | number | boolean | undefined | null>;
+  /**
+   * Tags the request with an operation id, sent as `?op_id=`. Backend long
+   * operations label their DB connection with it so a cancel request can find
+   * and stop the running backend.
+   */
+  opId?: string;
 }
 
 function buildQueryString(
@@ -105,10 +111,17 @@ async function performFetch<T = unknown>(
   headers: Record<string, string>,
   rest: RequestInit,
   timeout: number,
-  skipToast: boolean
+  skipToast: boolean,
+  externalSignal?: AbortSignal
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
 
   try {
     const response = await fetch(url, {
@@ -180,6 +193,10 @@ async function performFetch<T = unknown>(
     if (error instanceof ApiError) throw error;
 
     if (error instanceof DOMException && error.name === "AbortError") {
+      // A deliberate cancel (external signal) is not a timeout: stay quiet.
+      if (externalSignal?.aborted) {
+        throw new ApiError(499, "Request cancelled");
+      }
       if (!skipToast) {
         toast.error(tGlobal("api.timeout"), {
           description: tGlobal("api.timeoutHint"),
@@ -198,6 +215,7 @@ async function performFetch<T = unknown>(
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
   }
 }
 
@@ -210,11 +228,16 @@ export async function apiFetch<T = unknown>(
     skipAuth = false,
     skipToast = false,
     params,
+    opId,
+    signal,
     headers: customHeaders,
     ...rest
   } = options;
 
-  const url = `${API_BASE_URL}${endpoint}${params ? buildQueryString(params) : ""}`;
+  const queryParams = opId ? { ...(params ?? {}), op_id: opId } : params;
+  const url = `${API_BASE_URL}${endpoint}${
+    queryParams ? buildQueryString(queryParams) : ""
+  }`;
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -247,7 +270,7 @@ export async function apiFetch<T = unknown>(
   }
 
   try {
-    return await performFetch<T>(url, { ...headers }, rest, timeout, skipToast);
+    return await performFetch<T>(url, { ...headers }, rest, timeout, skipToast, signal ?? undefined);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401 && !skipAuth) {
       try {
@@ -265,7 +288,8 @@ export async function apiFetch<T = unknown>(
             retryHeaders,
             rest,
             timeout,
-            skipToast
+            skipToast,
+            signal ?? undefined
           );
         }
       } catch {
