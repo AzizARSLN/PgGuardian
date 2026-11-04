@@ -1536,6 +1536,8 @@ function TableHealthTab({ op }: { op: OpControl }) {
   const bulkBusy = bulkMutation.isPending;
   const schemaOptions = (schemasQuery.data ?? []).filter((row) => !row.is_system);
   const totalSize = tables.reduce((sum, row) => sum + row.total_size_bytes, 0);
+  const totalIndexSize = tables.reduce((sum, row) => sum + row.indexes_size_bytes, 0);
+  const totalUnusedIndexSize = tables.reduce((sum, row) => sum + row.unused_index_size_bytes, 0);
   const okCount = batchRows?.filter((row) => row.status === "ok").length ?? 0;
   const failedCount = batchRows?.filter((row) => row.status === "failed").length ?? 0;
   const stoppedCount = batchRows?.filter((row) => row.status === "stopped").length ?? 0;
@@ -1571,12 +1573,20 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </SelectContent>
           </Select>
           {schema && (
-            <span className="font-mono text-xs text-muted-foreground">
-              {t("maintenance.health.summary", {
-                tables: formatNumber(tables.length),
-                size: formatBytes(totalSize, 1),
-              })}
-            </span>
+            <>
+              <span className="font-mono text-xs text-muted-foreground">
+                {t("maintenance.health.summary", {
+                  tables: formatNumber(tables.length),
+                  size: formatBytes(totalSize, 1),
+                })}
+              </span>
+              <span className="font-mono text-xs text-muted-foreground">
+                {t("maintenance.health.indexSizeTotal")}: {formatBytes(totalIndexSize, 1)}
+              </span>
+              <span className="font-mono text-xs text-warning">
+                {t("maintenance.health.unusedSizeTotal")}: {formatBytes(totalUnusedIndexSize, 1)}
+              </span>
+            </>
           )}
         </div>
         <Button
