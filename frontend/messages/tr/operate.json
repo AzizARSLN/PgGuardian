@@ -163,6 +163,8 @@
         "thresholdLabel": "Kritik eşiği (ölü %)",
         "thresholdInvalid": "Geçerli bir eşik değeri girin.",
         "selectCritical": "Kritik olanları seç",
+        "filterActive": "Kritik tablolar (ölü ≥ %{threshold})",
+        "clearFilter": "Tümünü göster",
         "noCritical": "%{threshold} eşiğini aşan tablo yok.",
         "running": "Uygulanıyor · {done}/{total}",
         "andMore": "+{count} tablo daha",
