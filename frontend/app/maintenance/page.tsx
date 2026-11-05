@@ -1292,6 +1292,9 @@ function TableHealthTab({ op }: { op: OpControl }) {
   const [batchRows, setBatchRows] = useState<BatchRow[] | null>(null);
   const [pageSize, setPageSize] = useState(HEALTH_PAGE_SIZE_OPTIONS[0]);
   const [pageIndex, setPageIndex] = useState(0);
+  // When set, the grid shows only tables whose dead-tuple ratio meets this %,
+  // so "select critical" also narrows the list; clearing it restores the full view.
+  const [criticalFilter, setCriticalFilter] = useState<number | null>(null);
 
   const formatPercent = (value: number) =>
     formatNumber(value / 100, { style: "percent", maximumFractionDigits: 1 });
@@ -1308,10 +1311,17 @@ function TableHealthTab({ op }: { op: OpControl }) {
   });
 
   const tables: TableSummary[] = tablesQuery.data ?? [];
-  const pageCount = Math.max(1, Math.ceil(tables.length / pageSize));
+  const visibleTables = useMemo(
+    () =>
+      criticalFilter === null
+        ? tables
+        : tables.filter((row) => row.dead_tuple_percent >= criticalFilter),
+    [tables, criticalFilter]
+  );
+  const pageCount = Math.max(1, Math.ceil(visibleTables.length / pageSize));
   const pagedTables = useMemo(
-    () => tables.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
-    [tables, pageIndex, pageSize]
+    () => visibleTables.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+    [visibleTables, pageIndex, pageSize]
   );
   useEffect(() => {
     setPageIndex((current) => (current > pageCount - 1 ? pageCount - 1 : current));
@@ -1472,6 +1482,13 @@ function TableHealthTab({ op }: { op: OpControl }) {
       return;
     }
     setSelectedKeys(new Set(picks.map(summaryKey)));
+    setCriticalFilter(limit);
+    setPageIndex(0);
+  };
+  /** Drop the critical-only filter and show every table again. */
+  const clearCriticalFilter = () => {
+    setCriticalFilter(null);
+    setPageIndex(0);
   };
 
   // One request per table (the API takes a single scope); progress is reported
@@ -1634,6 +1651,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
               setSelectedKey("");
               setSelectedKeys(new Set());
               setBatchRows(null);
+              setCriticalFilter(null);
               setPageIndex(0);
             }}
           >
@@ -1724,6 +1742,21 @@ function TableHealthTab({ op }: { op: OpControl }) {
                   {t("maintenance.health.batch.selectCritical")}
                 </Button>
               </div>
+              {criticalFilter !== null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-warning/50 text-xs text-warning"
+                  onClick={clearCriticalFilter}
+                >
+                  <Filter className="mr-1 h-3 w-3" />
+                  {t("maintenance.health.batch.filterActive", {
+                    threshold: String(criticalFilter),
+                  })}
+                  <X className="ml-1 h-3 w-3" />
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -1784,6 +1817,14 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </div>
           </div>
 
+          {criticalFilter !== null && visibleTables.length === 0 ? (
+            <HintBox
+              icon={<Filter className="h-4 w-4" />}
+              text={t("maintenance.health.batch.noCritical", {
+                threshold: String(criticalFilter),
+              })}
+            />
+          ) : (
           <div className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-md border border-border">
           <div className="flex-1 overflow-auto">
           <Table>
@@ -1902,13 +1943,13 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </TableBody>
           </Table>
           </div>
-          {tables.length > 0 && (
+          {visibleTables.length > 0 && (
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5">
               <span className="font-mono text-xs text-muted-foreground">
                 {t("maintenance.pagination.summary", {
                   page: formatNumber(pageIndex + 1),
                   pages: formatNumber(pageCount),
-                  total: formatNumber(tables.length),
+                  total: formatNumber(visibleTables.length),
                 })}
               </span>
               <div className="flex items-center gap-1.5">
@@ -1963,6 +2004,7 @@ function TableHealthTab({ op }: { op: OpControl }) {
             </div>
           )}
           </div>
+          )}
         </>
       )}
 
