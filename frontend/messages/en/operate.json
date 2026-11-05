@@ -163,6 +163,8 @@
         "thresholdLabel": "Critical threshold (dead %)",
         "thresholdInvalid": "Enter a valid threshold value.",
         "selectCritical": "Select critical",
+        "filterActive": "Critical tables (dead ≥ {threshold}%)",
+        "clearFilter": "Show all",
         "noCritical": "No table exceeds the {threshold}% threshold.",
         "running": "Applying · {done}/{total}",
         "andMore": "+{count} more tables",
