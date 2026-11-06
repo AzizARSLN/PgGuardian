@@ -1,6 +1,6 @@
 """Running expert-operation control: locate a long job and cancel it.
 
-Long expert operations run with ``application_name = 'pgguardian-op:<op_id>'``
+Long expert operations run with ``application_name = 'pgGuardian-op:<op_id>'``
 (see :mod:`pgguardian.api.ops`). These endpoints let the UI ask "is my
 operation still running?", "is it blocked by a lock?" and "stop it" without
 any server-side job registry.
@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
-from pgguardian.api.ops import op_application_name, validate_op_id
+from pgguardian.api.ops import op_application_name, request_op_cancel, validate_op_id
 from pgguardian.api.safety import (
     DryRunResult,
     MutationRequest,
@@ -127,6 +127,9 @@ def cancel_op(
             if pid
             else "op is not running; nothing to cancel",
         )
+    # Remember the request too: a retry loop between attempts has no running
+    # query for pg_cancel_backend to hit, and must see this before continuing.
+    request_op_cancel(op_id)
     # Nothing running: the operation already finished (or was stopped).
     if not pid:
         return OpCancelResult(op_id=op_id, pid=None, signal_sent=False, running=False)

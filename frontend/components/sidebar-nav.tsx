@@ -2,93 +2,26 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  LayoutDashboard,
-  DatabaseZap,
-  Activity,
-  TerminalSquare,
-  ListFilter,
-  Table2,
-  ShieldCheck,
-  Wrench,
-  Settings2,
-  GitBranch,
-  DatabaseBackup,
-  Camera,
-  FileBarChart2,
-  Settings,
-  LogOut,
-  FileSearch,
-  Gauge,
-  Database,
-  Users,
-  Puzzle,
-  type LucideIcon,
-} from "lucide-react";
+import { LogOut, PanelLeftClose, PanelLeftOpen, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
+import { NAV_GROUPS } from "@/lib/navigation";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { useRole } from "@/lib/hooks/use-role";
 import { useUIStore } from "@/store/use-ui-store";
+import { useUIPrefsStore } from "@/store/useUIPrefsStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
-interface NavItem {
-  href: string;
-  key: string;
-  icon: LucideIcon;
-  adminOnly?: boolean;
-  writerOnly?: boolean;
+interface SidebarContentProps {
+  onNavigate?: () => void;
+  /** Desktop-only: render an icon-only rail instead of the full sidebar. */
+  collapsed?: boolean;
+  /** Desktop-only: toggles the collapsed rail. Absent on mobile. */
+  onToggleCollapse?: () => void;
 }
 
-const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
-  {
-    key: "monitor",
-    items: [
-      { href: "/dashboard", key: "dashboard", icon: LayoutDashboard },
-      { href: "/statements", key: "statements", icon: Gauge },
-      { href: "/pgbadger", key: "pgbadger", icon: FileSearch },
-      { href: "/query-management", key: "queryManagement", icon: ListFilter },
-      { href: "/diagnostics", key: "diagnostics", icon: Activity },
-      { href: "/replication", key: "replication", icon: GitBranch },
-    ],
-  },
-  {
-    key: "explore",
-    items: [
-      { href: "/sql-editor", key: "sqlEditor", icon: TerminalSquare, writerOnly: true },
-      { href: "/schema-browser", key: "schemaBrowser", icon: Table2 },
-      { href: "/databases", key: "databases", icon: Database },
-    ],
-  },
-  {
-    key: "operate",
-    items: [
-      { href: "/maintenance", key: "maintenance", icon: Wrench, writerOnly: true },
-      { href: "/toolkit", key: "dbaToolkit", icon: Puzzle, writerOnly: true },
-      { href: "/backups", key: "backups", icon: DatabaseBackup, writerOnly: true },
-      { href: "/snapshots", key: "snapshots", icon: Camera, writerOnly: true },
-      { href: "/config", key: "config", icon: Settings2, writerOnly: true },
-    ],
-  },
-  {
-    key: "access",
-    items: [
-      { href: "/connections", key: "connections", icon: DatabaseZap, writerOnly: true },
-      { href: "/roles", key: "roles", icon: ShieldCheck, writerOnly: true },
-      { href: "/users", key: "users", icon: Users, adminOnly: true },
-    ],
-  },
-  {
-    key: "system",
-    items: [
-      { href: "/report", key: "report", icon: FileBarChart2 },
-      { href: "/settings", key: "settings", icon: Settings },
-    ],
-  },
-];
-
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({ onNavigate, collapsed = false, onToggleCollapse }: SidebarContentProps) {
   const t = useT();
   const pathname = usePathname();
   const router = useRouter();
@@ -107,19 +40,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <Link
         href="/dashboard"
         onClick={onNavigate}
-        className="mb-4 flex items-center gap-2.5 px-2"
+        title={collapsed ? "PgGuardian" : undefined}
+        className={cn(
+          "mb-4 flex items-center gap-2.5 px-2",
+          collapsed && "justify-center px-0"
+        )}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-accent">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-accent">
           <ShieldCheck className="h-4.5 w-4.5" />
         </span>
-        <span className="flex flex-col leading-tight">
-          <span className="text-sm font-bold text-sidebar-foreground">PgGuardian</span>
-          <span className="text-[11px] text-sidebar-foreground/60">{t("nav.tagline")}</span>
-        </span>
+        {!collapsed && (
+          <span className="flex flex-col leading-tight">
+            <span className="text-sm font-bold text-sidebar-foreground">PgGuardian</span>
+            <span className="text-[11px] text-sidebar-foreground/60">{t("nav.tagline")}</span>
+          </span>
+        )}
       </Link>
 
       <nav className="-mr-1 flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
-        {NAV_GROUPS.map((group) => {
+        {NAV_GROUPS.map((group, groupIndex) => {
           // Roles load after the session refresh; hide nothing until they are known.
           const items = group.items.filter(
             (item) =>
@@ -128,12 +67,22 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           if (items.length === 0) return null;
           return (
             <div key={group.key}>
-              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
-                {t(`nav.groups.${group.key}`)}
-              </p>
+              {collapsed ? (
+                groupIndex > 0 && (
+                  <div
+                    className="mx-1 mb-2 border-t border-sidebar-border/60"
+                    aria-hidden
+                  />
+                )
+              ) : (
+                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+                  {t(`nav.groups.${group.key}`)}
+                </p>
+              )}
               <div className="flex flex-col gap-0.5">
                 {items.map((item) => {
                   const Icon = item.icon;
+                  const label = t(`nav.items.${item.key}`);
                   const isActive =
                     pathname === item.href || pathname?.startsWith(item.href + "/");
                   return (
@@ -141,16 +90,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       key={item.href}
                       href={item.href}
                       onClick={onNavigate}
+                      title={collapsed ? label : undefined}
                       aria-current={isActive ? "page" : undefined}
                       className={cn(
                         "flex items-center gap-2.5 rounded-md border-l-2 px-2 py-1.5 text-[13px] font-medium transition-colors",
+                        collapsed && "justify-center px-0",
                         isActive
                           ? "border-guardian-lime bg-sidebar-accent text-sidebar-foreground"
                           : "border-transparent text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{t(`nav.items.${item.key}`)}</span>
+                      {!collapsed && <span className="truncate">{label}</span>}
                     </Link>
                   );
                 })}
@@ -160,15 +111,39 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
-      <div className="mt-3 border-t border-sidebar-border pt-2">
+      <div className="mt-3 flex flex-col gap-0.5 border-t border-sidebar-border pt-2">
         <button
           type="button"
           onClick={handleLogout}
-          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          title={collapsed ? t("common.logout") : undefined}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+            collapsed && "justify-center px-0"
+          )}
         >
           <LogOut className="h-4 w-4 shrink-0" />
-          {t("common.logout")}
+          {!collapsed && t("common.logout")}
         </button>
+
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title={collapsed ? t("nav.expand") : t("nav.collapse")}
+            aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              collapsed && "justify-center px-0"
+            )}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4 shrink-0" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 shrink-0" />
+            )}
+            {!collapsed && t("nav.collapse")}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -178,11 +153,21 @@ export default function SidebarNav() {
   const t = useT();
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const { sidebarOpen, setSidebarOpen } = useUIStore();
+  const collapsed = useUIPrefsStore((s) => s.sidebarCollapsed);
+  const toggleSidebarCollapsed = useUIPrefsStore((s) => s.toggleSidebarCollapsed);
 
   if (isDesktop) {
     return (
-      <aside className="sticky left-0 top-0 h-screen w-56 shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar p-3">
-        <SidebarContent />
+      <aside
+        className={cn(
+          "sticky left-0 top-0 h-screen shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200",
+          collapsed ? "w-16" : "w-56"
+        )}
+      >
+        <SidebarContent
+          collapsed={collapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
+        />
       </aside>
     );
   }

@@ -122,9 +122,31 @@ def build_connection_params(settings: PgGuardianSettings) -> ConnectionParams:
     )
 
 
-def _statement_options(settings: PgGuardianSettings) -> str:
-    # statement_timeout gives us query timeout + effective cancellation.
-    return f"-c statement_timeout={int(settings.query_timeout_ms)}ms"
+def _statement_options(
+    settings: PgGuardianSettings,
+    *,
+    statement_timeout: bool = True,
+    lock_timeout_ms: int | None = None,
+) -> str | None:
+    """Build the connection ``options`` string (``None`` when empty).
+
+    ``statement_timeout`` bounds total query time + gives effective
+    cancellation; ``lock_timeout_ms`` bounds how long a statement waits for a
+    lock before failing with ``55P03``. A short lock timeout keeps lock-heavy
+    maintenance from queueing behind other work and freezing the table.
+    """
+    parts: list[str] = []
+    if statement_timeout:
+        parts.append(f"-c statement_timeout={int(settings.query_timeout_ms)}ms")
+    if lock_timeout_ms is not None:
+        parts.append(f"-c lock_timeout={int(lock_timeout_ms)}ms")
+    return " ".join(parts) if parts else None
+
+
+# Every connection pgGuardian opens is tagged with this name so its backends are
+# recognisable in ``pg_stat_activity``. Long-running expert operations extend it
+# with their op id (see ``pgguardian.api.ops``).
+APPLICATION_NAME = "pgGuardian"
 
 
 @contextmanager
@@ -134,6 +156,7 @@ def get_connection(
     *,
     statement_timeout: bool = True,
     application_name: str | None = None,
+    lock_timeout_ms: int | None = None,
 ) -> Iterator[psycopg.Connection[dict[str, Any]]]:
     """Yield a fresh psycopg connection; always closed afterwards.
 
@@ -141,15 +164,19 @@ def get_connection(
     long-running expert operations (VACUUM, REINDEX, backups) on large
     databases. Diagnostics always keep it enabled.
 
-    ``application_name`` tags the backend in ``pg_stat_activity`` so a
-    long-running expert operation can be located and cancelled by another
-    request (see ``pgguardian.api.ops``).
+    ``lock_timeout_ms`` bounds how long a statement waits for a lock (``55P03``
+    on expiry) so a lock-heavy operation fails fast instead of queueing.
+
+    ``application_name`` tags the backend in ``pg_stat_activity``; it defaults
+    to :data:`APPLICATION_NAME` so every pgGuardian connection is identifiable,
+    and long-running expert operations extend it with their op id (see
+    ``pgguardian.api.ops``).
     """
     conninfo = resolve_connection_string(settings, cli_connection_string)
-    options = _statement_options(settings) if statement_timeout else None
-    extra: dict[str, str] = {}
-    if application_name:
-        extra["application_name"] = application_name
+    options = _statement_options(
+        settings, statement_timeout=statement_timeout, lock_timeout_ms=lock_timeout_ms
+    )
+    extra: dict[str, str] = {"application_name": application_name or APPLICATION_NAME}
     try:
         if options is None:
             conn = psycopg.connect(
@@ -200,11 +227,13 @@ class DbClient:
         *,
         statement_timeout: bool = True,
         application_name: str | None = None,
+        lock_timeout_ms: int | None = None,
     ) -> None:
         self._settings = settings
         self._cli_connection_string = cli_connection_string
         self._statement_timeout = statement_timeout
         self._application_name = application_name
+        self._lock_timeout_ms = lock_timeout_ms
 
     @property
     def settings(self) -> PgGuardianSettings:
@@ -221,6 +250,7 @@ class DbClient:
             self._cli_connection_string,
             statement_timeout=self._statement_timeout,
             application_name=self._application_name,
+            lock_timeout_ms=self._lock_timeout_ms,
         )
 
     def connection(self) -> AbstractContextManager[psycopg.Connection[dict[str, Any]]]:
@@ -228,7 +258,11 @@ class DbClient:
         return self._connection()
 
     def clone(
-        self, *, statement_timeout: bool | None = None, application_name: str | None = None
+        self,
+        *,
+        statement_timeout: bool | None = None,
+        application_name: str | None = None,
+        lock_timeout_ms: int | None = None,
     ) -> DbClient:
         """Copy targeting the same server with an adjusted timeout / backend tag.
 
@@ -239,6 +273,7 @@ class DbClient:
             self._cli_connection_string,
             statement_timeout=self._statement_timeout if statement_timeout is None else statement_timeout,
             application_name=self._application_name if application_name is None else application_name,
+            lock_timeout_ms=self._lock_timeout_ms if lock_timeout_ms is None else lock_timeout_ms,
         )
 
     def for_database(self, database: str) -> DbClient:
@@ -249,6 +284,7 @@ class DbClient:
             psycopg.conninfo.make_conninfo(conninfo, dbname=database),
             statement_timeout=self._statement_timeout,
             application_name=self._application_name,
+            lock_timeout_ms=self._lock_timeout_ms,
         )
 
     def fetch_all(self, sql: str, params: tuple[object, ...] | None = None) -> list[dict]:

@@ -16,11 +16,14 @@ from pgguardian.api.routers import configops as configops_router
 from pgguardian.api.routers import databases as databases_router
 from pgguardian.api.routers import diagnostics as diagnostics_router
 from pgguardian.api.routers import events as events_router
+from pgguardian.api.routers import indexes as indexes_router
 from pgguardian.api.routers import maintenance_ops as maintenance_ops_router
+from pgguardian.api.routers import operation_log as operation_log_router
 from pgguardian.api.routers import ops as ops_router
 from pgguardian.api.routers import pgbadger as pgbadger_router
 from pgguardian.api.routers import profiles as profiles_router
 from pgguardian.api.routers import querymgmt as querymgmt_router
+from pgguardian.api.routers import repack as repack_router
 from pgguardian.api.routers import replication as replication_router
 from pgguardian.api.routers import roles as roles_router
 from pgguardian.api.routers import schemas as schemas_router
@@ -117,6 +120,8 @@ def create_app() -> FastAPI:
     app.include_router(users_router.router)
     app.include_router(events_router.router, dependencies=guarded_or_jwt)
     app.include_router(diagnostics_router.router, dependencies=viewer_allowed)
+    app.include_router(indexes_router.read_router, dependencies=viewer_allowed)
+    app.include_router(indexes_router.router, dependencies=writer_allowed)
     app.include_router(statements_router.router, dependencies=viewer_allowed)
     app.include_router(schemas_router.router, dependencies=viewer_allowed)
     app.include_router(databases_router.read_router, dependencies=viewer_allowed)
@@ -132,7 +137,9 @@ def create_app() -> FastAPI:
     app.include_router(roles_router.router, dependencies=writer_allowed)
     app.include_router(querymgmt_router.router, dependencies=writer_allowed)
     app.include_router(maintenance_ops_router.router, dependencies=writer_allowed)
+    app.include_router(repack_router.router, dependencies=writer_allowed)
     app.include_router(ops_router.router, dependencies=writer_allowed)
+    app.include_router(operation_log_router.router, dependencies=viewer_allowed)
     app.include_router(toolkit_router.router, dependencies=writer_allowed)
     app.include_router(configops_router.router, dependencies=writer_allowed)
     app.include_router(table_io_router.router, dependencies=writer_allowed)

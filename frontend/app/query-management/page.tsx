@@ -12,7 +12,20 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowDown, ArrowUp, Power, RefreshCw, Search, Skull } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ListFilter,
+  Power,
+  RefreshCw,
+  Search,
+  Skull,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +57,7 @@ import {
   type BackendActionResult,
   type DryRunResult,
   type SessionInfo,
+  type SessionStateCount,
 } from '@/lib/api/types';
 import { qk } from '@/lib/api/queryKeys';
 import { cn } from '@/lib/utils';
@@ -96,6 +110,7 @@ const LONG_RUNNING_MIN_SECONDS = 60;
 const DANGEROUS_SECONDS = 300;
 const METRIC = 'font-mono tabular-nums';
 const NO_SESSIONS: SessionInfo[] = [];
+const EMPTY_STATE_COUNTS: SessionStateCount[] = [];
 
 function formatSeconds(seconds: number, t: TFunction): string {
   if (!Number.isFinite(seconds) || seconds < 1) return t('liveQueries.units.second', { n: '<1' });
@@ -135,6 +150,7 @@ export default function QueryManagementPage() {
   const queryClient = useQueryClient();
   const { confirm, Component: ConfirmDialog } = useConfirm();
   const pollInterval = useUIPrefsStore((s) => s.pollInterval);
+  const setPollInterval = useUIPrefsStore((s) => s.setPollInterval);
   const autoRefresh = useUIPrefsStore((s) => s.autoRefresh);
   const refetchInterval = autoRefresh ? pollInterval : false;
   const [sorting, setSorting] = React.useState<SortingState>([
@@ -144,7 +160,19 @@ export default function QueryManagementPage() {
   const [filter, setFilter] = React.useState<StateGroup | 'all'>('all');
   const [groupBy, setGroupBy] = React.useState<GroupKey>('state');
   const [search, setSearch] = React.useState('');
+  const [groupSearch, setGroupSearch] = React.useState('');
+  // Section ids that are currently collapsed; keyed per grouping so switching
+  // the "Group by" dimension does not carry a stale collapsed state over.
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
   const [insightTarget, setInsightTarget] = React.useState<QueryInsightTarget | null>(null);
+  // Editable refresh interval in seconds. Seeded from the persisted pref (10 s by
+  // default) and re-synced if it changes elsewhere, e.g. on the Settings page.
+  const [pollSeconds, setPollSeconds] = React.useState(() =>
+    String(Math.round(pollInterval / 1000))
+  );
+  React.useEffect(() => {
+    setPollSeconds(String(Math.round(pollInterval / 1000)));
+  }, [pollInterval]);
 
   const sessionsQuery = useQuery({
     queryKey: qk.diagnostics.queries.sessions(),
@@ -155,11 +183,25 @@ export default function QueryManagementPage() {
 
   const allRows = sessionsQuery.data?.sessions ?? NO_SESSIONS;
 
+  // Prefer the server-side totals: they cover every session in the cluster, so
+  // the counters stay exact even when the returned row list is capped.
+  const stateCounts = sessionsQuery.data?.state_counts ?? EMPTY_STATE_COUNTS;
+
   const counts = React.useMemo(() => {
     const result: Record<StateGroup, number> = { active: 0, idleInTx: 0, idle: 0, none: 0 };
+    if (stateCounts.length > 0) {
+      for (const item of stateCounts) result[stateGroup(item.state)] += item.count;
+      return result;
+    }
     for (const row of allRows) result[stateGroup(row.state)] += 1;
     return result;
-  }, [allRows]);
+  }, [allRows, stateCounts]);
+
+  const totalSessions = React.useMemo(() => {
+    if (sessionsQuery.data?.total !== undefined) return sessionsQuery.data.total;
+    const counted = stateCounts.reduce((sum, item) => sum + item.count, 0);
+    return counted || allRows.length;
+  }, [allRows.length, sessionsQuery.data?.total, stateCounts]);
 
   const rows = React.useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -493,6 +535,20 @@ export default function QueryManagementPage() {
   const refetchAll = () => sessionsQuery.refetch();
   const failedMessage = sessionsQuery.error instanceof Error ? sessionsQuery.error.message : '';
 
+  // Sessions PostgreSQL masks when the role lacks pg_read_all_stats: they are
+  // counted in the cluster, but their state arrives as NULL, so they cannot be
+  // bucketed and the per-state counters look short.
+  const hiddenCount = sessionsQuery.data?.hidden_count ?? 0;
+  const grantSql = `GRANT pg_read_all_stats TO "${
+    sessionsQuery.data?.db_role ?? 'pgguardian'
+  }";`;
+  const [grantCopied, setGrantCopied] = React.useState(false);
+  const copyGrant = async () => {
+    await navigator.clipboard.writeText(grantSql);
+    setGrantCopied(true);
+    setTimeout(() => setGrantCopied(false), 1500);
+  };
+
   const sortedRows = table.getRowModel().rows;
   const sections: GroupSection[] = (() => {
     if (groupBy === 'state') {
@@ -522,13 +578,42 @@ export default function QueryManagementPage() {
   })();
   const groupByLabel = t(GROUP_OPTIONS.find((o) => o.id === groupBy)?.labelKey ?? '');
 
+  const sectionLabel = (section: GroupSection) =>
+    section.kind === 'state' ? t(`liveQueries.groups.${section.key}`) : section.key;
+  const sectionId = (section: GroupSection) => `${groupBy}:${section.key}`;
+  const groupTerm = groupSearch.trim().toLowerCase();
+  const visibleSections = groupTerm
+    ? sections.filter((section) => sectionLabel(section).toLowerCase().includes(groupTerm))
+    : sections;
+  const visibleIds = visibleSections.map(sectionId);
+  const allCollapsed =
+    visibleIds.length > 0 && visibleIds.every((id) => collapsed.has(id));
+
+  const toggleSection = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAllSections = () =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleIds) {
+        if (allCollapsed) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+
   const filterButtons: { key: StateGroup | 'all'; count: number; tone: string }[] = [
-    { key: 'all', count: allRows.length, tone: 'text-foreground' },
+    { key: 'all', count: totalSessions, tone: 'text-foreground' },
     ...STATE_GROUPS.map((key) => ({ key, count: counts[key], tone: GROUP_TONE[key] })),
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-3">
       <ConfirmDialog />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -536,11 +621,28 @@ export default function QueryManagementPage() {
           <p className="text-xs text-muted-foreground">{t('liveQueries.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`${METRIC} text-[11px] text-muted-foreground`}>
-            {autoRefresh
-              ? t('liveQueries.polling', { seconds: formatNumber(pollInterval / 1000) })
-              : t('liveQueries.pollingOff')}
-          </span>
+          {autoRefresh ? (
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              {t('liveQueries.refreshInterval')}
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                value={pollSeconds}
+                onChange={(e) => {
+                  setPollSeconds(e.target.value);
+                  const seconds = Number.parseInt(e.target.value, 10);
+                  if (Number.isFinite(seconds) && seconds >= 1) setPollInterval(seconds * 1000);
+                }}
+                onBlur={() => setPollSeconds(String(Math.round(pollInterval / 1000)))}
+                aria-label={t('liveQueries.refreshInterval')}
+                className={`${METRIC} h-7 w-[62px] px-1.5 text-center text-[11px]`}
+              />
+            </label>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">{t('liveQueries.pollingOff')}</span>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -591,6 +693,25 @@ export default function QueryManagementPage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="relative w-[190px]">
+          <ListFilter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={groupSearch}
+            onChange={(e) => setGroupSearch(e.target.value)}
+            placeholder={t('liveQueries.groupSearchPlaceholder')}
+            aria-label={t('liveQueries.groupSearchPlaceholder')}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleAllSections}
+          disabled={visibleSections.length === 0}
+          className="h-8 px-2 text-xs"
+        >
+          {allCollapsed ? t('liveQueries.expandAll') : t('liveQueries.collapseAll')}
+        </Button>
         <div className="relative min-w-[220px] flex-1">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -603,13 +724,40 @@ export default function QueryManagementPage() {
         </div>
       </div>
 
+      {sessionsQuery.data?.limited_visibility && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+          <span className="font-semibold text-foreground">{t('liveQueries.limitedPrivilege')}</span>
+          {hiddenCount > 0 && (
+            <span className="text-muted-foreground">
+              {t('liveQueries.limitedPrivilegeCount', { count: formatNumber(hiddenCount) })}
+            </span>
+          )}
+          <span className="text-muted-foreground">{t('liveQueries.limitedPrivilegeHint')}</span>
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+            {grantSql}
+          </code>
+          <Button variant="outline" size="sm" onClick={copyGrant} className="h-6 px-2 text-[11px]">
+            {grantCopied ? (
+              <Check className="mr-1 h-3 w-3 text-success" />
+            ) : (
+              <Copy className="mr-1 h-3 w-3" />
+            )}
+            {t(grantCopied ? 'common.copied' : 'common.copy')}
+          </Button>
+        </div>
+      )}
+
       {sessionsQuery.data?.truncated && (
         <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-1.5 text-xs">
           {t('liveQueries.truncated', { limit: sessionsQuery.data.limit })}
         </p>
       )}
 
-      <section className="overflow-hidden rounded-md border border-border bg-card">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-card">
         <header className="flex flex-wrap items-baseline gap-2 border-b border-border px-3 py-2">
           <h2 className="font-mono text-xs font-semibold text-foreground">pg_stat_activity</h2>
           <p className="text-[11px] text-muted-foreground">{t('liveQueries.tableHint')}</p>
@@ -633,8 +781,10 @@ export default function QueryManagementPage() {
           </div>
         ) : rows.length === 0 ? (
           <p className="px-3 py-2 text-xs text-muted-foreground">{t('liveQueries.empty')}</p>
+        ) : visibleSections.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">{t('liveQueries.noGroupMatch')}</p>
         ) : (
-          <div className="max-h-[70vh] overflow-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <UITable className="text-xs">
               <TableHeader className="sticky top-0 z-10 bg-card">
                 {table.getHeaderGroups().map((hg) => (
@@ -673,7 +823,9 @@ export default function QueryManagementPage() {
                 ))}
               </TableHeader>
               <TableBody>
-                {sections.map((section) => {
+                {visibleSections.map((section) => {
+                  const id = sectionId(section);
+                  const isCollapsed = collapsed.has(id);
                   const sectionRows = section.rows;
                   const showHeader = section.kind === 'dimension' || filter === 'all';
                   const stateCounts =
@@ -683,40 +835,75 @@ export default function QueryManagementPage() {
                           count: sectionRows.filter((r) => stateGroup(r.original.state) === g).length,
                         })).filter((d) => d.count > 0)
                       : [];
+                  // Grouping by host: name the applications running from it.
+                  const appNames =
+                    groupBy === 'client'
+                      ? [
+                          ...new Set(
+                            sectionRows
+                              .map((r) => r.original.application_name)
+                              .filter((name): name is string => Boolean(name))
+                          ),
+                        ].sort((a, b) => a.localeCompare(b))
+                      : [];
                   return (
                     <React.Fragment key={section.key}>
                       {showHeader && (
                         <TableRow className="bg-muted/40 hover:bg-muted/40">
-                          <TableCell colSpan={columns.length} className="px-2 py-1 text-[11px] font-semibold">
-                            {section.kind === 'state' ? (
-                              <>
-                                <span className={GROUP_TONE[section.key]}>
-                                  {t(`liveQueries.groups.${section.key}`)}
-                                </span>
-                                <span className={`${METRIC} ml-2 text-muted-foreground`}>
-                                  {sectionRows.length}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <span className="text-muted-foreground">{groupByLabel}:</span>
-                                <span className="font-mono text-foreground">{section.key}</span>
-                                <span className={`${METRIC} text-muted-foreground`}>
-                                  {sectionRows.length}
-                                </span>
+                          <TableCell colSpan={columns.length} className="px-2 py-0.5 text-[11px] font-semibold">
+                            <button
+                              type="button"
+                              onClick={() => toggleSection(id)}
+                              aria-expanded={!isCollapsed}
+                              title={isCollapsed ? t('liveQueries.expandGroup') : t('liveQueries.collapseGroup')}
+                              className="inline-flex w-full items-center gap-1.5 rounded py-0.5 text-left hover:bg-muted/60"
+                            >
+                              {isCollapsed ? (
+                                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              )}
+                              {section.kind === 'state' ? (
+                                <>
+                                  <span className={GROUP_TONE[section.key]}>
+                                    {t(`liveQueries.groups.${section.key}`)}
+                                  </span>
+                                  <span className={`${METRIC} text-muted-foreground`}>
+                                    {sectionRows.length}
+                                  </span>
+                                </>
+                              ) : (
                                 <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                                  {stateCounts.map(({ group, count }) => (
-                                    <span key={group} className={cn(GROUP_TONE[group], 'font-mono')}>
-                                      {t(`liveQueries.groups.${group}`)} {count}
+                                  <span className="text-muted-foreground">{groupByLabel}:</span>
+                                  <span className="font-mono text-foreground">{section.key}</span>
+                                  <span className={`${METRIC} text-muted-foreground`}>
+                                    {sectionRows.length}
+                                  </span>
+                                  {appNames.length > 0 && (
+                                    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span className="text-muted-foreground">
+                                        {t('liveQueries.columns.application')}:
+                                      </span>
+                                      <span className="font-mono text-foreground">
+                                        {appNames.join(', ')}
+                                      </span>
                                     </span>
-                                  ))}
+                                  )}
+                                  <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    {stateCounts.map(({ group, count }) => (
+                                      <span key={group} className={cn(GROUP_TONE[group], 'font-mono')}>
+                                        {t(`liveQueries.groups.${group}`)} {count}
+                                      </span>
+                                    ))}
+                                  </span>
                                 </span>
-                              </span>
-                            )}
+                              )}
+                            </button>
                           </TableCell>
                         </TableRow>
                       )}
-                      {sectionRows.map((r) => (
+                      {!isCollapsed &&
+                        sectionRows.map((r) => (
                         <TableRow
                           key={r.id}
                           className={cn(

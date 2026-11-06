@@ -40,6 +40,7 @@ export function newOpId(prefix = "op"): string {
 export function useOpControl() {
   const [opId, setOpId] = React.useState<string | null>(null);
   const [blocked, setBlocked] = React.useState<LockInfo[]>([]);
+  const [status, setStatus] = React.useState<OpStatus | null>(null);
   const [stopping, setStopping] = React.useState(false);
   const abortRef = React.useRef<AbortController | null>(null);
 
@@ -49,6 +50,7 @@ export function useOpControl() {
     abortRef.current = controller;
     setOpId(id);
     setBlocked([]);
+    setStatus(null);
     setStopping(false);
     return { opId: id, signal: controller.signal };
   }, []);
@@ -57,6 +59,7 @@ export function useOpControl() {
     abortRef.current = null;
     setOpId(null);
     setBlocked([]);
+    setStatus(null);
     setStopping(false);
   }, []);
 
@@ -97,8 +100,10 @@ export function useOpControl() {
     let active = true;
     const tick = async () => {
       try {
-        const status = await api.get<OpStatus>(`/ops/${opId}`, { skipToast: true });
-        if (active) setBlocked(status.blocked_by ?? []);
+        const next = await api.get<OpStatus>(`/ops/${opId}`, { skipToast: true });
+        if (!active) return;
+        setBlocked(next.blocked_by ?? []);
+        setStatus(next);
       } catch {
         // Status is advisory; a failure must not disturb the running op.
       }
@@ -114,6 +119,10 @@ export function useOpControl() {
   return {
     opId,
     running: opId !== null,
+    /** Latest polled status: pid, state, elapsed time and blockers. */
+    status,
+    /** Backend pid of the running operation (null until the first poll). */
+    pid: status?.pid ?? null,
     blocked,
     stopping,
     begin,
@@ -138,21 +147,31 @@ export function OpStopButton({
   const t = useT();
   if (!control.running) return null;
   return (
-    <Button
-      type="button"
-      variant="destructive"
-      size="sm"
-      className={className}
-      onClick={() => void control.stop()}
-      disabled={control.stopping}
-    >
-      {control.stopping ? (
-        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <span className="mr-1.5 inline-block h-3 w-3 rounded-[2px] bg-current" />
-      )}
-      {label ?? t("op.stop")}
-    </Button>
+    <span className="inline-flex items-center gap-1.5">
+      {control.pid ? (
+        <span
+          className="font-mono text-[10px] text-muted-foreground"
+          title={t("op.pid", { pid: control.pid })}
+        >
+          PID {control.pid}
+        </span>
+      ) : null}
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        className={className}
+        onClick={() => void control.stop()}
+        disabled={control.stopping}
+      >
+        {control.stopping ? (
+          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <span className="mr-1.5 inline-block h-3 w-3 rounded-[2px] bg-current" />
+        )}
+        {label ?? t("op.stop")}
+      </Button>
+    </span>
   );
 }
 

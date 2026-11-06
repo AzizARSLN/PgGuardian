@@ -32,7 +32,7 @@ from pgguardian.api.safety import (
     validate_identifier,
 )
 from pgguardian.api.settings import ApiSettings
-from pgguardian.database.connection import DbClient, resolve_connection_string
+from pgguardian.database.connection import APPLICATION_NAME, DbClient, resolve_connection_string
 from pgguardian.utils.security import sanitize_error, sanitize_text
 
 router = APIRouter(prefix="/api/v1/backups", tags=["backups"])
@@ -282,6 +282,8 @@ def _dump_env(client: DbClient) -> tuple[dict[str, str], str, str, str, str]:
         env["PGPASSWORD"] = str(password)
     if params.get("sslmode"):
         env["PGSSLMODE"] = str(params["sslmode"])
+    # Tag the libpq-backed tools (pg_dump/pg_restore/psql) as pgGuardian too.
+    env["PGAPPNAME"] = APPLICATION_NAME
     return env, host, port, database, username
 
 

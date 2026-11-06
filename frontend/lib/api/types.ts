@@ -94,6 +94,159 @@ export interface IndexReport {
   potentially_unused: IndexInfo[];
 }
 
+/** One index with validity flags, type, key columns and usage/efficiency metrics. */
+export interface IndexDetail {
+  schema_name?: string | null;
+  table_name?: string | null;
+  index_name: string;
+  index_size_bytes: number;
+  index_scans: number;
+  tuples_read: number;
+  tuples_fetched: number;
+  table_seq_scan: number;
+  is_unique: boolean;
+  is_primary: boolean;
+  is_valid: boolean;
+  is_ready: boolean;
+  is_live: boolean;
+  is_partial: boolean;
+  is_expression: boolean;
+  has_include: boolean;
+  index_type?: string | null;
+  key_columns: string[];
+  definition?: string | null;
+  cache_hit_percent?: number | null;
+  bloat_percent?: number | null;
+  bloat_bytes: number;
+  potentially_unused: boolean;
+  reason?: string | null;
+}
+
+/** Indexes on one table that share the same key columns and predicate. */
+export interface DuplicateIndexGroup {
+  schema_name?: string | null;
+  table_name?: string | null;
+  columns: string[];
+  predicate?: string | null;
+  index_names: string[];
+  total_size_bytes: number;
+  recommended_keep?: string | null;
+  recommended_drop: string[];
+}
+
+/** An index whose key columns are a leading prefix of another index. */
+export interface RedundantIndex {
+  schema_name?: string | null;
+  table_name?: string | null;
+  index_name: string;
+  covered_by: string;
+  size_bytes: number;
+}
+
+/** A table read mostly by sequential scans with little index support. */
+export interface MissingIndexCandidate {
+  schema_name?: string | null;
+  table_name?: string | null;
+  seq_scan: number;
+  seq_tup_read: number;
+  idx_scan: number;
+  live_tuples: number;
+  table_size_bytes: number;
+  index_count: number;
+}
+
+export type IndexSuggestionKind =
+  | "drop_unused"
+  | "drop_duplicate"
+  | "drop_redundant"
+  | "reindex_bloat"
+  | "reindex_invalid"
+  | "create_missing";
+
+/** An actionable recommendation derived from the monitor report. */
+export interface IndexSuggestion {
+  kind: IndexSuggestionKind;
+  severity: string;
+  title: string;
+  detail: string;
+  schema_name?: string | null;
+  table_name?: string | null;
+  index_name?: string | null;
+  command?: string | null;
+  confidence: string;
+  estimated_reclaim_bytes: number;
+  risk: string;
+}
+
+/** A threshold breach or state problem surfaced as a notification. */
+export interface IndexAlert {
+  code: string;
+  level: string;
+  title: string;
+  detail: string;
+  metric?: string | null;
+  value?: number | null;
+  threshold?: number | null;
+  target?: string | null;
+}
+
+export interface IndexMonitorSummary {
+  total_indexes: number;
+  total_size_bytes: number;
+  unused_count: number;
+  unused_size_bytes: number;
+  invalid_count: number;
+  duplicate_group_count: number;
+  duplicate_waste_bytes: number;
+  redundant_count: number;
+  redundant_size_bytes: number;
+  bloated_count: number;
+  bloat_size_bytes: number;
+  bloat_known: boolean;
+  missing_candidate_count: number;
+  low_cache_hit_count: number;
+  max_indexes_on_table: number;
+  health_score: number;
+}
+
+/** Full index-monitoring payload: inventory, findings, suggestions and alerts. */
+export interface IndexMonitorReport {
+  taken_at: string;
+  database: string;
+  stats_reset?: string | null;
+  stats_age_hours?: number | null;
+  limit: number;
+  summary: IndexMonitorSummary;
+  indexes: IndexDetail[];
+  duplicates: DuplicateIndexGroup[];
+  redundant: RedundantIndex[];
+  invalid: IndexDetail[];
+  missing: MissingIndexCandidate[];
+  suggestions: IndexSuggestion[];
+  alerts: IndexAlert[];
+}
+
+/** One stored time-series point of index summary metrics. */
+export interface IndexMonitorPoint {
+  id: number;
+  taken_at: string;
+  profile?: string | null;
+  database: string;
+  total_indexes: number;
+  total_size_bytes: number;
+  unused_count: number;
+  unused_size_bytes: number;
+  invalid_count: number;
+  duplicate_group_count: number;
+  redundant_count: number;
+  bloat_size_bytes: number;
+  missing_candidate_count: number;
+  low_cache_hit_count: number;
+  health_score: number;
+  critical_alerts: number;
+  warning_alerts: number;
+}
+
 export interface LockInfo {
   blocking_pid: number;
   blocked_pid: number;
@@ -499,10 +652,59 @@ export interface RaiseSequenceMaxValueRequest extends MutationRequest {
   multiplier?: number;
 }
 
+export interface RepackRequest extends MutationRequest {
+  schema_name: string;
+  table_name: string;
+  /** Extra connections pg_repack opens to rebuild indexes in parallel (-j); 1 = off. */
+  jobs?: number;
+}
+
+/** State of a pg_repack background job (running | done | failed | cancelled). */
+export interface RepackJob {
+  id: string;
+  status: string;
+  schema_name: string;
+  table_name: string;
+  /** The pg_repack command line, for display; never contains the password. */
+  command: string;
+  pid?: number | null;
+  started_at: string;
+  finished_at?: string | null;
+  error?: string | null;
+  output?: string | null;
+}
+
+export interface OperationBlocker {
+  pid: number;
+  username?: string | null;
+  application_name?: string | null;
+  state?: string | null;
+  age_seconds?: number | null;
+  query?: string | null;
+}
+
 export interface MaintenanceActionResult {
   action: string;
   target: string;
   command_status: string;
+  /** Sessions terminated so the action could take its exclusive lock. */
+  terminated_blockers?: OperationBlocker[];
+}
+
+export interface OperationLogEntry {
+  id: number;
+  occurred_at: string;
+  actor_email?: string | null;
+  actor_role?: string | null;
+  action: string;
+  command?: string | null;
+  target?: string | null;
+  database_name?: string | null;
+  profile?: string | null;
+  status: "ok" | "failed" | "cancelled";
+  error?: string | null;
+  duration_ms?: number | null;
+  op_id?: string | null;
 }
 
 export interface SettingInfo {
@@ -698,10 +900,25 @@ export interface SessionInfo {
   query: string | null;
 }
 
+export interface SessionStateCount {
+  state: string | null;
+  count: number;
+}
+
 export interface SessionReport {
   sessions: SessionInfo[];
   limit: number;
   truncated: boolean;
+  /** Exact per-state totals for the whole cluster (independent of the row cap). */
+  state_counts?: SessionStateCount[];
+  /** Sum of {@link state_counts}. */
+  total?: number;
+  /** The role cannot read other users' state, so some rows arrive with a NULL state. */
+  limited_visibility?: boolean;
+  /** Client sessions whose state PostgreSQL masked because of {@link limited_visibility}. */
+  hidden_count?: number;
+  /** The database role pgGuardian is connected as; used for the GRANT hint. */
+  db_role?: string | null;
 }
 
 export interface BackupOptions {
@@ -839,6 +1056,39 @@ export const endpoints = {
 
   getIndexes: (limit = 5000): Promise<IndexReport> =>
     api.get<IndexReport>("/indexes", { params: { limit } }),
+
+  getIndexMonitor: (limit = 500): Promise<IndexMonitorReport> =>
+    api.get<IndexMonitorReport>("/indexes/monitor", { params: { limit } }),
+
+  getIndexAlerts: (limit = 500): Promise<IndexAlert[]> =>
+    api.get<IndexAlert[]>("/indexes/alerts", { params: { limit } }),
+
+  getIndexHistory: (
+    profile?: string,
+    database?: string,
+    limit = 100
+  ): Promise<IndexMonitorPoint[]> =>
+    api.get<IndexMonitorPoint[]>("/indexes/history", {
+      params: { profile, database, limit },
+    }),
+
+  captureIndexSnapshot: (
+    profile?: string,
+    options?: CallOptions
+  ): Promise<IndexMonitorReport> =>
+    api.post<IndexMonitorReport>("/indexes/snapshot", undefined, {
+      params: { profile },
+      ...options,
+    }),
+
+  pruneIndexHistory: (
+    keepDays = 90,
+    options?: CallOptions
+  ): Promise<PruneSnapshotsResult> =>
+    api.post<PruneSnapshotsResult>("/indexes/prune", undefined, {
+      params: { keep_days: keepDays, confirm: true },
+      ...options,
+    }),
 
   getMaintenance: (limit = 5000): Promise<MaintenanceReport> =>
     api.get<MaintenanceReport>("/maintenance", { params: { limit } }),
@@ -1129,6 +1379,30 @@ export const endpoints = {
       "/maintenance/sequence-maxvalue",
       body
     ),
+
+  startRepack: (body: RepackRequest): Promise<RepackJob> =>
+    api.post<RepackJob>("/maintenance/repack", body),
+
+  getRepack: (jobId: string, options?: CallOptions): Promise<RepackJob> =>
+    api.get<RepackJob>(`/maintenance/repack/${jobId}`, options),
+
+  cancelRepack: (jobId: string): Promise<RepackJob> =>
+    api.post<RepackJob>(`/maintenance/repack/${jobId}/cancel`, { confirm: true }),
+
+  listOperationLog: (options?: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+    status?: "ok" | "failed" | "cancelled";
+  }): Promise<OperationLogEntry[]> =>
+    api.get<OperationLogEntry[]>("/operation-log", {
+      params: {
+        limit: options?.limit,
+        offset: options?.offset,
+        action: options?.action,
+        status: options?.status,
+      },
+    }),
 
   listSettings: (pattern?: string): Promise<SettingInfo[]> =>
     api.get<SettingInfo[]>("/config", { params: { pattern } }),

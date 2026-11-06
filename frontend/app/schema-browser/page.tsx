@@ -177,7 +177,7 @@ export default function SchemaBrowserPage() {
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="flex flex-col gap-3 lg:h-[calc(100vh-5rem)]">
+    <div className="flex flex-col gap-3 lg:h-[calc(100vh-7rem)]">
       <div className="shrink-0">
         <h1 className="text-lg font-semibold text-foreground">{t('schemaBrowser.title')}</h1>
         <p className="text-xs text-muted-foreground">{t('schemaBrowser.subtitle')}</p>

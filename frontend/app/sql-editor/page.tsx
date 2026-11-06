@@ -14,6 +14,7 @@ import { useTheme } from 'next-themes';
 import Papa from 'papaparse';
 import { toast } from 'sonner';
 import {
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   Database,
@@ -32,11 +33,14 @@ import {
   TerminalSquare,
   FileJson,
   RotateCcw,
+  Search,
+  X,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table as UITable,
@@ -53,7 +57,7 @@ import { qk } from '@/lib/api/queryKeys';
 import { useI18n, useT } from '@/lib/i18n';
 import { useRole } from '@/lib/hooks/use-role';
 import { OpBlockedHint, OpStopButton, useOpControl } from '@/lib/hooks/use-op-control';
-import { cn } from '@/lib/utils';
+import { cn, formatBytes } from '@/lib/utils';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 
 const HISTORY_KEY = 'pgguardian_sql_history';
@@ -80,32 +84,47 @@ const GROUPS: {
   { id: 'functions', labelKey: 'sqlEditor.tree.functions', icon: FunctionSquare },
 ];
 
-/** Names only: the raw list keys are shared with other pages, so these get a suffix. */
+interface TreeObject {
+  name: string;
+  /** Tables only: table size and total index size, for the tree labels. */
+  sizeBytes?: number;
+  indexSizeBytes?: number;
+}
+
+/**
+ * Objects of one group under a schema, normalised to a name plus optional
+ * sizes. The raw list keys are shared with other pages, so these get a suffix.
+ */
 function groupQuery(schema: string, group: GroupId) {
   const encoded = encodeURIComponent(schema);
   switch (group) {
     case 'tables':
       return {
-        queryKey: [...qk.schemas.tables(schema, TREE_LIMIT), 'names'],
-        queryFn: async () =>
-          (await endpoints.listTables(encoded, TREE_LIMIT)).map((x) => x.table_name),
+        queryKey: [...qk.schemas.tables(schema, TREE_LIMIT), 'tree'],
+        queryFn: async (): Promise<TreeObject[]> =>
+          (await endpoints.listTables(encoded, TREE_LIMIT)).map((x) => ({
+            name: x.table_name,
+            sizeBytes: x.table_size_bytes,
+            indexSizeBytes: x.indexes_size_bytes,
+          })),
       };
     case 'views':
       return {
-        queryKey: [...qk.schemas.views(schema), 'names'],
-        queryFn: async () => (await endpoints.listViews(encoded)).map((x) => x.view_name),
+        queryKey: [...qk.schemas.views(schema), 'tree'],
+        queryFn: async (): Promise<TreeObject[]> =>
+          (await endpoints.listViews(encoded)).map((x) => ({ name: x.view_name })),
       };
     case 'sequences':
       return {
-        queryKey: [...qk.schemas.sequences(schema), 'names'],
-        queryFn: async () =>
-          (await endpoints.listSequencesInSchema(encoded)).map((x) => x.sequence_name),
+        queryKey: [...qk.schemas.sequences(schema), 'tree'],
+        queryFn: async (): Promise<TreeObject[]> =>
+          (await endpoints.listSequencesInSchema(encoded)).map((x) => ({ name: x.sequence_name })),
       };
     case 'functions':
       return {
-        queryKey: [...qk.schemas.functions(schema), 'names'],
-        queryFn: async () =>
-          (await endpoints.listFunctions(encoded)).map((x) => x.function_name),
+        queryKey: [...qk.schemas.functions(schema), 'tree'],
+        queryFn: async (): Promise<TreeObject[]> =>
+          (await endpoints.listFunctions(encoded)).map((x) => ({ name: x.function_name })),
       };
   }
 }
@@ -181,18 +200,33 @@ function SchemaGroup({
   group,
   labelKey,
   icon: Icon,
+  filter,
   onInsert,
 }: {
   schema: string;
   group: GroupId;
   labelKey: string;
   icon: React.ComponentType<{ className?: string }>;
+  filter: string;
   onInsert: (schema: string, name: string) => void;
 }) {
   const t = useT();
   const { formatNumber } = useI18n();
   const [open, setOpen] = React.useState(false);
-  const query = useQuery({ ...groupQuery(schema, group), enabled: open });
+  // While a search is active every group is opened so matches below surface.
+  const expanded = open || filter.length > 0;
+  const query = useQuery({ ...groupQuery(schema, group), enabled: expanded });
+
+  const items = React.useMemo(() => {
+    const data = query.data ?? [];
+    if (!filter) return data;
+    const needle = filter.toLowerCase();
+    return data.filter((item) => item.name.toLowerCase().includes(needle));
+  }, [query.data, filter]);
+
+  // Hide the whole group while searching when nothing matches, but wait until
+  // the list has loaded so the tree does not flash empty between keystrokes.
+  if (filter && query.isSuccess && items.length === 0) return null;
 
   return (
     <div>
@@ -201,7 +235,7 @@ function SchemaGroup({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left transition-colors hover:bg-muted"
       >
-        {open ? (
+        {expanded ? (
           <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
         ) : (
           <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -210,12 +244,12 @@ function SchemaGroup({
         <span className="text-xs">{t(labelKey)}</span>
         {query.data && (
           <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-            {formatNumber(query.data.length)}
+            {formatNumber(items.length)}
           </span>
         )}
       </button>
-      {open && (
-        <div className="ml-5 max-h-56 space-y-px overflow-y-auto py-0.5">
+      {expanded && (
+        <div className="ml-5 space-y-px py-0.5">
           {query.isLoading && (
             <div className="px-2 py-1 text-xs text-muted-foreground">{t('common.loading')}</div>
           )}
@@ -227,15 +261,26 @@ function SchemaGroup({
               {t('sqlEditor.tree.empty')}
             </div>
           )}
-          {query.data?.map((name) => (
+          {items.map((obj) => (
             <button
-              key={name}
+              key={obj.name}
               type="button"
-              onClick={() => onInsert(schema, name)}
-              className="block w-full truncate rounded px-2 py-0.5 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => onInsert(schema, obj.name)}
+              className="flex w-full items-center gap-2 rounded px-2 py-0.5 text-left font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               title={t('sqlEditor.tree.insert')}
             >
-              {name}
+              <span className="truncate">{obj.name}</span>
+              {group === 'tables' && (
+                <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/80">
+                  <span title={t('sqlEditor.tree.tableSize')}>
+                    {formatBytes(obj.sizeBytes ?? 0)}
+                  </span>
+                  <span className="text-muted-foreground/40">/</span>
+                  <span title={t('sqlEditor.tree.indexSize')}>
+                    {formatBytes(obj.indexSizeBytes ?? 0)}
+                  </span>
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -264,6 +309,8 @@ export default function SqlEditorPage() {
   const [messages, setMessages] = React.useState<string[]>([]);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
   const [expandedSchemas, setExpandedSchemas] = React.useState<Record<string, boolean>>({});
+  const [treeSearch, setTreeSearch] = React.useState('');
+  const [treeOpen, setTreeOpen] = React.useState(true);
 
   // Read after mount: localStorage is absent during SSR, so reading it in the
   // initial state made the tab count differ from the server render.
@@ -520,8 +567,12 @@ export default function SqlEditorPage() {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  // A search term is matched against schema and object names; it opens user
+  // schemas so their objects can be found without expanding them by hand.
+  const filter = treeSearch.trim().toLowerCase();
+
   return (
-    <div className="space-y-3">
+    <div className="flex h-[calc(100vh-7rem)] min-h-0 flex-col gap-3">
       <ConfirmDialog />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -547,79 +598,143 @@ export default function SqlEditorPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-3">
-        <Card className="col-span-12 flex flex-col overflow-hidden lg:col-span-3">
-          <CardContent className="flex flex-1 flex-col !p-0">
-            <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <Database className="h-3.5 w-3.5 text-success" />
-              <span className="text-xs font-semibold">{t('sqlEditor.tree.title')}</span>
-            </div>
-            <div className="max-h-[720px] flex-1 space-y-px overflow-y-auto p-1.5">
-              {schemasQuery.isLoading && (
-                <div className="p-2 text-xs text-muted-foreground">{t('common.loading')}</div>
-              )}
-              {schemasQuery.isError && (
-                <InlineError
-                  detail={errorText(schemasQuery.error, '')}
-                  onRetry={() => schemasQuery.refetch()}
-                />
-              )}
-              {schemasQuery.data?.length === 0 && (
-                <div className="p-2 text-xs text-muted-foreground">{t('common.noData')}</div>
-              )}
-              {schemasQuery.data?.map((sch) => {
-                const open = !!expandedSchemas[sch.name];
-                return (
-                  <div key={sch.name}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedSchemas((prev) => ({ ...prev, [sch.name]: !prev[sch.name] }))
-                      }
-                      className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left transition-colors hover:bg-muted"
-                    >
-                      {open ? (
-                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      )}
-                      <Database
-                        className={cn(
-                          'h-3.5 w-3.5 shrink-0',
-                          sch.is_system ? 'text-muted-foreground' : 'text-info'
-                        )}
-                      />
-                      <span className="truncate font-mono text-xs font-medium">{sch.name}</span>
-                      {sch.is_system && (
-                        <Badge variant="outline" className="ml-auto h-auto px-1.5 py-0 text-[10px]">
-                          {t('sqlEditor.tree.system')}
-                        </Badge>
-                      )}
-                    </button>
-                    {open && (
-                      <div className="ml-4 space-y-px">
-                        {GROUPS.map((g) => (
-                          <SchemaGroup
-                            key={g.id}
-                            schema={sch.name}
-                            group={g.id}
-                            labelKey={g.labelKey}
-                            icon={g.icon}
-                            onInsert={insertObjectName}
-                          />
-                        ))}
-                      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-12 gap-3">
+        <Card
+          className={cn(
+            'col-span-12 flex min-h-0 flex-col overflow-hidden',
+            treeOpen ? 'lg:col-span-3' : 'lg:col-span-1'
+          )}
+        >
+          <CardContent className="flex min-h-0 flex-1 flex-col !p-0">
+            {treeOpen ? (
+              <>
+                <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+                  <Database className="h-3.5 w-3.5 text-success" />
+                  <span className="text-xs font-semibold">{t('sqlEditor.tree.title')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTreeOpen(false)}
+                    title={t('sqlEditor.tree.collapse')}
+                    aria-label={t('sqlEditor.tree.collapse')}
+                    className="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="shrink-0 border-b border-border px-2 py-1.5">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={treeSearch}
+                      onChange={(e) => setTreeSearch(e.target.value)}
+                      placeholder={t('sqlEditor.tree.search')}
+                      className="h-7 py-0 pl-7 pr-7 text-xs"
+                    />
+                    {treeSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setTreeSearch('')}
+                        aria-label={t('sqlEditor.actions.clear')}
+                        className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+                <div className="min-h-0 flex-1 space-y-px overflow-y-auto p-1.5">
+                  {schemasQuery.isLoading && (
+                    <div className="p-2 text-xs text-muted-foreground">{t('common.loading')}</div>
+                  )}
+                  {schemasQuery.isError && (
+                    <InlineError
+                      detail={errorText(schemasQuery.error, '')}
+                      onRetry={() => schemasQuery.refetch()}
+                    />
+                  )}
+                  {schemasQuery.data?.length === 0 && (
+                    <div className="p-2 text-xs text-muted-foreground">{t('common.noData')}</div>
+                  )}
+                  {schemasQuery.data?.map((sch) => {
+                    const nameMatches = !!filter && sch.name.toLowerCase().includes(filter);
+                    // System schemas stay closed while searching (they are huge);
+                    // a matching name or an explicit expand still reveals them.
+                    if (filter && sch.is_system && !nameMatches && !expandedSchemas[sch.name]) {
+                      return null;
+                    }
+                    const open =
+                      !!expandedSchemas[sch.name] || (!!filter && (!sch.is_system || nameMatches));
+                    return (
+                      <div key={sch.name}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedSchemas((prev) => ({ ...prev, [sch.name]: !prev[sch.name] }))
+                          }
+                          className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left transition-colors hover:bg-muted"
+                        >
+                          {open ? (
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                          <Database
+                            className={cn(
+                              'h-3.5 w-3.5 shrink-0',
+                              sch.is_system ? 'text-muted-foreground' : 'text-info'
+                            )}
+                          />
+                          <span className="truncate font-mono text-xs font-medium">{sch.name}</span>
+                          {sch.is_system && (
+                            <Badge variant="outline" className="ml-auto h-auto px-1.5 py-0 text-[10px]">
+                              {t('sqlEditor.tree.system')}
+                            </Badge>
+                          )}
+                        </button>
+                        {open && (
+                          <div className="ml-4 space-y-px">
+                            {GROUPS.map((g) => (
+                              <SchemaGroup
+                                key={g.id}
+                                schema={sch.name}
+                                group={g.id}
+                                labelKey={g.labelKey}
+                                icon={g.icon}
+                                filter={filter}
+                                onInsert={insertObjectName}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setTreeOpen(true)}
+                title={t('sqlEditor.tree.expand')}
+                aria-label={t('sqlEditor.tree.expand')}
+                className="flex flex-1 items-center justify-center gap-1.5 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex-col"
+              >
+                <ChevronRight className="h-4 w-4 shrink-0" />
+                <Database className="h-3.5 w-3.5 shrink-0 text-success" />
+                <span className="text-xs lg:hidden">{t('sqlEditor.tree.title')}</span>
+              </button>
+            )}
           </CardContent>
         </Card>
 
-        <div className="col-span-12 flex flex-col gap-3 lg:col-span-9">
-          <Card className="flex flex-col overflow-hidden">
-            <CardContent className="flex flex-1 flex-col !p-0">
+        <div
+          className={cn(
+            'col-span-12 flex min-h-0 flex-col gap-3',
+            treeOpen ? 'lg:col-span-9' : 'lg:col-span-11'
+          )}
+        >
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <CardContent className="flex min-h-0 flex-1 flex-col !p-0">
               <div className="flex items-center justify-between border-b border-border px-3 py-1.5 font-mono">
                 <div className="flex items-center gap-2">
                   <TerminalSquare className="h-3.5 w-3.5 text-success" />
@@ -678,8 +793,12 @@ export default function SqlEditorPage() {
                 </Button>
               </div>
 
-              <Tabs value={resultTab} onValueChange={setResultTab} className="p-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <Tabs
+                value={resultTab}
+                onValueChange={setResultTab}
+                className="flex min-h-0 flex-1 flex-col p-3"
+              >
+                <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
                   <TabsList className="h-8">
                     <TabsTrigger value="results" className="h-6 text-xs">
                       {t('sqlEditor.tabs.results')}
@@ -713,7 +832,7 @@ export default function SqlEditorPage() {
                   )}
                 </div>
 
-                <TabsContent value="results" className="space-y-2">
+                <TabsContent value="results" className="min-h-0 flex-1 space-y-2 overflow-y-auto">
                   {runError && <InlineError detail={runError.message} onRetry={runError.retry} />}
                   {busy && (
                     <div className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
@@ -786,7 +905,7 @@ export default function SqlEditorPage() {
                   )}
                 </TabsContent>
 
-                <TabsContent value="messages">
+                <TabsContent value="messages" className="min-h-0 flex-1 overflow-y-auto">
                   <div className="max-h-[420px] space-y-1 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-xs">
                     {messages.length === 0 && (
                       <div className="py-4 text-center text-muted-foreground">
@@ -801,7 +920,7 @@ export default function SqlEditorPage() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="history">
+                <TabsContent value="history" className="min-h-0 flex-1 overflow-y-auto">
                   <div className="overflow-hidden rounded-md border border-border">
                     {history.length === 0 ? (
                       <div className="p-4 text-center text-xs text-muted-foreground">

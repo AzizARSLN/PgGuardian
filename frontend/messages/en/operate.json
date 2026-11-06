@@ -3,6 +3,7 @@
     "stop": "Stop",
     "stopping": "Stopping…",
     "stopped": "Operation stopped",
+    "pid": "Operation PID: {pid}",
     "blocked": "The operation is blocked by session {pids}.",
     "killBlockers": "Clear lock and continue"
   },
@@ -18,6 +19,9 @@
     "reindexHint": "Schema is required. Enter either a table or an index, not both.",
     "never": "Never",
     "result": "Result",
+    "blockers": {
+      "terminated": "{count} blocking session(s) terminated (pid {pids})"
+    },
     "fields": {
       "schema": "Schema",
       "table": "Table",
@@ -48,7 +52,23 @@
       "vacuumFull": "Runs VACUUM FULL. It locks the table with ACCESS EXCLUSIVE LOCK and generates heavy I/O. Run it during low traffic.",
       "analyze": "Updates table statistics so the query planner can make better decisions. Does not block reads or writes.",
       "reindex": "Runs a standard REINDEX. Writes to the table are blocked until it finishes.",
-      "reindexConcurrent": "Runs REINDEX CONCURRENTLY. It does not block writes but takes longer and adds CPU and I/O load."
+      "reindexConcurrent": "Runs REINDEX CONCURRENTLY. It does not block writes but takes longer and adds CPU and I/O load.",
+      "dropIndexTitle": "Drop index {index}?",
+      "dropIndex": "DROP INDEX CONCURRENTLY will run. It does not lock the table, does not block the live system and is not subject to a statement timeout. Make sure the index is truly unnecessary; this cannot be undone.",
+      "dropIndexName": "Type the index name exactly to confirm.",
+      "repackTitle": "Rebuild table {table} with pg_repack?",
+      "repack": "pg_repack rebuilds the table online to remove bloat. Unlike VACUUM FULL it does not lock the table for long; it only takes a brief ACCESS EXCLUSIVE lock. The table needs a PRIMARY KEY or UNIQUE index, and the pg_repack extension must be installed in this database."
+    },
+    "repack": {
+      "started": "pg_repack started",
+      "running": "pg_repack is running…",
+      "done": "pg_repack finished",
+      "failed": "pg_repack failed",
+      "cancelled": "pg_repack stopped",
+      "jobsLabel": "Parallel indexes",
+      "jobsHint": "pg_repack -j: rebuilds indexes over N parallel connections. Faster, but uses more connections and I/O on the server.",
+      "jobsOff": "No parallelism",
+      "jobsOption": "{count} parallel"
     },
     "notes": {
       "vacuum": "Standard VACUUM runs without locking the table.",
@@ -140,7 +160,8 @@
         "inserted": "Inserted",
         "updated": "Updated",
         "deleted": "Deleted",
-        "unused": "Unused index"
+        "unused": "Unused index",
+        "operation": "Operation"
       },
       "selected": "Selected table",
       "clear": "Clear selection",
@@ -149,14 +170,16 @@
         "vacuum": "VACUUM",
         "vacuumFull": "VACUUM FULL",
         "analyze": "ANALYZE",
-        "reindex": "REINDEX TABLE"
+        "reindex": "REINDEX TABLE",
+        "repack": "pg_repack"
       },
       "unused": {
         "title": "Unused indexes",
         "subtitle": "idx_scan = 0",
         "empty": "No unused indexes.",
         "scans": "Scans",
-        "reindex": "REINDEX INDEX"
+        "reindex": "REINDEX INDEX",
+        "drop": "DROP INDEX"
       },
       "batch": {
         "selected": "Selected: {count}",
@@ -172,9 +195,57 @@
         "confirmTitle": "Run {command} on {count} tables?",
         "confirmDesc": "{command} will be applied to the selected tables.",
         "confirmDescFull": "{command} will be applied to the selected tables. Each table takes an ACCESS EXCLUSIVE LOCK; run it during low traffic.",
+        "confirmDescRepack": "The selected tables will be rebuilt online with {command}, one at a time. Each table is locked only briefly; no long ACCESS EXCLUSIVE LOCK is taken. The tables need a PRIMARY KEY/UNIQUE index and the pg_repack extension must be installed in the database.",
         "noSelection": "Select at least one table from the list first.",
         "resultsTitle": "Bulk action result",
         "resultsHint": "Tables processed and their command results"
+      },
+      "search": {
+        "placeholder": "Search tables…",
+        "empty": "No tables match the search.",
+        "clear": "Clear search",
+        "mode": {
+          "contains": "Contains",
+          "notContains": "Does not contain",
+          "startsWith": "Starts with",
+          "notStartsWith": "Does not start with",
+          "endsWith": "Ends with",
+          "equals": "Equals"
+        }
+      }
+    },
+    "history": {
+      "tab": "Operation history",
+      "subtitle": "Maintenance actions run on the server and their outcomes",
+      "loading": "Loading…",
+      "empty": "No operations recorded yet.",
+      "refresh": "Refresh",
+      "total": "{count} records",
+      "filterStatus": "Status",
+      "filterAction": "Action",
+      "allStatuses": "All statuses",
+      "allActions": "All actions",
+      "columns": {
+        "time": "Time",
+        "actor": "User",
+        "action": "Action",
+        "command": "Command",
+        "target": "Target",
+        "status": "Status",
+        "duration": "Duration",
+        "error": "Error"
+      },
+      "status": {
+        "ok": "Succeeded",
+        "failed": "Failed",
+        "cancelled": "Stopped"
+      },
+      "actions": {
+        "maintenance.vacuum": "VACUUM",
+        "maintenance.analyze": "ANALYZE",
+        "maintenance.reindex": "REINDEX",
+        "maintenance.drop_index": "DROP INDEX",
+        "maintenance.sequence_maxvalue": "ALTER SEQUENCE"
       }
     }
   },
@@ -339,6 +410,197 @@
       "blocking": "Blocking",
       "deadlocks": "Deadlocks",
       "longQueries": "Long queries"
+    }
+  },
+  "indexMonitor": {
+    "title": "Index Monitor",
+    "subtitle": "Index inventory, integrity, usage, cost and recommendations",
+    "database": "Database",
+    "pollEvery": "Refreshes every {seconds}s",
+    "pollManual": "refreshed manually",
+    "capture": "Take snapshot",
+    "prune": "Prune older ({days}d+)",
+    "statsWindow": "Statistics window: {hours}h",
+    "statsRecentlyReset": "Statistics were reset recently",
+    "loadFailed": "Could not load the index report",
+    "toast": {
+      "captured": "Index snapshot recorded",
+      "captureFailed": "Could not take the snapshot",
+      "pruned": "Prune complete: {removed} records removed, last {days} days kept",
+      "pruneFailed": "Prune failed",
+      "actionDone": "{action} completed",
+      "actionFailed": "{action} failed"
+    },
+    "confirm": {
+      "capture": "Index summary metrics will be saved to the local history. This does not change the database; it only causes brief read I/O.",
+      "pruneTitle": "Prune index history — DANGEROUS",
+      "prune": "Index history records older than {days} days will be permanently deleted. This cannot be undone.",
+      "prunePlaceholder": "Type prune to confirm",
+      "reindexTitle": "Rebuild {index}?",
+      "reindex": "REINDEX INDEX CONCURRENTLY will run. It does not block writes but takes longer and increases CPU and I/O usage.",
+      "dropTitle": "Drop index {index}?",
+      "drop": "DROP INDEX CONCURRENTLY will run. It does not lock the table or block the live system. Make sure the index is truly redundant; this cannot be undone.",
+      "dropName": "Type the index name exactly to confirm."
+    },
+    "stats": {
+      "healthScore": "Index health score",
+      "totalIndexes": "Total indexes",
+      "totalSize": "Total size",
+      "unused": "Unused",
+      "unusedSize": "Unused size",
+      "invalid": "Invalid indexes",
+      "duplicates": "Duplicate groups",
+      "redundant": "Redundant indexes",
+      "bloat": "Bloat",
+      "missing": "Missing-index candidates",
+      "lowCacheHit": "Low cache hit",
+      "unknown": "unknown",
+      "hint": "{total} indexes · {size}"
+    },
+    "alerts": {
+      "title": "Alerts",
+      "subtitle": "{critical} critical · {warning} warning · {info} info",
+      "empty": "No alerts. Indexes look healthy.",
+      "level": {
+        "critical": "Critical",
+        "warning": "Warning",
+        "info": "Info"
+      }
+    },
+    "suggestions": {
+      "title": "Recommendations",
+      "subtitle": "{count} recommendations",
+      "empty": "No recommendations.",
+      "confidence": "Confidence",
+      "confidenceLevel": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "reclaim": "{size} reclaimable",
+      "action": "Apply",
+      "copyCommand": "Copy command",
+      "copied": "Command copied",
+      "manual": "Review manually",
+      "kind": {
+        "drop_unused": "Unused index",
+        "drop_duplicate": "Duplicate index",
+        "drop_redundant": "Redundant index",
+        "reindex_bloat": "Bloated index",
+        "reindex_invalid": "Invalid index",
+        "create_missing": "Missing index"
+      }
+    },
+    "tabs": {
+      "all": "All indexes",
+      "duplicates": "Duplicates",
+      "redundant": "Redundant",
+      "invalid": "Invalid",
+      "missing": "Missing candidates",
+      "history": "History"
+    },
+    "list": {
+      "title": "Index inventory",
+      "subtitle": "{shown} / {total} shown · {poll}",
+      "filterPlaceholder": "Search: index, table, schema, column...",
+      "emptyTitle": "No indexes found",
+      "emptyHint": "There are no indexes in this database.",
+      "noMatchTitle": "No matching records",
+      "noMatchHint": "Try clearing the filter or switching tabs."
+    },
+    "columns": {
+      "index": "Index",
+      "table": "Table",
+      "columns": "Columns",
+      "type": "Type",
+      "size": "Size",
+      "scans": "Scans",
+      "seqScans": "Seq. scans",
+      "cacheHit": "Cache %",
+      "bloat": "Bloat",
+      "flags": "Flags",
+      "actions": "Actions",
+      "definition": "Definition",
+      "coveredBy": "Covered by",
+      "kept": "Keep",
+      "dropList": "Drop",
+      "liveTuples": "Live tuples",
+      "tableSize": "Table size",
+      "indexCount": "Index count",
+      "taken": "Time",
+      "healthScore": "Health",
+      "totalIndexes": "Indexes",
+      "totalSize": "Size",
+      "unused": "Unused",
+      "unusedSize": "Unused size",
+      "invalid": "Invalid",
+      "duplicates": "Duplicate",
+      "redundant": "Redundant",
+      "bloatSize": "Bloat",
+      "missing": "Missing",
+      "criticalAlerts": "Critical",
+      "warningAlerts": "Warning"
+    },
+    "flags": {
+      "unique": "UNIQUE",
+      "primary": "PK",
+      "partial": "Partial",
+      "expression": "Expression",
+      "include": "INCLUDE",
+      "invalid": "INVALID",
+      "unused": "Unused"
+    },
+    "detail": {
+      "title": "Index detail",
+      "definition": "Create statement (DDL)",
+      "keyColumns": "Key columns",
+      "close": "Close",
+      "copyDdl": "Copy DDL",
+      "copied": "DDL copied",
+      "usage": "Usage",
+      "size": "Size",
+      "scans": "Scans",
+      "tuplesRead": "Tuples read",
+      "tuplesFetched": "Tuples fetched",
+      "tableSeqScan": "Table seq. scans",
+      "cacheHit": "Cache hit",
+      "bloat": "Estimated bloat",
+      "bloatBytes": "Bloat (bytes)",
+      "indexType": "Index type",
+      "reason": "Note"
+    },
+    "duplicates": {
+      "title": "Duplicate index groups",
+      "subtitle": "{count} groups · {size} wasted",
+      "empty": "No duplicate index groups.",
+      "hint": "Indexes with the same columns and predicate only add write cost."
+    },
+    "redundant": {
+      "title": "Redundant indexes",
+      "subtitle": "{count} indexes · {size}",
+      "empty": "No redundant indexes found.",
+      "hint": "Indexes whose columns are a prefix of another index are usually redundant."
+    },
+    "invalid": {
+      "title": "Invalid / not-ready indexes",
+      "subtitle": "{count} indexes",
+      "empty": "No invalid indexes."
+    },
+    "missing": {
+      "title": "Missing-index candidates",
+      "subtitle": "{count} tables",
+      "empty": "No sequential-scan heavy tables.",
+      "hint": "These tables are read mostly by sequential scans. Review the workload (pg_stat_statements) and consider an index on the filtered/join columns. PgGuardian never creates indexes."
+    },
+    "history": {
+      "title": "Index history",
+      "subtitle": "{count} records",
+      "empty": "No index history recorded yet.",
+      "hint": "Use \"Take snapshot\" to record a trend point."
+    },
+    "actions": {
+      "reindex": "REINDEX",
+      "drop": "DROP INDEX"
     }
   },
   "config": {

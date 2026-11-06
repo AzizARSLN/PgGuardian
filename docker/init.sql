@@ -71,6 +71,32 @@ CREATE INDEX IF NOT EXISTS idx_pgguardian_sessions_user_id ON pgguardian_session
 CREATE INDEX IF NOT EXISTS idx_pgguardian_sessions_refresh_hash ON pgguardian_sessions (refresh_hash);
 CREATE INDEX IF NOT EXISTS idx_pgguardian_sessions_expires_at ON pgguardian_sessions (expires_at);
 
+-- Operation log: every expert maintenance action (VACUUM/ANALYZE/REINDEX/...)
+-- is recorded here so operators can see what ran, on which object, by whom,
+-- how long it took and how it ended — including failures and cancellations.
+CREATE TABLE IF NOT EXISTS pgguardian_operation_log (
+    id BIGSERIAL PRIMARY KEY,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    actor_email TEXT,
+    actor_role TEXT,
+    action TEXT NOT NULL,
+    command TEXT,
+    target TEXT,
+    database_name TEXT,
+    profile TEXT,
+    status TEXT NOT NULL CHECK (status IN ('ok', 'failed', 'cancelled')),
+    error TEXT,
+    duration_ms INTEGER,
+    op_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pgguardian_operation_log_occurred_at
+    ON pgguardian_operation_log (occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pgguardian_operation_log_action
+    ON pgguardian_operation_log (action);
+CREATE INDEX IF NOT EXISTS idx_pgguardian_operation_log_status
+    ON pgguardian_operation_log (status);
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pgguardian') THEN
@@ -82,5 +108,7 @@ $$;
 GRANT USAGE ON SCHEMA public TO pgguardian;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_users TO pgguardian;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_sessions TO pgguardian;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_operation_log TO pgguardian;
 GRANT USAGE, SELECT ON SEQUENCE pgguardian_users_id_seq TO pgguardian;
 GRANT USAGE, SELECT ON SEQUENCE pgguardian_sessions_id_seq TO pgguardian;
+GRANT USAGE, SELECT ON SEQUENCE pgguardian_operation_log_id_seq TO pgguardian;

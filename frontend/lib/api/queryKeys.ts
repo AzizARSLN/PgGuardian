@@ -73,6 +73,14 @@ export const qk = {
       ["snapshots", "latest", profile, server, database] as const,
   },
 
+  indexes: {
+    all: () => ["indexes"] as const,
+    monitor: (limit?: number) => ["indexes", "monitor", limit] as const,
+    alerts: (limit?: number) => ["indexes", "alerts", limit] as const,
+    history: (profile?: string, database?: string, limit?: number) =>
+      ["indexes", "history", profile, database, limit] as const,
+  },
+
   databases: {
     all: () => ["databases"] as const,
   },
@@ -117,6 +125,11 @@ export const qk = {
     analyze: () => ["maintenance_ops", "analyze"] as const,
     reindex: () => ["maintenance_ops", "reindex"] as const,
     dropIndex: () => ["maintenance_ops", "drop-index"] as const,
+  },
+
+  operation_log: {
+    all: (filters?: { action?: string; status?: string; limit?: number }) =>
+      ["operation_log", filters?.action, filters?.status, filters?.limit] as const,
   },
 
   configops: {

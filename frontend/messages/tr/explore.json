@@ -16,7 +16,12 @@
       "functions": "Fonksiyonlar",
       "empty": "Boş",
       "insert": "Sorguya ekle",
-      "system": "sistem"
+      "system": "sistem",
+      "search": "Şema, tablo veya nesne ara...",
+      "collapse": "Şema ağacını kapat",
+      "expand": "Şema ağacını aç",
+      "tableSize": "Tablo boyutu",
+      "indexSize": "İndeks boyutu"
     },
     "actions": {
       "execute": "Çalıştır (F5)",

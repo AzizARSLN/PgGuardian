@@ -11,6 +11,7 @@ from pgguardian.cli import GlobalOptions
 from pgguardian.cli import connections as connections_cmd
 from pgguardian.cli import diagnose as diagnose_cmd
 from pgguardian.cli import health as health_cmd
+from pgguardian.cli import index_monitor as index_monitor_cmd
 from pgguardian.cli import indexes as indexes_cmd
 from pgguardian.cli import locks as locks_cmd
 from pgguardian.cli import maintenance as maintenance_cmd
@@ -209,6 +210,44 @@ def indexes(
 ) -> None:
     """Show index usage and potentially-unused candidates."""
     raise typer.Exit(code=indexes_cmd.run(_opts(ctx), limit=limit))
+
+
+@app.command("index-monitor")
+def index_monitor(
+    ctx: typer.Context,
+    limit: Annotated[int, typer.Option("--limit", help="Max indexes to inspect.")] = 500,
+    save: Annotated[
+        bool, typer.Option("--save", help="Store a trend point in the local history DB.")
+    ] = False,
+    fail_on: Annotated[
+        str,
+        typer.Option(
+            "--fail-on",
+            help="Exit non-zero on alerts at/above this level: none, warning or critical.",
+        ),
+    ] = "none",
+) -> None:
+    """Deep index monitoring: inventory, findings, suggestions and alerts."""
+    raise typer.Exit(
+        code=index_monitor_cmd.run_monitor(_opts(ctx), limit=limit, save=save, fail_on=fail_on)
+    )
+
+
+@app.command("index-history")
+def index_history(
+    ctx: typer.Context,
+    profile: Annotated[
+        str | None, typer.Option("--profile-filter", help="Filter by profile.")
+    ] = None,
+    database: Annotated[
+        str | None, typer.Option("--database-filter", help="Filter by database.")
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Rows to display.")] = 20,
+) -> None:
+    """Show the stored index-monitor trend."""
+    raise typer.Exit(
+        code=index_monitor_cmd.run_history(_opts(ctx), profile, database, limit)
+    )
 
 
 @app.command()

@@ -34,6 +34,8 @@
   "nav": {
     "tagline": "PostgreSQL DBA konsolu",
     "menu": "Menü",
+    "collapse": "Daralt",
+    "expand": "Genişlet",
     "groups": {
       "monitor": "İzleme",
       "explore": "Veri",
@@ -46,6 +48,7 @@
       "statements": "SQL Analizi",
       "queryManagement": "Canlı Sorgular",
       "diagnostics": "Teşhis",
+      "indexMonitor": "İndeks İzleme",
       "replication": "Replikasyon",
       "sqlEditor": "SQL Editörü",
       "schemaBrowser": "Şema Gezgini",
@@ -62,6 +65,13 @@
       "settings": "Ayarlar",
       "pgbadger": "pgBadger Analizi"
     }
+  },
+  "tabs": {
+    "label": "Açık sekmeler",
+    "actions": "Sekme işlemleri",
+    "close": "Sekmeyi kapat",
+    "closeOthers": "Diğer sekmeleri kapat",
+    "closeAll": "Tüm sekmeleri kapat"
   },
   "header": {
     "loadingProfiles": "Profiller yükleniyor...",

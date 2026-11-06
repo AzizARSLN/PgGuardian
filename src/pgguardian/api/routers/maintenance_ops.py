@@ -11,12 +11,26 @@ what this statement requires.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from psycopg import errors as pg_errors
 from psycopg.sql import SQL, Identifier, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
-from pgguardian.api.deps import get_api_settings, mapped_errors, resolve_client
-from pgguardian.api.ops import op_application_name, validate_op_id
+from pgguardian.api.deps import (
+    get_api_settings,
+    mapped_errors,
+    resolve_client,
+    verify_token_OR_jwt,
+)
+from pgguardian.api.operation_log import logged_operation
+from pgguardian.api.ops import (
+    clear_op_cancel,
+    op_application_name,
+    op_cancel_requested,
+    validate_op_id,
+)
 from pgguardian.api.safety import (
     DryRunResult,
     MutationRequest,
@@ -32,6 +46,83 @@ from pgguardian.database.connection import DbClient
 from pgguardian.diagnostics.sequences import INTEGER_LIMITS
 
 router = APIRouter(prefix="/api/v1/maintenance", tags=["maintenance-ops"])
+
+# VACUUM FULL takes an ACCESS EXCLUSIVE lock. A short per-attempt lock_timeout
+# keeps it from queueing behind other work — a waiting exclusive request would
+# freeze every later query on the table, which is exactly what we must avoid on
+# a live system. A few bounded retries then let it slip into a quiet window.
+VACUUM_LOCK_TIMEOUT_MS = 3000
+VACUUM_LOCK_ATTEMPTS = 5
+VACUUM_LOCK_RETRY_DELAY_S = 3.0
+
+# Sessions holding any lock on the target table (an ACCESS EXCLUSIVE request
+# conflicts with every other lock mode, so all of them are blockers).
+_BLOCKERS_SQL = (
+    "SELECT a.pid, a.usename, a.application_name, a.state,"
+    " EXTRACT(EPOCH FROM (now() - a.query_start))::int AS age_seconds, a.query"
+    " FROM pg_locks l"
+    " JOIN pg_stat_activity a ON a.pid = l.pid"
+    " WHERE l.locktype = 'relation' AND l.granted"
+    "   AND l.relation = ("
+    "       SELECT c.oid FROM pg_class c"
+    "       JOIN pg_namespace n ON n.oid = c.relnamespace"
+    "       WHERE n.nspname = %s AND c.relname = %s)"
+    "   AND l.pid <> pg_backend_pid()"
+    " ORDER BY a.query_start NULLS LAST"
+)
+
+_TERMINATE_SQL = (
+    "SELECT pid, pg_terminate_backend(pid) AS terminated"
+    " FROM pg_stat_activity"
+    " WHERE pid = ANY(%s::int[]) AND pid <> pg_backend_pid()"
+)
+
+
+def _find_blockers(client: DbClient, schema_name: str, table_name: str) -> list[BlockerInfo]:
+    """Sessions currently holding a lock on the target table (other than ours)."""
+    rows = client.fetch_all(_BLOCKERS_SQL, (schema_name, table_name))
+    blockers: list[BlockerInfo] = []
+    for row in rows:
+        age = row.get("age_seconds")
+        blockers.append(
+            BlockerInfo(
+                pid=int(row["pid"]),
+                username=row.get("usename"),
+                application_name=row.get("application_name"),
+                state=row.get("state"),
+                age_seconds=int(age) if age is not None else None,
+                query=row.get("query"),
+            )
+        )
+    return blockers
+
+
+def _terminate_blockers(client: DbClient, pids: list[int]) -> set[int]:
+    """Terminate the given backends; best effort (returns the pids that died)."""
+    if not pids:
+        return set()
+    try:
+        rows = client.fetch_all(_TERMINATE_SQL, (pids,))
+    except Exception:  # noqa: BLE001 — killing is best effort; the 409 path reports blockers
+        return set()
+    return {int(row["pid"]) for row in rows if row.get("terminated")}
+
+
+def _blocker_label(blocker: BlockerInfo) -> str:
+    """A one-line, human-readable description of a blocking session."""
+    parts = [f"pid {blocker.pid}"]
+    if blocker.username:
+        parts.append(blocker.username)
+    if blocker.application_name:
+        parts.append(blocker.application_name)
+    if blocker.state:
+        parts.append(blocker.state)
+    if blocker.age_seconds is not None:
+        parts.append(f"{blocker.age_seconds}s")
+    label = ", ".join(parts)
+    if blocker.query:
+        label += f": {blocker.query.strip()[:200]}"
+    return label
 
 
 class VacuumRequest(MutationRequest):
@@ -85,6 +176,19 @@ class RaiseSequenceMaxValueRequest(MutationRequest):
     multiplier: int = Field(default=10, ge=2, le=1_000_000)
 
 
+class BlockerInfo(BaseModel):
+    """A session whose lock kept the maintenance action from proceeding."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pid: int
+    username: str | None = None
+    application_name: str | None = None
+    state: str | None = None
+    age_seconds: int | None = None
+    query: str | None = None
+
+
 class MaintenanceActionResult(BaseModel):
     """Outcome of a maintenance action."""
 
@@ -93,6 +197,8 @@ class MaintenanceActionResult(BaseModel):
     action: str
     target: str
     command_status: str
+    # Sessions we had to terminate so the action could take its lock.
+    terminated_blockers: list[BlockerInfo] = Field(default_factory=list)
 
 
 def _table_target(schema: str | None, table: str | None) -> tuple[object | None, str]:
@@ -112,11 +218,128 @@ def _table_target(schema: str | None, table: str | None) -> tuple[object | None,
     return None, "database"
 
 
-def _untimed(client: DbClient, op_id: str | None = None) -> DbClient:
-    """A no-statement-timeout client; ``op_id`` tags the backend so it can be cancelled."""
+def _untimed(
+    client: DbClient, op_id: str | None = None, *, lock_timeout_ms: int | None = None
+) -> DbClient:
+    """A no-statement-timeout client; ``op_id`` tags the backend so it can be cancelled.
+
+    ``lock_timeout_ms`` bounds how long a statement waits for a lock: a short
+    value makes a lock-heavy statement fail fast (55P03) instead of queueing.
+    """
     return client.clone(
         statement_timeout=False,
         application_name=op_application_name(op_id) if op_id else None,
+        lock_timeout_ms=lock_timeout_ms,
+    )
+
+
+def _cancelled() -> HTTPException:
+    """The operator stopped the operation; the client treats 499 as "stopped"."""
+    return HTTPException(status_code=499, detail="Operation cancelled by operator.")
+
+
+def _execute_untimed(client: DbClient, query: object, op_id: str | None) -> str:
+    """Run a long statement on an untimed, op-tagged client.
+
+    These clients disable ``statement_timeout``, so a ``QueryCanceled`` here can
+    only come from an operator cancel (``pg_cancel_backend``, i.e. "Durdur").
+    PostgreSQL rolls the statement back cleanly, so it is reported as a 499 and
+    logged as "cancelled" rather than surfacing as a failure.
+    """
+    try:
+        return _untimed(client, op_id).execute_raw(query)
+    except pg_errors.QueryCanceled as exc:
+        raise _cancelled() from exc
+
+
+def _log_ctx(
+    settings: ApiSettings,
+    claims: dict[str, Any] | None,
+    *,
+    action: str,
+    command: object,
+    target: str,
+    op_id: str | None,
+):
+    """Wrap an action so its outcome is written to pgGuardian's own log."""
+    return logged_operation(
+        settings,
+        claims,
+        action=action,
+        command=command.as_string(),
+        target=target,
+        database=settings.database,
+        profile=settings.active_profile,
+        op_id=op_id,
+    )
+
+
+def _execute_lock_aware(
+    client: DbClient,
+    query: object,
+    op_id: str | None,
+    *,
+    schema_name: str | None,
+    table_name: str | None,
+) -> tuple[str, list[BlockerInfo]]:
+    """Run a lock-heavy statement, clearing lock blockers so our action proceeds.
+
+    ``lock_timeout`` makes a blocked attempt fail fast instead of queueing, so
+    the table is never frozen behind a waiting ACCESS EXCLUSIVE request. When the
+    lock is held by other sessions we terminate them and retry, so a routine
+    VACUUM FULL is not lost to a stray long-running query. Between attempts the
+    wait is a ``pg_sleep`` on the same backend: it keeps the operation active in
+    ``pg_stat_activity`` (visible and cancellable via ``pg_cancel_backend``) and
+    lets the loop stop promptly on an operator cancel.
+    """
+    if op_id:
+        clear_op_cancel(op_id)
+    terminated: list[BlockerInfo] = []
+    terminated_pids: set[int] = set()
+    blockers: list[BlockerInfo] = []
+    last_error: Exception | None = None
+    for attempt in range(VACUUM_LOCK_ATTEMPTS):
+        if op_id and op_cancel_requested(op_id):
+            raise _cancelled()
+        try:
+            return client.execute_raw(query), terminated
+        except pg_errors.QueryCanceled as exc:
+            raise _cancelled() from exc
+        except pg_errors.LockNotAvailable as exc:
+            last_error = exc
+            if schema_name and table_name:
+                blockers = _find_blockers(client, schema_name, table_name)
+            # Terminate whatever still holds the lock, then retry right away: the
+            # killed backends release their locks as pg_terminate_backend returns.
+            killable = [b.pid for b in blockers if b.pid not in terminated_pids]
+            killed = _terminate_blockers(client, killable)
+            for blocker in blockers:
+                if blocker.pid in killed and blocker.pid not in terminated_pids:
+                    terminated.append(blocker)
+                    terminated_pids.add(blocker.pid)
+            if attempt == VACUUM_LOCK_ATTEMPTS - 1:
+                break
+            if not killed:
+                try:
+                    client.fetch_one("SELECT pg_sleep(%s)", (VACUUM_LOCK_RETRY_DELAY_S,))
+                except pg_errors.QueryCanceled as exc:
+                    raise _cancelled() from exc
+    raise HTTPException(status_code=409, detail=_lock_detail(blockers)) from last_error
+
+
+def _lock_detail(blockers: list[BlockerInfo]) -> str:
+    """Explain which sessions kept the lock and why the action gave up."""
+    base = (
+        "The table is locked by another session and VACUUM FULL needs an exclusive "
+        f"lock. Tried {VACUUM_LOCK_ATTEMPTS} times without blocking other queries"
+    )
+    if not blockers:
+        return base + "; run it again when the table is idle."
+    listed = "; ".join(_blocker_label(blocker) for blocker in blockers[:5])
+    more = f" (+{len(blockers) - 5} more)" if len(blockers) > 5 else ""
+    return (
+        f"{base}, and the blocking session(s) could not be terminated automatically: "
+        f"{listed}{more}."
     )
 
 
@@ -126,6 +349,7 @@ def run_vacuum(
     op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
+    claims: dict[str, Any] | None = Depends(verify_token_OR_jwt),
 ) -> DryRunResult | MaintenanceActionResult:
     """VACUUM [FULL] [ANALYZE] — FULL is DANGEROUS."""
     tracked = validate_op_id(op_id) if op_id else None
@@ -152,11 +376,42 @@ def run_vacuum(
             action="maintenance.vacuum", risk=risk, sql=[query.as_string()], target=target
         )
     require_confirm(body, "maintenance.vacuum")
-    with mapped_errors(settings):
-        client.ping()
-        status = _untimed(client, tracked).execute_raw(query)
+    terminated: list[BlockerInfo] = []
+    with _log_ctx(
+        settings, claims, action="maintenance.vacuum", command=query, target=target, op_id=tracked
+    ):
+        with mapped_errors(settings):
+            client.ping()
+            # VACUUM (no FULL) locks nothing conflicting, so it runs as-is; FULL is
+            # lock-heavy and gets the short lock timeout + bounded retry.
+            if body.full:
+                lock_client = _untimed(
+                    client, tracked, lock_timeout_ms=VACUUM_LOCK_TIMEOUT_MS
+                )
+                status, terminated = _execute_lock_aware(
+                    lock_client,
+                    query,
+                    tracked,
+                    schema_name=body.schema_name,
+                    table_name=body.table_name,
+                )
+            else:
+                status = _execute_untimed(client, query, tracked)
     audit("maintenance.vacuum", target, risk, settings)
-    return MaintenanceActionResult(action="vacuum", target=target, command_status=status)
+    if terminated:
+        audit(
+            "maintenance.vacuum.terminate_blockers",
+            f"{len(terminated)} session(s): "
+            + "; ".join(_blocker_label(blocker) for blocker in terminated[:5]),
+            risk,
+            settings,
+        )
+    return MaintenanceActionResult(
+        action="vacuum",
+        target=target,
+        command_status=status,
+        terminated_blockers=terminated,
+    )
 
 
 @router.post("/analyze", response_model=DryRunResult | MaintenanceActionResult)
@@ -165,6 +420,7 @@ def run_analyze(
     op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
+    claims: dict[str, Any] | None = Depends(verify_token_OR_jwt),
 ) -> DryRunResult | MaintenanceActionResult:
     """ANALYZE a table or the whole database (MAINTENANCE)."""
     tracked = validate_op_id(op_id) if op_id else None
@@ -179,9 +435,12 @@ def run_analyze(
             target=target,
         )
     require_confirm(body, "maintenance.analyze")
-    with mapped_errors(settings):
-        client.ping()
-        status = _untimed(client, tracked).execute_raw(query)
+    with _log_ctx(
+        settings, claims, action="maintenance.analyze", command=query, target=target, op_id=tracked
+    ):
+        with mapped_errors(settings):
+            client.ping()
+            status = _execute_untimed(client, query, tracked)
     audit("maintenance.analyze", target, RiskLevel.MAINTENANCE, settings)
     return MaintenanceActionResult(action="analyze", target=target, command_status=status)
 
@@ -192,6 +451,7 @@ def run_reindex(
     op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
+    claims: dict[str, Any] | None = Depends(verify_token_OR_jwt),
 ) -> DryRunResult | MaintenanceActionResult:
     """REINDEX an index or table (DANGEROUS)."""
     tracked = validate_op_id(op_id) if op_id else None
@@ -223,9 +483,12 @@ def run_reindex(
             target=target,
         )
     require_confirm(body, "maintenance.reindex")
-    with mapped_errors(settings):
-        client.ping()
-        status = _untimed(client, tracked).execute_raw(query)
+    with _log_ctx(
+        settings, claims, action="maintenance.reindex", command=query, target=target, op_id=tracked
+    ):
+        with mapped_errors(settings):
+            client.ping()
+            status = _execute_untimed(client, query, tracked)
     audit("maintenance.reindex", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="reindex", target=target, command_status=status)
 
@@ -236,6 +499,7 @@ def run_drop_index(
     op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
+    claims: dict[str, Any] | None = Depends(verify_token_OR_jwt),
 ) -> DryRunResult | MaintenanceActionResult:
     """DROP INDEX CONCURRENTLY — removes a redundant/unused index (DANGEROUS)."""
     tracked = validate_op_id(op_id) if op_id else None
@@ -260,9 +524,17 @@ def run_drop_index(
         )
     # The typed confirmation is the bare index name; the audit target stays qualified.
     require_confirm(body, "maintenance.drop_index", body.index_name)
-    with mapped_errors(settings):
-        client.ping()
-        status = _untimed(client, tracked).execute_raw(query)
+    with _log_ctx(
+        settings,
+        claims,
+        action="maintenance.drop_index",
+        command=query,
+        target=target,
+        op_id=tracked,
+    ):
+        with mapped_errors(settings):
+            client.ping()
+            status = _execute_untimed(client, query, tracked)
     audit("maintenance.drop_index", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="drop_index", target=target, command_status=status)
 
@@ -273,6 +545,7 @@ def raise_sequence_max_value(
     op_id: str | None = None,
     client: DbClient = Depends(resolve_client),
     settings: ApiSettings = Depends(get_api_settings),
+    claims: dict[str, Any] | None = Depends(verify_token_OR_jwt),
 ) -> DryRunResult | MaintenanceActionResult:
     """ALTER SEQUENCE ... MAXVALUE — raises the ceiling before nextval starts failing.
 
@@ -327,8 +600,16 @@ def raise_sequence_max_value(
         )
     # The typed confirmation is the bare sequence name; the audit target stays qualified.
     require_confirm(body, "maintenance.sequence_maxvalue", sequence_name)
-    with mapped_errors(settings):
-        client.ping()
-        status = _untimed(client, tracked).execute_raw(query)
+    with _log_ctx(
+        settings,
+        claims,
+        action="maintenance.sequence_maxvalue",
+        command=query,
+        target=target,
+        op_id=tracked,
+    ):
+        with mapped_errors(settings):
+            client.ping()
+            status = _execute_untimed(client, query, tracked)
     audit("maintenance.sequence_maxvalue", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="sequence_maxvalue", target=target, command_status=status)

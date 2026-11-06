@@ -16,7 +16,12 @@
       "functions": "Functions",
       "empty": "Empty",
       "insert": "Insert into query",
-      "system": "system"
+      "system": "system",
+      "search": "Search schema, table or object...",
+      "collapse": "Collapse schema tree",
+      "expand": "Expand schema tree",
+      "tableSize": "Table size",
+      "indexSize": "Index size"
     },
     "actions": {
       "execute": "Execute (F5)",

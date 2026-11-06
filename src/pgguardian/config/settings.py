@@ -65,6 +65,14 @@ class PgGuardianSettings(BaseSettings):
     # stats window) are reported as *potentially* unused, never as unused.
     unused_index_max_scans: int = 50
 
+    # Index monitoring thresholds — these drive the alert engine on the
+    # /index-monitor page and the `pgguardian index-monitor` command.
+    index_unused_size_warning_bytes: int = 100 * 1024 * 1024
+    index_bloat_warning_percent: float = 30.0
+    index_bloat_critical_percent: float = 50.0
+    index_cache_hit_warning: float = 90.0
+    indexes_per_table_warning: int = 8
+
 
 def get_settings(**overrides: object) -> PgGuardianSettings:
     """Build settings, letting explicit CLI overrides win over the environment."""

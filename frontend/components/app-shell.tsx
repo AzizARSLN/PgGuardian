@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Header from "@/components/header";
 import ProfileGate from "@/components/profile-gate";
 import SidebarNav from "@/components/sidebar-nav";
+import TabBar from "@/components/tab-bar";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useProfileStore } from "@/store/useProfileStore";
 
@@ -34,6 +35,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <SidebarNav />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
+        <TabBar />
         <main className="flex-1 overflow-x-hidden px-3 py-4 md:px-5">{children}</main>
       </div>
     </div>

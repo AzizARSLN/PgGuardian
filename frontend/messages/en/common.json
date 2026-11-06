@@ -34,6 +34,8 @@
   "nav": {
     "tagline": "PostgreSQL DBA console",
     "menu": "Menu",
+    "collapse": "Collapse",
+    "expand": "Expand",
     "groups": {
       "monitor": "Monitor",
       "explore": "Data",
@@ -46,6 +48,7 @@
       "statements": "SQL Analysis",
       "queryManagement": "Live Queries",
       "diagnostics": "Diagnostics",
+      "indexMonitor": "Index Monitor",
       "replication": "Replication",
       "sqlEditor": "SQL Editor",
       "schemaBrowser": "Schema Browser",
@@ -62,6 +65,13 @@
       "settings": "Settings",
       "pgbadger": "pgBadger Analysis"
     }
+  },
+  "tabs": {
+    "label": "Open tabs",
+    "actions": "Tab actions",
+    "close": "Close tab",
+    "closeOthers": "Close other tabs",
+    "closeAll": "Close all tabs"
   },
   "header": {
     "loadingProfiles": "Loading profiles...",

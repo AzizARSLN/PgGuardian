@@ -3,6 +3,7 @@
     "stop": "Durdur",
     "stopping": "Durduruluyor…",
     "stopped": "İşlem durduruldu",
+    "pid": "İşlem PID: {pid}",
     "blocked": "İşlem, {pids} numaralı oturum tarafından kilitlenmiş.",
     "killBlockers": "Kilidi aç ve devam et"
   },
@@ -18,6 +19,9 @@
     "reindexHint": "Şema zorunludur. Tablo veya indeksten yalnızca birini girin.",
     "never": "Hiç",
     "result": "Sonuç",
+    "blockers": {
+      "terminated": "{count} engelleyen oturum sonlandırıldı (pid {pids})"
+    },
     "fields": {
       "schema": "Şema",
       "table": "Tablo",
@@ -48,7 +52,23 @@
       "vacuumFull": "VACUUM FULL çalıştırılacak. Tabloyu ACCESS EXCLUSIVE LOCK ile kilitler ve yoğun I/O üretir. Düşük trafik saatlerinde çalıştırmanız önerilir.",
       "analyze": "Tablo istatistikleri güncellenecek ve sorgu planlayıcısı daha iyi kararlar alabilecek. Okuma ve yazmaları engellemez.",
       "reindex": "Standart REINDEX çalıştırılacak. İşlem bitene kadar tabloya yazmalar engellenir.",
-      "reindexConcurrent": "REINDEX CONCURRENTLY çalıştırılacak. Yazmaları engellemez ancak daha uzun sürer ve CPU ile I/O kullanımını artırır."
+      "reindexConcurrent": "REINDEX CONCURRENTLY çalıştırılacak. Yazmaları engellemez ancak daha uzun sürer ve CPU ile I/O kullanımını artırır.",
+      "dropIndexTitle": "{index} indeksi silinsin mi?",
+      "dropIndex": "DROP INDEX CONCURRENTLY çalıştırılacak. Tabloyu kilitlemez, canlı sistemi engellemez ve ifade zaman aşımı uygulanmaz. İndeksin gerçekten gereksiz olduğundan emin olun; bu işlem geri alınamaz.",
+      "dropIndexName": "Onaylamak için indeks adını tam olarak yazın.",
+      "repackTitle": "{table} tablosu pg_repack ile yeniden oluşturulsun mu?",
+      "repack": "pg_repack tabloyu çevrimiçi yeniden oluşturarak şişkinliği giderir. VACUUM FULL'ün aksine tabloyu uzun süre kilitlemez; yalnızca kısa süreliğine ACCESS EXCLUSIVE kilit alır. Tabloda PRIMARY KEY veya UNIQUE indeks olmalı ve pg_repack uzantısı bu veritabanında kurulu olmalıdır."
+    },
+    "repack": {
+      "started": "pg_repack başlatıldı",
+      "running": "pg_repack çalışıyor…",
+      "done": "pg_repack tamamlandı",
+      "failed": "pg_repack başarısız oldu",
+      "cancelled": "pg_repack durduruldu",
+      "jobsLabel": "Paralel indeks",
+      "jobsHint": "pg_repack -j: indeksleri N paralel bağlantıyla yeniden oluşturur. Daha hızlıdır ancak sunucuda daha fazla bağlantı ve I/O kullanır.",
+      "jobsOff": "Paralel değil",
+      "jobsOption": "{count} paralel"
     },
     "notes": {
       "vacuum": "Standart VACUUM, tabloyu kilitlemeden çalışır.",
@@ -140,7 +160,8 @@
         "inserted": "Eklenen",
         "updated": "Güncellenen",
         "deleted": "Silinen",
-        "unused": "Kullanılmayan indeks"
+        "unused": "Kullanılmayan indeks",
+        "operation": "İşlem"
       },
       "selected": "Seçili tablo",
       "clear": "Seçimi kaldır",
@@ -149,14 +170,16 @@
         "vacuum": "VACUUM",
         "vacuumFull": "VACUUM FULL",
         "analyze": "ANALYZE",
-        "reindex": "REINDEX TABLE"
+        "reindex": "REINDEX TABLE",
+        "repack": "pg_repack"
       },
       "unused": {
         "title": "Kullanılmayan indeksler",
         "subtitle": "idx_scan = 0",
         "empty": "Kullanılmayan indeks yok.",
         "scans": "Tarama",
-        "reindex": "REINDEX INDEX"
+        "reindex": "REINDEX INDEX",
+        "drop": "DROP INDEX"
       },
       "batch": {
         "selected": "Seçili: {count}",
@@ -172,9 +195,57 @@
         "confirmTitle": "{count} tabloda {command} çalıştırılsın mı?",
         "confirmDesc": "Seçilen tablolara {command} uygulanacak.",
         "confirmDescFull": "Seçilen tablolara {command} uygulanacak. Her tablo ACCESS EXCLUSIVE LOCK alır; düşük trafikte çalıştırın.",
+        "confirmDescRepack": "Seçilen tablolar sırayla {command} ile çevrimiçi yeniden oluşturulacak. Her tablo yalnızca kısa süreliğine kilitlenir; uzun süreli ACCESS EXCLUSIVE LOCK alınmaz. Tablolarda PRIMARY KEY/UNIQUE indeks, veritabanında pg_repack uzantısı bulunmalıdır.",
         "noSelection": "Önce listeden en az bir tablo seçin.",
         "resultsTitle": "Toplu işlem sonucu",
         "resultsHint": "İşlem uygulanan tablolar ve komut sonuçları"
+      },
+      "search": {
+        "placeholder": "Tablo ara…",
+        "empty": "Aramayla eşleşen tablo yok.",
+        "clear": "Aramayı temizle",
+        "mode": {
+          "contains": "İçerir",
+          "notContains": "İçermez",
+          "startsWith": "İle başlar",
+          "notStartsWith": "İle başlamaz",
+          "endsWith": "İle biter",
+          "equals": "Eşittir"
+        }
+      }
+    },
+    "history": {
+      "tab": "İşlem geçmişi",
+      "subtitle": "Sunucuda çalıştırılan bakım işlemleri ve sonuçları",
+      "loading": "Yükleniyor…",
+      "empty": "Henüz kayıtlı işlem yok.",
+      "refresh": "Yenile",
+      "total": "{count} kayıt",
+      "filterStatus": "Durum",
+      "filterAction": "Eylem",
+      "allStatuses": "Tüm durumlar",
+      "allActions": "Tüm eylemler",
+      "columns": {
+        "time": "Zaman",
+        "actor": "Kullanıcı",
+        "action": "Eylem",
+        "command": "Komut",
+        "target": "Hedef",
+        "status": "Durum",
+        "duration": "Süre",
+        "error": "Hata"
+      },
+      "status": {
+        "ok": "Başarılı",
+        "failed": "Hatalı",
+        "cancelled": "Durduruldu"
+      },
+      "actions": {
+        "maintenance.vacuum": "VACUUM",
+        "maintenance.analyze": "ANALYZE",
+        "maintenance.reindex": "REINDEX",
+        "maintenance.drop_index": "DROP INDEX",
+        "maintenance.sequence_maxvalue": "ALTER SEQUENCE"
       }
     }
   },
@@ -339,6 +410,197 @@
       "blocking": "Bloke",
       "deadlocks": "Deadlock",
       "longQueries": "Uzun sorgu"
+    }
+  },
+  "indexMonitor": {
+    "title": "İndeks İzleme",
+    "subtitle": "İndeks envanteri, bütünlük, kullanım, maliyet ve öneriler",
+    "database": "Veritabanı",
+    "pollEvery": "{seconds} sn'de bir yenilenir",
+    "pollManual": "elle yenilenir",
+    "capture": "Anlık görüntü al",
+    "prune": "Eskileri temizle ({days}g+)",
+    "statsWindow": "İstatistik penceresi: {hours} sa",
+    "statsRecentlyReset": "İstatistikler yakın zamanda sıfırlandı",
+    "loadFailed": "İndeks raporu alınamadı",
+    "toast": {
+      "captured": "İndeks anlık görüntüsü kaydedildi",
+      "captureFailed": "Anlık görüntü alınamadı",
+      "pruned": "Temizlik tamamlandı: {removed} kayıt silindi, son {days} gün saklandı",
+      "pruneFailed": "Temizlik başarısız",
+      "actionDone": "{action} tamamlandı",
+      "actionFailed": "{action} başarısız oldu"
+    },
+    "confirm": {
+      "capture": "İndeks özet metrikleri yerel geçmişe kaydedilecek. Veritabanında değişiklik yapmaz; yalnızca kısa süreli okuma I/O'su oluşturur.",
+      "pruneTitle": "İndeks geçmişi temizliği — DANGEROUS",
+      "prune": "{days} günden eski indeks geçmiş kayıtları kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+      "prunePlaceholder": "Onaylamak için prune yazın",
+      "reindexTitle": "{index} yeniden oluşturulsun mu?",
+      "reindex": "REINDEX INDEX CONCURRENTLY çalıştırılacak. Yazmaları engellemez ancak daha uzun sürer ve CPU ile I/O kullanımını artırır.",
+      "dropTitle": "{index} indeksi silinsin mi?",
+      "drop": "DROP INDEX CONCURRENTLY çalıştırılacak. Tabloyu kilitlemez ve canlı sistemi engellemez. İndeksin gerçekten gereksiz olduğundan emin olun; bu işlem geri alınamaz.",
+      "dropName": "Onaylamak için indeks adını tam olarak yazın."
+    },
+    "stats": {
+      "healthScore": "İndeks sağlık skoru",
+      "totalIndexes": "Toplam indeks",
+      "totalSize": "Toplam boyut",
+      "unused": "Kullanılmayan",
+      "unusedSize": "Kullanılmayan boyut",
+      "invalid": "Geçersiz indeks",
+      "duplicates": "Yinelenen gruplar",
+      "redundant": "Gereksiz indeks",
+      "bloat": "Şişkinlik",
+      "missing": "Eksik indeks adayı",
+      "lowCacheHit": "Düşük önbellek isabeti",
+      "unknown": "bilinmiyor",
+      "hint": "{total} indeks · {size}"
+    },
+    "alerts": {
+      "title": "Alarmlar",
+      "subtitle": "{critical} kritik · {warning} uyarı · {info} bilgi",
+      "empty": "Alarm yok. İndeksler sağlıklı görünüyor.",
+      "level": {
+        "critical": "Kritik",
+        "warning": "Uyarı",
+        "info": "Bilgi"
+      }
+    },
+    "suggestions": {
+      "title": "Öneriler",
+      "subtitle": "{count} öneri",
+      "empty": "Öneri yok.",
+      "confidence": "Güven",
+      "confidenceLevel": {
+        "low": "düşük",
+        "medium": "orta",
+        "high": "yüksek"
+      },
+      "reclaim": "{size} geri kazanılabilir",
+      "action": "Uygula",
+      "copyCommand": "Komutu kopyala",
+      "copied": "Komut kopyalandı",
+      "manual": "Elle değerlendirin",
+      "kind": {
+        "drop_unused": "Kullanılmayan indeks",
+        "drop_duplicate": "Yinelenen indeks",
+        "drop_redundant": "Gereksiz indeks",
+        "reindex_bloat": "Şişkin indeks",
+        "reindex_invalid": "Geçersiz indeks",
+        "create_missing": "Eksik indeks"
+      }
+    },
+    "tabs": {
+      "all": "Tüm indeksler",
+      "duplicates": "Yinelenenler",
+      "redundant": "Gereksizler",
+      "invalid": "Geçersizler",
+      "missing": "Eksik adaylar",
+      "history": "Geçmiş"
+    },
+    "list": {
+      "title": "İndeks envanteri",
+      "subtitle": "{shown} / {total} gösteriliyor · {poll}",
+      "filterPlaceholder": "Ara: indeks, tablo, şema, kolon...",
+      "emptyTitle": "İndeks bulunamadı",
+      "emptyHint": "Bu veritabanında indeks yok.",
+      "noMatchTitle": "Eşleşen kayıt yok",
+      "noMatchHint": "Filtreyi temizlemeyi veya sekmeyi değiştirmeyi deneyin."
+    },
+    "columns": {
+      "index": "İndeks",
+      "table": "Tablo",
+      "columns": "Kolonlar",
+      "type": "Tür",
+      "size": "Boyut",
+      "scans": "Tarama",
+      "seqScans": "Seq. tarama",
+      "cacheHit": "Önbellek %",
+      "bloat": "Şişkinlik",
+      "flags": "Öznitelikler",
+      "actions": "İşlem",
+      "definition": "Tanım",
+      "coveredBy": "Kapsayan",
+      "kept": "Korunacak",
+      "dropList": "Silinecekler",
+      "liveTuples": "Canlı satır",
+      "tableSize": "Tablo boyutu",
+      "indexCount": "İndeks sayısı",
+      "taken": "Zaman",
+      "healthScore": "Sağlık",
+      "totalIndexes": "İndeks",
+      "totalSize": "Boyut",
+      "unused": "Kullanılmayan",
+      "unusedSize": "Kullanılmayan boyut",
+      "invalid": "Geçersiz",
+      "duplicates": "Yinelenen",
+      "redundant": "Gereksiz",
+      "bloatSize": "Şişkinlik",
+      "missing": "Eksik",
+      "criticalAlerts": "Kritik",
+      "warningAlerts": "Uyarı"
+    },
+    "flags": {
+      "unique": "UNIQUE",
+      "primary": "PK",
+      "partial": "Kısmi",
+      "expression": "İfade",
+      "include": "INCLUDE",
+      "invalid": "GEÇERSİZ",
+      "unused": "Kullanılmayan"
+    },
+    "detail": {
+      "title": "İndeks detayı",
+      "definition": "Oluşturma komutu (DDL)",
+      "keyColumns": "Anahtar kolonlar",
+      "close": "Kapat",
+      "copyDdl": "DDL kopyala",
+      "copied": "DDL kopyalandı",
+      "usage": "Kullanım",
+      "size": "Boyut",
+      "scans": "Tarama",
+      "tuplesRead": "Okunan tuple",
+      "tuplesFetched": "Getirilen tuple",
+      "tableSeqScan": "Tablo sıralı tarama",
+      "cacheHit": "Önbellek isabeti",
+      "bloat": "Tahmini şişkinlik",
+      "bloatBytes": "Şişkinlik (byte)",
+      "indexType": "İndeks türü",
+      "reason": "Not"
+    },
+    "duplicates": {
+      "title": "Yinelenen indeks grupları",
+      "subtitle": "{count} grup · {size} boşa harcanıyor",
+      "empty": "Yinelenen indeks grubu yok.",
+      "hint": "Aynı kolon ve koşula sahip indeksler yalnızca yazma maliyetini artırır."
+    },
+    "redundant": {
+      "title": "Gereksiz indeksler",
+      "subtitle": "{count} indeks · {size}",
+      "empty": "Gereksiz indekse rastlanmadı.",
+      "hint": "Kolonları başka bir indeksin öneki olan indeksler genellikle gereksizdir."
+    },
+    "invalid": {
+      "title": "Geçersiz / hazır olmayan indeksler",
+      "subtitle": "{count} indeks",
+      "empty": "Geçersiz indeks yok."
+    },
+    "missing": {
+      "title": "Eksik indeks adayları",
+      "subtitle": "{count} tablo",
+      "empty": "Sıralı tarama ağırlıklı tablo yok.",
+      "hint": "Bu tablolar ağırlıklı olarak sıralı tarama ile okunuyor. İş yükünü (pg_stat_statements) inceleyip filtre/join kolonlarına indeks düşünün. PgGuardian indeks oluşturmaz."
+    },
+    "history": {
+      "title": "İndeks geçmişi",
+      "subtitle": "{count} kayıt",
+      "empty": "Henüz kayıtlı indeks geçmişi yok.",
+      "hint": "\"Anlık görüntü al\" ile trend kaydı oluşturun."
+    },
+    "actions": {
+      "reindex": "REINDEX",
+      "drop": "DROP INDEX"
     }
   },
   "config": {
