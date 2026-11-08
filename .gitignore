@@ -53,3 +53,18 @@ Thumbs.db
 
 # Reports hold production SQL and can hold personal data
 pgbadger*.html
+
+# --- Desktop (Tauri) packaging ---
+# Static export consumed by the bundled FastAPI sidecar.
+frontend/out/
+# Compiled UI staged inside the Python package for bundling.
+src/pgguardian/web/
+# Entry points stashed aside while the desktop export is building.
+*.desktop-off
+# Rust build artifacts, bundled sidecars and Tauri bundles.
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+# PyInstaller build scratch and one-file sidecar output.
+*.spec.bak
+desktop-build/

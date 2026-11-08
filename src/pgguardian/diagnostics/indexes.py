@@ -39,6 +39,7 @@ def map_index(row: dict, max_scans: int) -> IndexInfo:
         index_scans=_int(row.get("index_scans")),
         tuples_read=_int(row.get("tuples_read")),
         tuples_fetched=_int(row.get("tuples_fetched")),
+        key_columns=[str(col) for col in (row.get("key_columns") or [])],
     )
     return mark_potentially_unused(info, max_scans)
 

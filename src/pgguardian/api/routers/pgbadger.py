@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from pgguardian.api.deps import mapped_errors, resolve_client, verify_token_OR_jwt
 from pgguardian.database.connection import DbClient
 from pgguardian.pgbadger.analyzer import analyse
-from pgguardian.pgbadger.catalog import render_finding
+from pgguardian.pgbadger.catalog import render_finding, render_queries
 from pgguardian.pgbadger.export import SECTIONS, to_html, to_markdown
 from pgguardian.pgbadger.parser import NotPgBadgerReport, parse_report
 from pgguardian.pgbadger.store import ReportStore
@@ -76,6 +76,7 @@ def _render(store: ReportStore, report: dict[str, Any], lang: str) -> dict[str, 
         "analyzed": analysis is not None,
         "summary": (analysis or {}).get("summary"),
         "findings": findings,
+        "queries": render_queries((analysis or {}).get("queries", []), lang),
         "totals": totals,
         "activity": store.activity(report["id"]),
     }

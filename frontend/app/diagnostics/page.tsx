@@ -1277,6 +1277,19 @@ export default function DiagnosticsPage() {
         ),
       },
       {
+        id: "columns",
+        accessorFn: (r) => r.key_columns.join(", "),
+        header: () => t("diagnostics.indexes.columns"),
+        cell: ({ row }) => (
+          <span
+            className="block max-w-[260px] truncate font-mono text-[11px] text-muted-foreground"
+            title={row.original.key_columns.join(", ")}
+          >
+            {row.original.key_columns.length > 0 ? row.original.key_columns.join(", ") : "—"}
+          </span>
+        ),
+      },
+      {
         accessorKey: "index_size_bytes",
         header: () => t("diagnostics.indexes.size"),
         cell: ({ row }) => (

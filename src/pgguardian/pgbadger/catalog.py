@@ -359,3 +359,20 @@ def render_finding(finding: dict[str, Any], lang: str, states: dict[str, dict[st
         "index": index_view,
         "tasks": rendered,
     }
+
+
+def render_queries(rows: list[dict[str, Any]], lang: str) -> list[dict[str, Any]]:
+    """Heavy-query rows with localized trait and index wording. Numbers stay raw so
+    the screen can rank and chart them without parsing strings back out."""
+    view = []
+    for row in rows:
+        traits = [
+            {"code": code, "label": _pick(TRAITS.get(code, {}).get("label", (code, code)), lang)}
+            for code in row.get("traits", [])
+        ]
+        indexes = []
+        for index in row.get("indexes", []):
+            status = _pick(INDEX_STATUS.get(index["status"], ("", "")), lang)
+            indexes.append({**index, "status_text": status})
+        view.append({**row, "traits": traits, "indexes": indexes})
+    return view

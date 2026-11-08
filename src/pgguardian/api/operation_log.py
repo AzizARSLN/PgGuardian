@@ -1,9 +1,10 @@
 """Persistent operation log for expert maintenance actions.
 
 Every expert action (VACUUM/ANALYZE/REINDEX/DROP INDEX/ALTER SEQUENCE) is
-recorded in pgGuardian's **own** database — the ambient ``PGGUARDIAN_DATABASE``
-that also holds users/sessions — so an operator can review what ran, on which
-object, by whom, how long it took and how it ended (ok/failed/cancelled).
+recorded in pgGuardian's **own** metadata store — the same backend that holds
+users/sessions (PostgreSQL for the web deployment, SQLite for the desktop
+build) — so an operator can review what ran, on which object, by whom, how
+long it took and how it ended (ok/failed/cancelled).
 
 Recording is best-effort: a logging failure must never break the operation it
 describes, so every write is wrapped and only logged locally.
@@ -12,7 +13,6 @@ describes, so every write is wrapped and only logged locally.
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -22,35 +22,10 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from pgguardian.api.deps import resolve_auth_client
 from pgguardian.api.settings import ApiSettings
+from pgguardian.central.store import CentralStore, get_central_store
 
 logger = logging.getLogger("pgguardian.operation_log")
-
-_TABLE = "pgguardian_operation_log"
-
-# The table is created by docker/init.sql; this DDL makes an existing
-# deployment self-heal on first write (idempotent, needs CREATE privilege).
-_DDL = f"""
-CREATE TABLE IF NOT EXISTS {_TABLE} (
-    id BIGSERIAL PRIMARY KEY,
-    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    actor_email TEXT,
-    actor_role TEXT,
-    action TEXT NOT NULL,
-    command TEXT,
-    target TEXT,
-    database_name TEXT,
-    profile TEXT,
-    status TEXT NOT NULL CHECK (status IN ('ok', 'failed', 'cancelled')),
-    error TEXT,
-    duration_ms INTEGER,
-    op_id TEXT
-)
-"""
-
-_ensure_lock = threading.Lock()
-_ensured = False
 
 
 class OperationLogEntry(BaseModel):
@@ -73,21 +48,9 @@ class OperationLogEntry(BaseModel):
     op_id: str | None = None
 
 
-def _central_client(settings: ApiSettings):
-    """A DbClient for pgGuardian's own DB (users/sessions/operations live here)."""
-    return resolve_auth_client(settings)
-
-
-def _ensure_table(client) -> None:
-    """Create the log table once per process (idempotent)."""
-    global _ensured
-    if _ensured:
-        return
-    with _ensure_lock:
-        if _ensured:
-            return
-        client.execute_raw(_DDL)
-        _ensured = True
+def _central_store(settings: ApiSettings) -> CentralStore:
+    """Metadata store for pgGuardian's own DB (never the diagnosed server)."""
+    return get_central_store(settings)
 
 
 def record_operation(
@@ -108,26 +71,21 @@ def record_operation(
     actor_email = claims.get("email") if claims else None
     actor_role = claims.get("role") if claims else None
     try:
-        client = _central_client(settings)
-        _ensure_table(client)
-        client.execute_raw(
-            f"INSERT INTO {_TABLE} "
-            "(actor_email, actor_role, action, command, target, database_name, profile, "
-            " status, error, duration_ms, op_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                actor_email,
-                actor_role,
-                action,
-                command,
-                target,
-                database,
-                profile,
-                status,
-                error,
-                duration_ms,
-                op_id,
-            ),
+        store = _central_store(settings)
+        store.insert_operation(
+            {
+                "actor_email": actor_email,
+                "actor_role": actor_role,
+                "action": action,
+                "command": command,
+                "target": target,
+                "database_name": database,
+                "profile": profile,
+                "status": status,
+                "error": error,
+                "duration_ms": duration_ms,
+                "op_id": op_id,
+            }
         )
     except Exception as exc:  # noqa: BLE001 - logging must never break the action
         logger.warning("Could not record operation log for %s: %s", action, exc)
@@ -142,25 +100,8 @@ def list_operations(
     status: str | None = None,
 ) -> list[OperationLogEntry]:
     """Return the most recent operation-log rows (newest first)."""
-    client = _central_client(settings)
-    _ensure_table(client)
-    clauses: list[str] = []
-    params: list[Any] = []
-    if action:
-        clauses.append("action = %s")
-        params.append(action)
-    if status:
-        clauses.append("status = %s")
-        params.append(status)
-    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    params.extend([limit, offset])
-    rows = client.fetch_all(
-        "SELECT id, occurred_at, actor_email, actor_role, action, command, target, "
-        "database_name, profile, status, error, duration_ms, op_id "
-        f"FROM {_TABLE}{where} "
-        "ORDER BY occurred_at DESC, id DESC LIMIT %s OFFSET %s",
-        tuple(params),
-    )
+    store = _central_store(settings)
+    rows = store.list_operations(limit=limit, offset=offset, action=action, status=status)
     return [OperationLogEntry(**row) for row in rows]
 
 

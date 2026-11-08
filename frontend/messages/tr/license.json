@@ -1,0 +1,46 @@
+{
+  "license": {
+    "title": "Lisans",
+    "subtitle": "Çevrimdışı lisans anahtarını görüntüleyin ve yönetin",
+    "refresh": "Yenile",
+    "enforced": "Zorunlu",
+    "notEnforced": "Zorunlu değil",
+    "status": {
+      "title": "Lisans Durumu",
+      "licensed": "Lisanslı",
+      "unlicensed": "Lisans yok",
+      "plan": "Plan",
+      "email": "E-posta",
+      "issuedAt": "Verilme Tarihi",
+      "expiresAt": "Bitiş Tarihi",
+      "perpetual": "Süresiz",
+      "activatedAt": "Etkinleştirme"
+    },
+    "activate": {
+      "title": "Lisans Etkinleştir",
+      "description": "Ed25519 ile imzalanmış lisans anahtarını girin. Doğrulama tamamen çevrimdışı yapılır; hiçbir sunucuya bağlanılmaz.",
+      "label": "Lisans Anahtarı",
+      "placeholder": "PGG1....",
+      "required": "Lisans anahtarını girin",
+      "submit": "Etkinleştir",
+      "activating": "Etkinleştiriliyor…"
+    },
+    "remove": {
+      "action": "Lisansı Kaldır",
+      "title": "Lisans kaldırılsın mı?",
+      "description": "Kayıtlı lisans anahtarı bu kurulumdan silinir. Bu işlem geri alınamaz.",
+      "confirm": "Kaldır"
+    },
+    "adminOnly": "Lisansı yalnızca Admin rolündeki kullanıcılar etkinleştirebilir veya kaldırabilir.",
+    "empty": {
+      "title": "Etkin lisans yok",
+      "hint": "Bir lisans anahtarı etkinleştirilene kadar uygulamanın tüm özellikleri sınırlı olabilir."
+    },
+    "toast": {
+      "activated": "Lisans etkinleştirildi",
+      "activateFailed": "Lisans etkinleştirilemedi",
+      "removed": "Lisans kaldırıldı",
+      "removeFailed": "Lisans kaldırılamadı"
+    }
+  }
+}

@@ -53,6 +53,7 @@ class IndexUsageInfo(BaseModel):
     index_name: str
     size_bytes: int = 0
     index_scans: int = 0
+    columns: list[str] = Field(default_factory=list)
     potentially_unused: bool = False
 
 
@@ -67,6 +68,16 @@ class ColumnInfo(BaseModel):
     default: str | None = None
 
 
+class TableIndexInfo(BaseModel):
+    """One index on a table with its key columns and definition."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    columns: list[str] = Field(default_factory=list)
+    definition: str | None = None
+
+
 class TableDetail(BaseModel):
     """Full table detail: columns, indexes, constraints, stats and owner."""
 
@@ -79,7 +90,7 @@ class TableDetail(BaseModel):
     live_tuples: int = 0
     dead_tuples: int = 0
     columns: list[ColumnInfo] = Field(default_factory=list)
-    indexes: list[str] = Field(default_factory=list)
+    indexes: list[TableIndexInfo] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
 
 
@@ -227,11 +238,17 @@ def list_table_indexes(
     with mapped_errors(client.settings):
         client.ping()
         rows = client.fetch_all(
-            "SELECT i.indexrelname AS index_name,"
-            " pg_relation_size(i.indexrelid) AS size_bytes, i.idx_scan AS index_scans"
-            " FROM pg_stat_user_indexes i"
-            " WHERE i.schemaname = %s AND i.relname = %s"
-            " ORDER BY i.idx_scan ASC, pg_relation_size(i.indexrelid) DESC",
+            "SELECT s.indexrelname AS index_name,"
+            " pg_relation_size(s.indexrelid) AS size_bytes, s.idx_scan AS index_scans,"
+            " (SELECT array_agg(a.attname ORDER BY k.ord)"
+            "    FROM unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord)"
+            "    JOIN pg_catalog.pg_attribute a"
+            "      ON a.attrelid = ix.indrelid AND a.attnum = k.attnum"
+            "   WHERE k.ord <= ix.indnkeyatts) AS columns"
+            " FROM pg_stat_user_indexes s"
+            " JOIN pg_catalog.pg_index ix ON ix.indexrelid = s.indexrelid"
+            " WHERE s.schemaname = %s AND s.relname = %s"
+            " ORDER BY s.idx_scan ASC, pg_relation_size(s.indexrelid) DESC",
             (schema_name, table_name),
         )
     result: list[IndexUsageInfo] = []
@@ -242,6 +259,7 @@ def list_table_indexes(
                 index_name=str(row.get("index_name")),
                 size_bytes=to_int(row.get("size_bytes")),
                 index_scans=scans,
+                columns=[str(col) for col in (row.get("columns") or [])],
                 potentially_unused=scans == 0,
             )
         )
@@ -371,8 +389,18 @@ def describe_table(
             (schema_name, table_name),
         )
         indexes = client.fetch_all(
-            "SELECT indexname AS name FROM pg_indexes"
-            " WHERE schemaname = %s AND tablename = %s ORDER BY 1",
+            "SELECT ic.relname AS name, pg_get_indexdef(i.indexrelid) AS definition,"
+            " ("
+            "   SELECT array_agg(a.attname ORDER BY k.ord)"
+            "   FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)"
+            "   JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum"
+            "   WHERE k.ord <= i.indnkeyatts"
+            " ) AS key_columns"
+            " FROM pg_index i"
+            " JOIN pg_class ic ON ic.oid = i.indexrelid"
+            " JOIN pg_class c ON c.oid = i.indrelid"
+            " JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = %s AND c.relname = %s ORDER BY 1",
             (schema_name, table_name),
         )
         constraints = client.fetch_all(
@@ -416,6 +444,13 @@ def describe_table(
             )
             for col in columns
         ],
-        indexes=[str(idx.get("name")) for idx in indexes],
+        indexes=[
+            TableIndexInfo(
+                name=str(idx.get("name")),
+                columns=[str(col) for col in (idx.get("key_columns") or [])],
+                definition=str(idx.get("definition")) if idx.get("definition") else None,
+            )
+            for idx in indexes
+        ],
         constraints=[str(con.get("name")) for con in constraints],
     )

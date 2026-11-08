@@ -8,8 +8,8 @@ import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from pgguardian.api.deps import require_role, resolve_auth_client, verify_jwt
-from pgguardian.database.connection import DbClient
+from pgguardian.api.deps import get_central_store_dep, require_role, verify_jwt
+from pgguardian.central.store import CentralStore
 
 router = APIRouter(
     prefix="/api/v1/users",
@@ -72,56 +72,33 @@ def _row_to_public(row: dict) -> UserPublic:
 @router.get("", response_model=list[UserPublic])
 def list_users(
     search: str | None = Query(default=None, description="Email substring filter"),
-    client: DbClient = Depends(resolve_auth_client),
+    store: CentralStore = Depends(get_central_store_dep),
 ) -> list[UserPublic]:
     """List all users; optional email substring search (case-insensitive)."""
-    if search:
-        rows = client.fetch_all(
-            "SELECT id, email, full_name, app_role, is_active, password_must_change, created_at, "
-            "last_login FROM pgguardian_users WHERE lower(email) LIKE lower(%s) ORDER BY email",
-            (f"%{search}%",),
-        )
-    else:
-        rows = client.fetch_all(
-            "SELECT id, email, full_name, app_role, is_active, password_must_change, created_at, "
-            "last_login FROM pgguardian_users ORDER BY email"
-        )
-    return [_row_to_public(r) for r in rows]
+    return [_row_to_public(r) for r in store.list_users(search)]
 
 
 @router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate,
-    client: DbClient = Depends(resolve_auth_client),
+    store: CentralStore = Depends(get_central_store_dep),
 ) -> UserPublic:
     """Create a new user (Admin-only). Valid app_role: Admin/DBA/Viewer."""
     if body.app_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid app_role.")
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 chars.")
-    existing = client.fetch_one(
-        "SELECT id FROM pgguardian_users WHERE lower(email) = lower(%s)", (body.email,)
-    )
-    if existing:
+    if store.email_taken(body.email):
         raise HTTPException(status_code=409, detail="User with that email already exists.")
-    result = client.fetch_one(
-        "INSERT INTO pgguardian_users (email, full_name, password_hash, app_role, is_active, "
-        "password_must_change) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-        (
-            body.email.strip(),
-            body.full_name.strip(),
-            _hash(body.password),
-            body.app_role,
-            body.is_active,
-            body.password_must_change,
-        ),
+    new_id = store.create_user(
+        email=body.email.strip(),
+        full_name=body.full_name.strip(),
+        password_hash=_hash(body.password),
+        app_role=body.app_role,
+        is_active=body.is_active,
+        password_must_change=body.password_must_change,
     )
-    new_id = int(result["id"])  # type: ignore[index]
-    row = client.fetch_one(
-        "SELECT id, email, full_name, app_role, is_active, password_must_change, created_at, "
-        "last_login FROM pgguardian_users WHERE id = %s",
-        (new_id,),
-    )
+    row = store.get_user(new_id)
     assert row is not None
     return _row_to_public(row)
 
@@ -130,58 +107,29 @@ def create_user(
 def update_user(
     user_id: int,
     body: UserUpdate,
-    client: DbClient = Depends(resolve_auth_client),
+    store: CentralStore = Depends(get_central_store_dep),
 ) -> UserPublic:
     """Update user metadata (role, active state, name, email). Admin-only."""
-    existing = client.fetch_one(
-        "SELECT id FROM pgguardian_users WHERE id = %s", (user_id,)
-    )
-    if not existing:
+    if not store.user_exists(user_id):
         raise HTTPException(status_code=404, detail="User not found.")
     if body.app_role and body.app_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid app_role.")
-    if body.email:
-        conflict = client.fetch_one(
-            "SELECT id FROM pgguardian_users WHERE lower(email) = lower(%s) AND id <> %s",
-            (body.email, user_id),
-        )
-        if conflict:
-            raise HTTPException(status_code=409, detail="Email already in use.")
-    assignments: list[str] = []
-    params: list[Any] = []
+    if body.email and store.email_taken(body.email, exclude_id=user_id):
+        raise HTTPException(status_code=409, detail="Email already in use.")
+    fields: dict[str, Any] = {}
     if body.email is not None:
-        assignments.append("email = %s")
-        params.append(body.email.strip())
+        fields["email"] = body.email.strip()
     if body.full_name is not None:
-        assignments.append("full_name = %s")
-        params.append(body.full_name.strip())
+        fields["full_name"] = body.full_name.strip()
     if body.app_role is not None:
-        assignments.append("app_role = %s")
-        params.append(body.app_role)
+        fields["app_role"] = body.app_role
     if body.is_active is not None:
-        assignments.append("is_active = %s")
-        params.append(body.is_active)
+        fields["is_active"] = body.is_active
     if body.password_must_change is not None:
-        assignments.append("password_must_change = %s")
-        params.append(body.password_must_change)
-    if not assignments:
-        row = client.fetch_one(
-            "SELECT id, email, full_name, app_role, is_active, password_must_change, created_at, "
-            "last_login FROM pgguardian_users WHERE id = %s",
-            (user_id,),
-        )
-        assert row is not None
-        return _row_to_public(row)
-    params.append(user_id)
-    client.execute_raw(
-        f"UPDATE pgguardian_users SET {', '.join(assignments)} WHERE id = %s",
-        tuple(params),
-    )
-    row = client.fetch_one(
-        "SELECT id, email, full_name, app_role, is_active, password_must_change, created_at, "
-        "last_login FROM pgguardian_users WHERE id = %s",
-        (user_id,),
-    )
+        fields["password_must_change"] = body.password_must_change
+    if fields:
+        store.update_user(user_id, fields)
+    row = store.get_user(user_id)
     assert row is not None
     return _row_to_public(row)
 
@@ -189,40 +137,29 @@ def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user(
     user_id: int,
-    client: DbClient = Depends(resolve_auth_client),
+    store: CentralStore = Depends(get_central_store_dep),
     claims: dict[str, Any] = Depends(verify_jwt),
 ) -> None:
     """Soft-delete (is_active=false) a user. Admin cannot delete themselves (400)."""
     current_id = int(claims["sub"])
     if current_id == user_id:
         raise HTTPException(status_code=400, detail="Cannot deactivate yourself.")
-    existing = client.fetch_one(
-        "SELECT id FROM pgguardian_users WHERE id = %s", (user_id,)
-    )
-    if not existing:
+    if not store.user_exists(user_id):
         raise HTTPException(status_code=404, detail="User not found.")
-    client.execute_raw(
-        "UPDATE pgguardian_users SET is_active = FALSE WHERE id = %s", (user_id,)
-    )
-    client.execute_raw(
-        "DELETE FROM pgguardian_sessions WHERE user_id = %s", (user_id,)
-    )
+    store.deactivate_user(user_id)
+    store.delete_user_sessions(user_id)
 
 
 @router.post("/{user_id}/reset_password", status_code=status.HTTP_204_NO_CONTENT)
 def reset_password(
     user_id: int,
     body: ResetPassword,
-    client: DbClient = Depends(resolve_auth_client),
+    store: CentralStore = Depends(get_central_store_dep),
 ) -> None:
     """Set a new password for any user (Admin-only). Also flags must_change=false."""
     if len(body.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 chars.")
-    existing = client.fetch_one("SELECT id FROM pgguardian_users WHERE id = %s", (user_id,))
-    if not existing:
+    if not store.user_exists(user_id):
         raise HTTPException(status_code=404, detail="User not found.")
-    client.execute_raw(
-        "UPDATE pgguardian_users SET password_hash = %s, password_must_change = FALSE WHERE id = %s",
-        (_hash(body.new_password), user_id),
-    )
-    client.execute_raw("DELETE FROM pgguardian_sessions WHERE user_id = %s", (user_id,))
+    store.set_password(user_id, _hash(body.new_password), must_change=False)
+    store.delete_user_sessions(user_id)

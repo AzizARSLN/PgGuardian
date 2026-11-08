@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, Download, Loader2, Play, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, ListTree, Loader2, Play, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,12 +19,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IfWriter } from "@/components/role-guard";
 import { CodeBlock } from "@/components/statements/code-block";
+import { SqlViewer } from "@/components/pgbadger/sql-viewer";
 import { ApiError } from "@/lib/api/client";
 import {
   pgbadgerApi,
   type ExportSection,
   type Finding,
   type FindingTask,
+  type QueryDetail,
+  type QueryHour,
   type ReportDetail,
   type Role,
   type Severity,
@@ -36,7 +39,8 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useProfileStore } from "@/store/useProfileStore";
 
-const ROLES: Role[] = ["backend", "ui", "db"];
+const SOFTWARE_ROLES: Role[] = ["backend", "ui"];
+const DB_ROLES: Role[] = ["db"];
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
 const STATUSES: TaskStatus[] = ["todo", "doing", "done"];
 const SECTIONS: ExportSection[] = ["all", "summary", "findings", "backend", "ui", "db"];
@@ -48,6 +52,13 @@ const SEVERITY_STYLE: Record<Severity, string> = {
   low: "bg-muted text-muted-foreground",
 };
 
+const SEVERITY_BAR: Record<Severity, string> = {
+  critical: "bg-destructive",
+  high: "bg-destructive/70",
+  medium: "bg-warning",
+  low: "bg-muted-foreground",
+};
+
 const LOAD_COLOR: Record<string, string> = {
   application: "bg-primary",
   backup: "bg-warning",
@@ -56,6 +67,29 @@ const LOAD_COLOR: Record<string, string> = {
   tool: "bg-success",
   unknown: "bg-muted-foreground",
 };
+
+/** Milliseconds to a short, language-neutral duration. */
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "-";
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${(ms / 1000).toFixed(1)} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} h ${minutes % 60} min`;
+  return `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+
+function formatBytes(value: number): string {
+  if (value <= 0) return "-";
+  const units = ["B", "KiB", "MiB", "GiB"];
+  let rest = value;
+  for (const unit of units) {
+    if (rest < 1024) return `${rest.toFixed(1)} ${unit}`;
+    rest /= 1024;
+  }
+  return `${rest.toFixed(1)} TiB`;
+}
 
 function SeverityBadge({ severity }: { severity: Severity }) {
   const { t } = useI18n();
@@ -137,6 +171,27 @@ function FindingCard({
               {trait.label}
             </span>
           ))}
+        </div>
+      )}
+      {finding.index.length > 0 && (
+        <div className="mt-2 rounded border border-border/70 bg-muted/40 p-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("pgbadger.queries.indexes")}
+          </p>
+          <ul className="mt-1 space-y-1">
+            {finding.index.map((index) => (
+              <li key={`${index.table}-${index.columns.join("_")}`} className="text-[11px]">
+                <span className="font-mono font-medium">{index.table}</span>
+                <span className="text-muted-foreground"> ({index.columns.join(", ")})</span>
+                <span className="ml-1 text-muted-foreground">— {index.status_text}</span>
+                {index.ddl && (
+                  <code className="mt-0.5 block break-all rounded bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                    {index.ddl}
+                  </code>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {hasDetails && (
@@ -221,24 +276,35 @@ function SummaryTab({ report, onTask, canEdit }: { report: ReportDetail; onTask:
       </section>
 
       <section className="grid gap-2 md:grid-cols-3">
-        {ROLES.map((role) => (
-          <div key={role} className="rounded-md border border-border bg-card px-3 py-2">
-            <p className="text-xs font-semibold">{t(`pgbadger.tabs.${role}`)}</p>
-            <p className="font-mono text-[11px] text-muted-foreground">
-              {t("pgbadger.progress", { done: report.totals[role].done, total: report.totals[role].total })}
-            </p>
-          </div>
-        ))}
+        {(["software", "db"] as const).map((team) => {
+          const roles = team === "software" ? SOFTWARE_ROLES : DB_ROLES;
+          return (
+            <div key={team} className="rounded-md border border-border bg-card px-3 py-2">
+              <p className="text-xs font-semibold">{t(`pgbadger.tabs.${team}`)}</p>
+              <p className="font-mono text-[11px] text-muted-foreground">
+                {t("pgbadger.progress", { done: sumDone(report, roles), total: sumTotal(report, roles) })}
+              </p>
+            </div>
+          );
+        })}
       </section>
 
       <section className="space-y-2">
         <h2 className="text-[13px] font-semibold">{t("pgbadger.summary.topTitle")}</h2>
         {top.map((finding) => (
-          <FindingCard key={finding.id} finding={finding} roles={ROLES} onTask={onTask} canEdit={canEdit} />
+          <FindingCard key={finding.id} finding={finding} roles={[...SOFTWARE_ROLES, ...DB_ROLES]} onTask={onTask} canEdit={canEdit} />
         ))}
       </section>
     </div>
   );
+}
+
+function sumTotal(report: ReportDetail, roles: Role[]): number {
+  return roles.reduce((sum, role) => sum + report.totals[role].total, 0);
+}
+
+function sumDone(report: ReportDetail, roles: Role[]): number {
+  return roles.reduce((sum, role) => sum + report.totals[role].done, 0);
 }
 
 function FindingsTab({ report, onTask, canEdit }: { report: ReportDetail; onTask: (id: string, s: TaskStatus) => void; canEdit: boolean }) {
@@ -266,30 +332,301 @@ function FindingsTab({ report, onTask, canEdit }: { report: ReportDetail; onTask
         ))}
       </div>
       {rows.map((finding) => (
-        <FindingCard key={finding.id} finding={finding} roles={ROLES} onTask={onTask} canEdit={canEdit} />
+        <FindingCard key={finding.id} finding={finding} roles={[...SOFTWARE_ROLES, ...DB_ROLES]} onTask={onTask} canEdit={canEdit} />
       ))}
     </div>
   );
 }
 
-function RoleTab({ role, report, onTask, canEdit }: { role: Role; report: ReportDetail; onTask: (id: string, s: TaskStatus) => void; canEdit: boolean }) {
+function TeamTab({
+  team,
+  roles,
+  report,
+  onTask,
+  canEdit,
+}: {
+  team: "software" | "db";
+  roles: Role[];
+  report: ReportDetail;
+  onTask: (id: string, s: TaskStatus) => void;
+  canEdit: boolean;
+}) {
   const { t } = useI18n();
-  const rows = report.findings.filter((f) => f.tasks[role].length > 0);
+  const rows = report.findings.filter((f) => roles.some((role) => f.tasks[role].length > 0));
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        {t(`pgbadger.roleDesc.${role}`)}{" "}
+        {t(`pgbadger.team.${team}`)}{" "}
         <span className="font-mono">
-          {t("pgbadger.progress", { done: report.totals[role].done, total: report.totals[role].total })}
+          {t("pgbadger.progress", { done: sumDone(report, roles), total: sumTotal(report, roles) })}
         </span>
       </p>
       {rows.length === 0 ? (
         <p className="rounded-md border border-border p-4 text-center text-xs text-muted-foreground">{t("pgbadger.noTasks")}</p>
       ) : (
         rows.map((finding) => (
-          <FindingCard key={finding.id} finding={finding} roles={[role]} onTask={onTask} canEdit={canEdit} />
+          <FindingCard key={finding.id} finding={finding} roles={roles} onTask={onTask} canEdit={canEdit} />
         ))
       )}
+    </div>
+  );
+}
+
+function HourBars({ hours }: { hours: QueryHour[] }) {
+  const { t } = useI18n();
+  const byHour = new Map(hours.map((entry) => [entry.hour, entry]));
+  const max = Math.max(1, ...hours.map((entry) => entry.ms || entry.count));
+  return (
+    <div className="mt-1">
+      <div className="flex h-12 items-end gap-0.5">
+        {Array.from({ length: 24 }, (_, index) => {
+          const key = String(index).padStart(2, "0");
+          const entry = byHour.get(key);
+          const value = entry ? entry.ms || entry.count : 0;
+          const height = value > 0 ? Math.max(10, Math.round((value / max) * 100)) : 3;
+          return (
+            <div
+              key={key}
+              title={`${key}:00 · ${entry ? t("pgbadger.queries.runsValue", { count: entry.count }) : "0"}`}
+              className={cn("flex-1 rounded-sm", value > 0 ? "bg-primary/70" : "bg-muted")}
+              style={{ height: `${height}%` }}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-0.5 flex justify-between text-[9px] text-muted-foreground">
+        <span>00</span>
+        <span>06</span>
+        <span>12</span>
+        <span>18</span>
+        <span>23</span>
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-md border border-border bg-background px-2 py-1.5" title={hint}>
+      <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="font-mono text-[13px] font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function QueryCard({ query, maxShare }: { query: QueryDetail; maxShare: number }) {
+  const { t, formatNumber } = useI18n();
+  const [showSql, setShowSql] = React.useState(false);
+  const [showExamples, setShowExamples] = React.useState(false);
+  const width = maxShare > 0 ? Math.max(2, (query.share / maxShare) * 100) : 0;
+  return (
+    <article className={cn("rounded-md border border-border bg-card p-3", query.severity === "critical" && "border-destructive/60")}>
+      <div className="flex items-start gap-2">
+        <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded bg-muted px-1 font-mono text-[11px] font-semibold">
+          {query.rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-[12px] font-semibold" title={query.sql}>
+            {query.tables.join(", ") || query.sql.slice(0, 80)}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            <SeverityBadge severity={query.severity} />
+            {query.sources.map((source) => (
+              <span key={source} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {t(`pgbadger.sources.${source}`)}
+              </span>
+            ))}
+            {query.traits.map((trait) => (
+              <span key={trait.code} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">
+                {trait.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+          <div className={cn("h-full rounded-full", SEVERITY_BAR[query.severity])} style={{ width: `${width}%` }} />
+        </div>
+        <span className="w-14 shrink-0 text-right font-mono text-[11px] font-semibold">%{query.share}</span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
+        <Metric label={t("pgbadger.queries.total")} value={formatDuration(query.total_ms)} />
+        <Metric label={t("pgbadger.queries.runs")} value={formatNumber(query.calls)} hint={t("pgbadger.queries.runsHint")} />
+        <Metric label={t("pgbadger.queries.avg")} value={formatDuration(query.avg_ms)} />
+        <Metric label={t("pgbadger.queries.min")} value={formatDuration(query.min_ms)} />
+        <Metric label={t("pgbadger.queries.max")} value={formatDuration(query.max_ms)} />
+        <Metric label={t("pgbadger.queries.peak")} value={query.peak ?? "-"} />
+      </div>
+
+      {query.temp_bytes > 0 && (
+        <p className="mt-2 inline-flex rounded bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
+          {t("pgbadger.queries.temp")}: {formatBytes(query.temp_bytes)}
+          {query.temp_count > 0 && ` · ${formatNumber(query.temp_count)}x`}
+        </p>
+      )}
+
+      {query.hours.length > 0 && (
+        <div className="mt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("pgbadger.queries.when")}
+          </p>
+          <HourBars hours={query.hours} />
+        </div>
+      )}
+
+      <div className="mt-2 grid gap-1 text-[11px] sm:grid-cols-2">
+        <p className="truncate text-muted-foreground" title={query.apps.join(", ")}>
+          <span className="font-semibold text-foreground">{t("pgbadger.queries.apps")}: </span>
+          {query.apps.join(", ") || "-"}
+        </p>
+        <p className="truncate text-muted-foreground" title={query.users.join(", ")}>
+          <span className="font-semibold text-foreground">{t("pgbadger.queries.users")}: </span>
+          {query.users.join(", ") || "-"}
+        </p>
+      </div>
+
+      {query.indexes.length > 0 && (
+        <div className="mt-2 rounded border border-border/70 bg-muted/40 p-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("pgbadger.queries.indexes")}
+          </p>
+          <ul className="mt-1 space-y-1">
+            {query.indexes.map((index) => (
+              <li key={`${index.table}-${index.columns.join("_")}`} className="text-[11px]">
+                <span className="font-mono font-medium">{index.table}</span>
+                <span className="text-muted-foreground"> ({index.columns.join(", ")})</span>
+                <span className="ml-1 text-muted-foreground">— {index.status_text}</span>
+                {index.ddl && (
+                  <code className="mt-0.5 block break-all rounded bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                    {index.ddl}
+                  </code>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {query.examples.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowExamples((value) => !value)}
+            aria-expanded={showExamples}
+            className="inline-flex items-center gap-1.5 rounded bg-info/10 px-2 py-0.5 text-[11px] font-medium text-info hover:bg-info/20"
+          >
+            <ListTree className="h-3.5 w-3.5" />
+            {t("pgbadger.queries.examples", { count: query.examples.length })}
+          </button>
+          {showExamples && (
+            <div className="mt-1.5 space-y-2">
+              <p className="text-[10px] text-muted-foreground">{t("pgbadger.queries.examplesHint")}</p>
+              {query.examples.map((example, index) => (
+                <div key={index} className="space-y-1">
+                  <SqlViewer
+                    value={example.sql}
+                    label={t("pgbadger.queries.exampleN", { index: index + 1 })}
+                    filename={`${query.id}-example-${index + 1}`}
+                    height="9rem"
+                  />
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
+                    {example.date && <span>{t("pgbadger.queries.date")}: {example.date}</span>}
+                    {example.ms > 0 && <span>{t("pgbadger.queries.duration")}: {formatDuration(example.ms)}</span>}
+                    {example.database && <span>{t("pgbadger.queries.database")}: {example.database}</span>}
+                    {example.user && <span>{t("pgbadger.queries.user")}: {example.user}</span>}
+                    {example.host && <span>{t("pgbadger.queries.host")}: {example.host}</span>}
+                    {example.app && <span>{t("pgbadger.queries.app")}: {example.app}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setShowSql((value) => !value)}
+        aria-expanded={showSql}
+        className="mt-2 block text-[11px] text-info hover:underline"
+      >
+        {t("pgbadger.showSql")}
+      </button>
+      {showSql && (
+        <SqlViewer
+          value={query.sql}
+          label={t("pgbadger.queries.sql")}
+          filename={query.id}
+          height="14rem"
+          className="mt-1.5"
+        />
+      )}
+    </article>
+  );
+}
+
+function QueriesTab({ report }: { report: ReportDetail }) {
+  const { t, formatNumber } = useI18n();
+  const queries = report.queries;
+  if (queries.length === 0) {
+    return (
+      <p className="rounded-md border border-border p-4 text-center text-xs text-muted-foreground">
+        {t("pgbadger.queries.empty")}
+      </p>
+    );
+  }
+  const maxShare = Math.max(...queries.map((query) => query.share));
+  const tiles: [string, string, string?][] = [
+    [t("pgbadger.queries.heavyCount"), formatNumber(queries.length)],
+    [t("pgbadger.queries.totalRuns"), formatNumber(queries.reduce((sum, query) => sum + query.calls, 0)), t("pgbadger.queries.runsHint")],
+    [t("pgbadger.queries.totalCost"), formatDuration(queries.reduce((sum, query) => sum + query.total_ms, 0))],
+    [t("pgbadger.queries.topShare"), `%${queries[0].share}`],
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {tiles.map(([label, value, hint]) => (
+          <div key={label} className="rounded-md border border-border bg-card px-3 py-2" title={hint}>
+            <p className="truncate text-[11px] text-muted-foreground">{label}</p>
+            <p className="font-mono text-sm font-semibold">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <section className="rounded-md border border-border bg-card p-3">
+        <h2 className="text-[13px] font-semibold">{t("pgbadger.queries.heading")}</h2>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{t("pgbadger.queries.intro")}</p>
+        <ol className="mt-2 space-y-1.5">
+          {queries.map((query) => (
+            <li key={query.id} className="flex items-center gap-2 text-xs">
+              <span className="w-5 shrink-0 text-right font-mono text-[11px] text-muted-foreground">{query.rank}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={query.sql}>
+                {query.tables.join(", ") || query.sql.slice(0, 70)}
+              </span>
+              <div className="hidden h-2 w-40 shrink-0 overflow-hidden rounded-full bg-muted sm:block">
+                <div
+                  className={cn("h-full rounded-full", SEVERITY_BAR[query.severity])}
+                  style={{ width: `${Math.max(2, (query.share / maxShare) * 100)}%` }}
+                />
+              </div>
+              <span className="w-12 shrink-0 text-right font-mono font-semibold">%{query.share}</span>
+              <span className="hidden w-20 shrink-0 text-right font-mono text-muted-foreground md:block">
+                {formatDuration(query.total_ms)}
+              </span>
+              <span className="w-16 shrink-0 text-right font-mono text-muted-foreground">{formatNumber(query.calls)}x</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="space-y-2">
+        {queries.map((query) => (
+          <QueryCard key={query.id} query={query} maxShare={maxShare} />
+        ))}
+      </section>
     </div>
   );
 }
@@ -423,27 +760,35 @@ export default function PgBadgerReportPage() {
         <Tabs defaultValue="summary">
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="summary">{t("pgbadger.tabs.summary")}</TabsTrigger>
+            <TabsTrigger value="software">
+              {t("pgbadger.tabs.software")} ({sumTotal(data, SOFTWARE_ROLES) - sumDone(data, SOFTWARE_ROLES)})
+            </TabsTrigger>
+            <TabsTrigger value="db">
+              {t("pgbadger.tabs.db")} ({sumTotal(data, DB_ROLES) - sumDone(data, DB_ROLES)})
+            </TabsTrigger>
+            <TabsTrigger value="queries">
+              {t("pgbadger.tabs.queries")} ({data.queries.length})
+            </TabsTrigger>
             <TabsTrigger value="findings">
               {t("pgbadger.tabs.findings")} ({data.findings.length})
             </TabsTrigger>
-            {ROLES.map((role) => (
-              <TabsTrigger key={role} value={role}>
-                {t(`pgbadger.tabs.${role}`)} ({data.totals[role].total - data.totals[role].done})
-              </TabsTrigger>
-            ))}
             <TabsTrigger value="activity">{t("pgbadger.tabs.activity")}</TabsTrigger>
           </TabsList>
           <TabsContent value="summary">
             <SummaryTab report={data} onTask={onTask} canEdit={isDBA} />
           </TabsContent>
+          <TabsContent value="software">
+            <TeamTab team="software" roles={SOFTWARE_ROLES} report={data} onTask={onTask} canEdit={isDBA} />
+          </TabsContent>
+          <TabsContent value="db">
+            <TeamTab team="db" roles={DB_ROLES} report={data} onTask={onTask} canEdit={isDBA} />
+          </TabsContent>
+          <TabsContent value="queries">
+            <QueriesTab report={data} />
+          </TabsContent>
           <TabsContent value="findings">
             <FindingsTab report={data} onTask={onTask} canEdit={isDBA} />
           </TabsContent>
-          {ROLES.map((role) => (
-            <TabsContent key={role} value={role}>
-              <RoleTab role={role} report={data} onTask={onTask} canEdit={isDBA} />
-            </TabsContent>
-          ))}
           <TabsContent value="activity">
             <div className="overflow-x-auto rounded-md border border-border bg-card">
               <table className="w-full min-w-[560px] border-collapse text-xs">

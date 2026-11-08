@@ -578,9 +578,26 @@ export default function SchemaTableDetailPage() {
               {detail && detail.indexes.length > 0 && (
                 <div className="divide-y divide-border rounded-md border border-border">
                   {detail.indexes.map((idx, i) => (
-                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted">
-                      <KeyRound className="h-3.5 w-3.5 shrink-0 text-success" />
-                      <pre className="whitespace-pre-wrap break-all font-mono text-xs text-foreground">{idx}</pre>
+                    <div key={i} className="space-y-1 px-3 py-2 hover:bg-muted">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <KeyRound className="h-3.5 w-3.5 shrink-0 text-success" />
+                        <span className="font-mono text-xs font-medium text-foreground">{idx.name}</span>
+                        {idx.columns.length > 0 && (
+                          <span className="flex flex-wrap items-center gap-1 text-[11px]">
+                            <span className="text-muted-foreground">{t('tableDetail.columns.name')}:</span>
+                            {idx.columns.map((col) => (
+                              <Badge key={col} variant="outline" className="font-mono text-[10px]">
+                                {col}
+                              </Badge>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                      {idx.definition && (
+                        <pre className="whitespace-pre-wrap break-all pl-5 font-mono text-[11px] text-muted-foreground">
+                          {idx.definition}
+                        </pre>
+                      )}
                     </div>
                   ))}
                 </div>

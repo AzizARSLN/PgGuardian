@@ -63,6 +63,7 @@
       "users": "Users",
       "report": "Report",
       "settings": "Settings",
+      "license": "License",
       "pgbadger": "pgBadger Analysis"
     }
   },

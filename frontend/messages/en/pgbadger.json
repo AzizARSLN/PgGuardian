@@ -2,7 +2,7 @@
   "pgbadger": {
     "title": "pgBadger Analysis",
     "subtitle": "Upload a pgBadger report from the field and see where the problem is and what each team should do.",
-    "privacy": "The uploaded HTML is not kept. Example queries are not read and values in SQL and error messages are masked; data stays on this server and is not sent anywhere.",
+    "privacy": "The uploaded HTML is not kept. Values in SQL and error messages are masked; only the examples of heavy queries are shown with their real values. Data stays on this server and is not sent anywhere.",
     "upload": "Upload report",
     "uploading": "Uploading...",
     "uploaded": "Report uploaded",
@@ -30,11 +30,63 @@
     "back": "Reports",
     "tabs": {
       "summary": "Summary",
+      "software": "Software",
+      "db": "DB",
+      "queries": "Queries",
       "findings": "Problems",
       "backend": "Backend",
       "ui": "UI",
-      "db": "DBA",
       "activity": "History"
+    },
+    "team": {
+      "software": "Software team: services, queries, transactions and screen flows.",
+      "db": "Database team: server, indexes, maintenance and settings."
+    },
+    "queries": {
+      "heading": "Long-running queries",
+      "intro": "The statements that took the most time in this period. \"Runs\" shows how many times a query repeated; average and longest describe a single run.",
+      "heavyCount": "Heavy queries",
+      "totalRuns": "Total runs",
+      "topShare": "Share of the costliest query",
+      "totalCost": "Total time in these queries",
+      "rank": "Rank",
+      "share": "Share",
+      "total": "Total time",
+      "runs": "Runs",
+      "runsValue": "{count} runs",
+      "avg": "Average",
+      "min": "Shortest",
+      "max": "Longest",
+      "peak": "Busiest hour",
+      "when": "Hourly distribution",
+      "tables": "Tables",
+      "apps": "Applications",
+      "users": "Users",
+      "temp": "Temp files",
+      "sql": "SQL",
+      "indexes": "Index candidates",
+      "empty": "No heavy query above the threshold.",
+      "runsHint": "How many times it ran",
+      "examples": "Example queries ({count})",
+      "examplesHint": "Real executions recorded by pgBadger; values are not masked and may contain personal data.",
+      "exampleN": "Example {index}",
+      "date": "Date",
+      "duration": "Duration",
+      "database": "Database",
+      "user": "User",
+      "host": "Source",
+      "app": "Application"
+    },
+    "viewer": {
+      "search": "Search",
+      "download": "Download",
+      "fullscreen": "Full screen"
+    },
+    "sources": {
+      "time_consuming": "Most time",
+      "most_frequent": "Most frequent",
+      "normalized_slowest": "Slowest",
+      "temp_most": "Temp files"
     },
     "summary": {
       "queries": "Queries",

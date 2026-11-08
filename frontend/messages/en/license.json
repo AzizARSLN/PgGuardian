@@ -1,0 +1,46 @@
+{
+  "license": {
+    "title": "License",
+    "subtitle": "View and manage the offline license key",
+    "refresh": "Refresh",
+    "enforced": "Enforced",
+    "notEnforced": "Not enforced",
+    "status": {
+      "title": "License Status",
+      "licensed": "Licensed",
+      "unlicensed": "No license",
+      "plan": "Plan",
+      "email": "Email",
+      "issuedAt": "Issued",
+      "expiresAt": "Expires",
+      "perpetual": "Perpetual",
+      "activatedAt": "Activated"
+    },
+    "activate": {
+      "title": "Activate License",
+      "description": "Enter the Ed25519-signed license key. Verification is fully offline; nothing is sent to a server.",
+      "label": "License Key",
+      "placeholder": "PGG1....",
+      "required": "Enter a license key",
+      "submit": "Activate",
+      "activating": "Activating…"
+    },
+    "remove": {
+      "action": "Remove License",
+      "title": "Remove the license?",
+      "description": "The stored license key is deleted from this installation. This cannot be undone.",
+      "confirm": "Remove"
+    },
+    "adminOnly": "Only users with the Admin role can activate or remove a license.",
+    "empty": {
+      "title": "No active license",
+      "hint": "Until a license key is activated, some features of the application may be limited."
+    },
+    "toast": {
+      "activated": "License activated",
+      "activateFailed": "Could not activate the license",
+      "removed": "License removed",
+      "removeFailed": "Could not remove the license"
+    }
+  }
+}

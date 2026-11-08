@@ -1,6 +1,8 @@
 """Local SQLite store for analysed reports, task progress and the activity log.
 
-The uploaded HTML is not kept: only its hash and the masked data parsed out of it.
+The uploaded HTML is not kept: only its hash and the parsed data. The parsed data
+is masked except for the example statements of heavy queries, which the Queries
+view shows with their real parameter values.
 """
 
 from __future__ import annotations

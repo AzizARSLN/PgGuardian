@@ -2786,6 +2786,9 @@ function TableHealthTab({ op }: { op: OpControl }) {
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
                       <TableHead className={HEAD}>{t("maintenance.fields.index")}</TableHead>
+                      <TableHead className={HEAD}>
+                        {t("maintenance.health.columns.columns")}
+                      </TableHead>
                       <TableHead className={cn(HEAD, "text-right")}>
                         {t("maintenance.health.columns.indexSize")}
                       </TableHead>
@@ -2799,6 +2802,9 @@ function TableHealthTab({ op }: { op: OpControl }) {
                     {unusedIndexes.map((row) => (
                       <TableRow key={row.index_name}>
                         <TableCell className={cn(CELL, "font-mono")}>{row.index_name}</TableCell>
+                        <TableCell className={cn(CELL, "max-w-[16rem] truncate font-mono text-muted-foreground")} title={row.columns.join(", ")}>
+                          {row.columns.join(", ") || "—"}
+                        </TableCell>
                         <TableCell className={cn(CELL, "text-right font-mono")}>
                           {formatBytes(row.size_bytes)}
                         </TableCell>

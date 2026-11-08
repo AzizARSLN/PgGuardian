@@ -870,6 +870,12 @@ function SuggestionsPanel({
                   <span className="text-xs font-semibold">{s.title}</span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{s.detail}</p>
+                {s.columns.length > 0 ? (
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                    <span className="text-foreground">{t("indexMonitor.columns.columns")}: </span>
+                    {s.columns.join(", ")}
+                  </p>
+                ) : null}
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                   <span>
                     {t("indexMonitor.suggestions.confidence")}:{" "}
@@ -1224,6 +1230,7 @@ function RedundantTable({
             <TableRow>
               <TableHead className={HEAD}>{t("indexMonitor.columns.index")}</TableHead>
               <TableHead className={HEAD}>{t("indexMonitor.columns.table")}</TableHead>
+              <TableHead className={HEAD}>{t("indexMonitor.columns.columns")}</TableHead>
               <TableHead className={HEAD}>{t("indexMonitor.columns.coveredBy")}</TableHead>
               <TableHead className={cn(HEAD, "text-right")}>{t("indexMonitor.columns.size")}</TableHead>
               <TableHead className={cn(HEAD, "text-right")}>{t("indexMonitor.columns.actions")}</TableHead>
@@ -1235,6 +1242,9 @@ function RedundantTable({
                 <TableCell className={cn(CELL, "font-mono")}>{r.index_name}</TableCell>
                 <TableCell className={cn(CELL, "font-mono text-muted-foreground")}>
                   {r.schema_name}.{r.table_name}
+                </TableCell>
+                <TableCell className={cn(CELL, "max-w-[16rem] truncate font-mono text-muted-foreground")} title={r.columns.join(", ")}>
+                  {r.columns.join(", ") || "—"}
                 </TableCell>
                 <TableCell className={cn(CELL, "font-mono text-muted-foreground")}>{r.covered_by}</TableCell>
                 <TableCell className={cn(CELL, "text-right font-mono")}>{formatBytes(r.size_bytes, 1)}</TableCell>
@@ -1281,6 +1291,7 @@ function InvalidTable({
           <TableRow>
             <TableHead className={HEAD}>{t("indexMonitor.columns.index")}</TableHead>
             <TableHead className={HEAD}>{t("indexMonitor.columns.table")}</TableHead>
+            <TableHead className={HEAD}>{t("indexMonitor.columns.columns")}</TableHead>
             <TableHead className={cn(HEAD, "text-right")}>{t("indexMonitor.columns.size")}</TableHead>
             <TableHead className={cn(HEAD, "text-right")}>{t("indexMonitor.columns.actions")}</TableHead>
           </TableRow>
@@ -1296,6 +1307,9 @@ function InvalidTable({
               </TableCell>
               <TableCell className={cn(CELL, "font-mono text-muted-foreground")}>
                 {idx.schema_name}.{idx.table_name}
+              </TableCell>
+              <TableCell className={cn(CELL, "max-w-[16rem] truncate font-mono text-muted-foreground")} title={idx.key_columns.join(", ")}>
+                {idx.key_columns.join(", ") || "—"}
               </TableCell>
               <TableCell className={cn(CELL, "text-right font-mono")}>
                 {formatBytes(idx.index_size_bytes, 1)}

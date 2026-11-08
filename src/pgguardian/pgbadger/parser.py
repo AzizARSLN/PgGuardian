@@ -1,9 +1,9 @@
 """Extract the numbers and normalized statements out of a pgBadger HTML report.
 
-These reports come from production logs. The "Examples" blocks hold real parameter
-values, which on a hospital or bank system means personal data, so they are never
-read. Everything kept goes through ``mask_literals`` as well, because a few tables
-(slowest individual queries, waits) carry statements with their real values.
+These reports come from production logs. Most statements go through ``mask_literals``
+so their real values never reach the database or the screen. The exception is the
+"Heavy queries" view, where the reviewer asked for the full statement with real
+parameter values: those come from the "Examples" blocks and are kept verbatim.
 """
 
 from __future__ import annotations
@@ -38,6 +38,11 @@ _HOUR_ROW = re.compile(
     r"<tr><td>[^<]*</td><td>(\d{2})</td><td>([\d,]+)</td>(?:<td>([^<]*)</td>)?"
 )
 _META = re.compile(r"<b>(Date|Database|User|Remote|Application):?</b>:?\s*([^<]*?)\s*(?:-\s*)?(?=<b>|\])")
+# One "Examples" block per rank: the real statement plus its <pre> origin.
+_EXAMPLE_MARKER = re.compile(r'<div id="[^"]*-examples-rank-(\d+)"')
+_EXAMPLE = re.compile(
+    r'<div id="query-[^"]*" class="sql[^"]*">(.*?)</div>\s*<pre>(.*?)</pre>', re.S
+)
 
 
 class NotPgBadgerReport(ValueError):
@@ -145,16 +150,57 @@ def _grouped_totals(rows: list[list[str]]) -> list[dict[str, Any]]:
     return groups
 
 
+def _pre_fields(fragment: str) -> dict[str, str]:
+    """Key/value pairs of an 'Examples' <pre> block (Date, User, Duration ...)."""
+    fields = {}
+    for line in html.unescape(_TAG.sub("", fragment)).splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip().lower()] = value.strip()
+    return fields
+
+
+def _examples(block: str) -> dict[int, list[dict[str, Any]]]:
+    """Fully parameterised statements under each rank, keyed by rank.
+
+    Unlike the rest of the parse these are not masked: the reviewer asked to see
+    the statement with its real values to reproduce and tune it.
+    """
+    result: dict[int, list[dict[str, Any]]] = {}
+    marks = list(_EXAMPLE_MARKER.finditer(block))
+    for index, mark in enumerate(marks):
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(block)
+        found = []
+        for sql_fragment, pre_fragment in _EXAMPLE.findall(block[mark.end() : end]):
+            fields = _pre_fields(pre_fragment)
+            found.append(
+                {
+                    "sql": html.unescape(_TAG.sub("", sql_fragment)).strip()[:MAX_SQL_CHARS],
+                    "date": fields.get("date", ""),
+                    "ms": duration_ms(fields.get("duration", "")),
+                    "database": fields.get("database", ""),
+                    "user": fields.get("user", ""),
+                    "host": fields.get("remote", ""),
+                    "app": fields.get("application", ""),
+                    "bind": fields.get("bind query", ""),
+                }
+            )
+        if found:
+            result[int(mark.group(1))] = found
+    return result
+
+
 def _ranked_statements(doc: _Document, section: str, table: str) -> list[dict[str, Any]]:
     """Rows of a top-N statement table: the normalized SQL, hours, users and apps."""
     block = doc.section(section)
+    examples = _examples(block)
     marker = re.compile(rf'<td id="{table}-examples-details-rank-(\d+)">')
     spots = list(marker.finditer(block))
     rows = []
     previous_end = 0
     for index, spot in enumerate(spots):
         end = spots[index + 1].start() if index + 1 < len(spots) else len(block)
-        # Examples live further down each row and are never touched.
+        # Examples live further down each row; here only the masked SQL is wanted.
         body = block[spot.end() : end].split('-examples-rank-', 1)[0]
         head = block[previous_end : spot.start()]
         previous_end = spot.end()
@@ -176,6 +222,7 @@ def _ranked_statements(doc: _Document, section: str, table: str) -> list[dict[st
                 "rank": int(spot.group(1)),
                 "cells": cells[1:],
                 "sql": _clean_sql(sql.group(1)) if sql else "",
+                "examples": examples.get(int(spot.group(1)), []),
                 "hours": hours,
                 "users": involved["User"],
                 "apps": involved["Application"],

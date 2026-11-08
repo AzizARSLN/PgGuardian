@@ -154,6 +154,7 @@
         "total": "Total",
         "tableSize": "Table",
         "indexSize": "Index",
+        "columns": "Columns",
         "live": "Live",
         "dead": "Dead",
         "deadPercent": "Dead %",

@@ -83,6 +83,7 @@ export interface IndexInfo {
   index_scans: number;
   tuples_read: number;
   tuples_fetched: number;
+  key_columns: string[];
   potentially_unused: boolean;
   reason?: string | null;
 }
@@ -139,6 +140,7 @@ export interface RedundantIndex {
   schema_name?: string | null;
   table_name?: string | null;
   index_name: string;
+  columns: string[];
   covered_by: string;
   size_bytes: number;
 }
@@ -172,6 +174,7 @@ export interface IndexSuggestion {
   schema_name?: string | null;
   table_name?: string | null;
   index_name?: string | null;
+  columns: string[];
   command?: string | null;
   confidence: string;
   estimated_reclaim_bytes: number;
@@ -499,6 +502,7 @@ export interface IndexUsageInfo {
   index_name: string;
   size_bytes: number;
   index_scans: number;
+  columns: string[];
   potentially_unused: boolean;
 }
 
@@ -509,6 +513,12 @@ export interface ColumnInfo {
   default?: string | null;
 }
 
+export interface TableIndexInfo {
+  name: string;
+  columns: string[];
+  definition?: string | null;
+}
+
 export interface TableDetail {
   schema_name: string;
   table_name: string;
@@ -517,7 +527,7 @@ export interface TableDetail {
   live_tuples: number;
   dead_tuples: number;
   columns: ColumnInfo[];
-  indexes: string[];
+  indexes: TableIndexInfo[];
   constraints: string[];
 }
 

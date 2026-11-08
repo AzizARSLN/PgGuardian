@@ -17,6 +17,7 @@ from pgguardian.api.routers import databases as databases_router
 from pgguardian.api.routers import diagnostics as diagnostics_router
 from pgguardian.api.routers import events as events_router
 from pgguardian.api.routers import indexes as indexes_router
+from pgguardian.api.routers import license as license_router
 from pgguardian.api.routers import maintenance_ops as maintenance_ops_router
 from pgguardian.api.routers import operation_log as operation_log_router
 from pgguardian.api.routers import ops as ops_router
@@ -34,6 +35,8 @@ from pgguardian.api.routers import table_io as table_io_router
 from pgguardian.api.routers import toolkit as toolkit_router
 from pgguardian.api.routers import users as users_router
 from pgguardian.api.routers.auth import bootstrap_admin_if_needed
+from pgguardian.api.settings import ApiSettings
+from pgguardian.api.spa import mount_frontend, resolve_frontend_dir
 
 _SCALAR_HTML = """
 <!doctype html>
@@ -78,6 +81,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     """Build the FastAPI app (factory keeps tests isolated, no globals)."""
+    settings = ApiSettings()
+    # Desktop build: serve the compiled UI from the same origin. The JSON meta
+    # endpoint is skipped there so "/" resolves to the SPA instead.
+    frontend_dir = resolve_frontend_dir(settings) if settings.desktop else None
+
     app = FastAPI(
         title="PgGuardian API",
         description=(
@@ -99,17 +107,19 @@ def create_app() -> FastAPI:
         """Scalar API reference — modern interactive docs at /reference."""
         return HTMLResponse(_SCALAR_HTML)
 
-    @app.get("/", tags=["meta"])
-    def root() -> dict:
-        """Service info (no database access)."""
-        return {
-            "service": "pgguardian",
-            "version": __version__,
-            "docs": "/docs",
-            "reference": "/reference",
-            "openapi": "/openapi.json",
-            "health": "/api/v1/health",
-        }
+    if frontend_dir is None:
+
+        @app.get("/", tags=["meta"])
+        def root() -> dict:
+            """Service info (no database access)."""
+            return {
+                "service": "pgguardian",
+                "version": __version__,
+                "docs": "/docs",
+                "reference": "/reference",
+                "openapi": "/openapi.json",
+                "health": "/api/v1/health",
+            }
 
     @app.get("/healthz", tags=["meta"])
     def healthz() -> dict:
@@ -118,6 +128,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router.router)
     app.include_router(users_router.router)
+    app.include_router(license_router.router)
     app.include_router(events_router.router, dependencies=guarded_or_jwt)
     app.include_router(diagnostics_router.router, dependencies=viewer_allowed)
     app.include_router(indexes_router.read_router, dependencies=viewer_allowed)
@@ -144,6 +155,11 @@ def create_app() -> FastAPI:
     app.include_router(configops_router.router, dependencies=writer_allowed)
     app.include_router(table_io_router.router, dependencies=writer_allowed)
     app.websocket("/ws/events")(events_router.websocket_stream)
+
+    if frontend_dir is not None:
+        # Mounted last so the API routes (/api/v1, /ws, /docs, ...) match first;
+        # every other path resolves to the bundled SPA (see SpaStaticFiles).
+        mount_frontend(app, frontend_dir)
     return app
 
 

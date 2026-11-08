@@ -163,7 +163,9 @@ def _map_duplicates(rows: list[dict], columns_by_index: dict[str, list[str]]) ->
     return groups
 
 
-def _map_redundant(rows: list[dict]) -> list[RedundantIndex]:
+def _map_redundant(
+    rows: list[dict], columns_by_index: dict[str, list[str]]
+) -> list[RedundantIndex]:
     seen: set[str] = set()
     redundant: list[RedundantIndex] = []
     for row in rows:
@@ -181,6 +183,7 @@ def _map_redundant(rows: list[dict]) -> list[RedundantIndex]:
                 schema_name=str(schema) if schema else None,
                 table_name=str(table) if table else None,
                 index_name=name,
+                columns=columns_by_index.get(dedupe_key, []),
                 covered_by=str(row.get("covered_by") or ""),
                 size_bytes=_int(row.get("redundant_size_bytes")),
             )
@@ -188,17 +191,21 @@ def _map_redundant(rows: list[dict]) -> list[RedundantIndex]:
     return redundant
 
 
-def _map_invalid(rows: list[dict]) -> list[IndexDetail]:
+def _map_invalid(
+    rows: list[dict], columns_by_index: dict[str, list[str]]
+) -> list[IndexDetail]:
     invalid: list[IndexDetail] = []
     for row in rows:
         schema = row.get("schema_name")
         table = row.get("table_name")
+        name = str(row.get("index_name") or "unknown")
         invalid.append(
             IndexDetail(
                 schema_name=str(schema) if schema else None,
                 table_name=str(table) if table else None,
-                index_name=str(row.get("index_name") or "unknown"),
+                index_name=name,
                 index_size_bytes=_int(row.get("index_size_bytes")),
+                key_columns=columns_by_index.get(_key(schema, table, name), []),
                 is_valid=bool(row.get("is_valid", False)),
                 is_ready=bool(row.get("is_ready", False)),
                 is_live=bool(row.get("is_live", False)),
@@ -287,6 +294,7 @@ def build_suggestions(
                 schema_name=index.schema_name,
                 table_name=index.table_name,
                 index_name=index.index_name,
+                columns=index.key_columns,
                 command=(
                     f"REINDEX INDEX CONCURRENTLY "
                     f"{_qualified(index.schema_name, index.index_name)};"
@@ -313,6 +321,7 @@ def build_suggestions(
                     schema_name=group.schema_name,
                     table_name=group.table_name,
                     index_name=name,
+                    columns=group.columns,
                     command=f"DROP INDEX CONCURRENTLY {_qualified(group.schema_name, name)};",
                     confidence="high",
                     risk="dangerous",
@@ -333,6 +342,7 @@ def build_suggestions(
                 schema_name=item.schema_name,
                 table_name=item.table_name,
                 index_name=item.index_name,
+                columns=item.columns,
                 command=f"DROP INDEX CONCURRENTLY {_qualified(item.schema_name, item.index_name)};",
                 confidence="medium",
                 estimated_reclaim_bytes=item.size_bytes,
@@ -356,6 +366,7 @@ def build_suggestions(
                     schema_name=index.schema_name,
                     table_name=index.table_name,
                     index_name=index.index_name,
+                    columns=index.key_columns,
                     command=(
                         f"DROP INDEX CONCURRENTLY "
                         f"{_qualified(index.schema_name, index.index_name)};"
@@ -381,6 +392,7 @@ def build_suggestions(
                     schema_name=index.schema_name,
                     table_name=index.table_name,
                     index_name=index.index_name,
+                    columns=index.key_columns,
                     command=(
                         f"REINDEX INDEX CONCURRENTLY "
                         f"{_qualified(index.schema_name, index.index_name)};"
@@ -612,8 +624,8 @@ def collect_monitor(client: DbClient, limit: int = 500, max_scans: int | None = 
     }
 
     duplicates = _map_duplicates(_rows(client, "duplicates", (bound,)), columns_by_index)
-    redundant = _map_redundant(_rows(client, "redundant", (bound,)))
-    invalid = _map_invalid(_rows(client, "invalid", (bound,)))
+    redundant = _map_redundant(_rows(client, "redundant", (bound,)), columns_by_index)
+    invalid = _map_invalid(_rows(client, "invalid", (bound,)), columns_by_index)
     missing = _map_missing(_rows(client, "missing", (bound,)))
 
     unused = [i for i in indexes if i.potentially_unused]

@@ -154,6 +154,7 @@
         "total": "Toplam",
         "tableSize": "Tablo",
         "indexSize": "İndeks",
+        "columns": "Kolonlar",
         "live": "Canlı",
         "dead": "Ölü",
         "deadPercent": "Ölü %",

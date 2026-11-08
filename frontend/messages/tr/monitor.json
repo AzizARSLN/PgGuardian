@@ -187,6 +187,7 @@
     },
     "indexes": {
       "index": "İndeks",
+      "columns": "Kolonlar",
       "size": "Boyut",
       "scans": "Scan",
       "tuples": "Tuple",

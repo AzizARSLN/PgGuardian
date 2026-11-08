@@ -34,7 +34,15 @@ pgBadger v12.4
 <table><tbody><tr><td>Nov 02</td><td>09</td><td>7,000</td><td>4h</td><td>2s</td></tr></tbody></table>
 <div id="x-user-involved"><pre>[ <b>User:</b> app - <b>Total duration:</b> 5h0m0s - <b>Times executed:</b> 7,499 ]</pre></div>
 <div id="x-app-involved"><pre>[ <b>Application:</b> HbysTestApp01 - <b>Total duration:</b> 5h0m0s - <b>Times executed:</b> 7,499 ]</pre></div>
-<div id="time-consuming-queries-examples-rank-1" class="collapse"><div id="query-e-1-1" class="sql">select * from hasta_hizmet where ad = '{SECRET_NAME}'</div></div>
+<div id="time-consuming-queries-examples-rank-1" class="collapse"><div id="query-e-1-1" class="sql">select * from hasta_hizmet where ad = '{SECRET_NAME}'</div>
+<pre><b>Date:</b> 2026-11-02 09:12:00
+<b>Duration:</b> 2s400ms
+<b>Database:</b> app
+<b>User:</b> app
+<b>Remote:</b> 10.0.0.5
+<b>Application:</b> HbysTestApp01
+<b>Bind query:</b> yes
+</pre></div>
 </td></tr></tbody></table></div>
 <div class="analysis-item row" id="slowest-individual-queries"><table><tbody>
 <tr><td>1</td><td>1h0m0s</td><td id="slowest-individual-queries-examples-rank-1">
@@ -56,12 +64,20 @@ pgBadger v12.4
 </body></html>"""
 
 
-def test_examples_and_literals_never_get_out() -> None:
+def test_masked_statements_stay_masked_and_examples_keep_their_values() -> None:
     parsed = parse_report(REPORT)
-    assert SECRET_NAME not in str(parsed)
-    assert "12345678901" not in str(parsed)
+    # Normalized statements and everything outside the Examples blocks stay masked.
+    assert "12345678901" not in parsed["slowest_single"][0]["sql"]
     assert parsed["slowest_single"][0]["sql"] == "update hasta set ad = ? where id = ?"
     assert parsed["slowest_single"][0]["app"] == "pg_dump"
+    assert parsed["time_consuming"][0]["sql"] == (
+        "select * from hasta_hizmet t1 where t1.hasta_id = ? and t1.tarih > ?;"
+    )
+    # The heavy-query Examples are kept verbatim so the reviewer sees the real run.
+    example = parsed["time_consuming"][0]["examples"][0]
+    assert example["sql"] == f"select * from hasta_hizmet where ad = '{SECRET_NAME}'"
+    assert example["database"] == "app" and example["app"] == "HbysTestApp01"
+    assert example["host"] == "10.0.0.5" and example["ms"] == 2400 and example["bind"] == "yes"
     top = parsed["time_consuming"][0]
     assert top["calls"] == 7499 and top["total_ms"] == 5 * 3_600_000
     assert top["apps"][0]["name"] == "HbysTestApp01"

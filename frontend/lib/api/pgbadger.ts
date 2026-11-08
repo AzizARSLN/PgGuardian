@@ -50,6 +50,59 @@ export interface ReportSummary {
   load: { kind: string; share: number; duration: string; count: number; apps: string[] }[];
 }
 
+export interface QueryIndex {
+  table: string;
+  columns: string[];
+  status: string;
+  status_text: string;
+  schema?: string | null;
+  rows?: number | null;
+  ddl: string | null;
+}
+
+export interface QueryHour {
+  hour: string;
+  count: number;
+  ms: number;
+}
+
+/** One real, fully parameterised execution of a heavy statement. */
+export interface QueryExample {
+  sql: string;
+  date: string;
+  ms: number;
+  database: string;
+  user: string;
+  host: string;
+  app: string;
+  bind: string;
+}
+
+/** One heavy statement with every number kept, for the Queries view. */
+export interface QueryDetail {
+  id: string;
+  rank: number;
+  severity: Severity;
+  sql: string;
+  examples: QueryExample[];
+  tables: string[];
+  share: number;
+  total_ms: number;
+  calls: number;
+  min_ms: number;
+  avg_ms: number;
+  max_ms: number;
+  peak: string | null;
+  hours: QueryHour[];
+  apps: string[];
+  users: string[];
+  temp_bytes: number;
+  temp_count: number;
+  traits: { code: string; label: string }[];
+  sources: string[];
+  indexes: QueryIndex[];
+}
+
 export interface ReportDetail {
   id: string;
   filename: string;
@@ -62,6 +115,7 @@ export interface ReportDetail {
   analyzed: boolean;
   summary: ReportSummary | null;
   findings: Finding[];
+  queries: QueryDetail[];
   totals: Record<Role, { total: number; done: number }>;
   activity: { at: string; actor: string | null; action: string; detail: string | null }[];
 }
@@ -72,20 +126,22 @@ const LONG = { timeout: 5 * 60 * 1000 };
 
 export const pgbadgerApi = {
   list: () => api.get<ReportListItem[]>(BASE),
-  detail: (id: string, lang: string) => api.get<ReportDetail>(`${BASE}/${id}?lang=${lang}`),
+  detail: (id: string, lang: string) =>
+    api.get<ReportDetail>(`${BASE}/${id}`, { params: { lang } }),
   upload: (file: File, options?: CallOptions) => {
     const form = new FormData();
     form.append("file", file);
     return api.post<{ id: string }>(BASE, form, { ...LONG, ...options });
   },
   analyze: (id: string, lang: string, options?: CallOptions) =>
-    api.post<ReportDetail>(`${BASE}/${id}/analyze?lang=${lang}`, undefined, {
+    api.post<ReportDetail>(`${BASE}/${id}/analyze`, undefined, {
       ...LONG,
       ...options,
+      params: { lang },
     }),
   setTask: (id: string, taskId: string, status: TaskStatus) =>
     api.put<unknown>(`${BASE}/${id}/tasks/${taskId}`, { status }),
   remove: (id: string) => api.delete<unknown>(`${BASE}/${id}`),
   exportText: (id: string, section: ExportSection, format: "html" | "md", lang: string) =>
-    api.get<string>(`${BASE}/${id}/export?section=${section}&format=${format}&lang=${lang}`),
+    api.get<string>(`${BASE}/${id}/export`, { params: { section, format, lang } }),
 };

@@ -91,6 +91,7 @@ export const IndexInfoSchema = z.object({
   index_scans: z.number().int().default(0),
   tuples_read: z.number().int().default(0),
   tuples_fetched: z.number().int().default(0),
+  key_columns: z.array(z.string()).default([]),
   potentially_unused: z.boolean().default(false),
   reason: z.string().nullable().optional(),
 });

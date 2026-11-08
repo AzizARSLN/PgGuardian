@@ -10,6 +10,7 @@ import {
   FileSearch,
   Gauge,
   GitBranch,
+  KeyRound,
   LayoutDashboard,
   Layers,
   ListFilter,
@@ -79,6 +80,7 @@ export const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
     key: "system",
     items: [
       { href: "/report", key: "report", icon: FileBarChart2 },
+      { href: "/license", key: "license", icon: KeyRound },
       { href: "/settings", key: "settings", icon: Settings },
     ],
   },

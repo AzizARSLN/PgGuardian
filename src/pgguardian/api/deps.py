@@ -14,6 +14,7 @@ import jwt as pyjwt
 from fastapi import Depends, Header, HTTPException, Request
 
 from pgguardian.api.settings import ApiSettings
+from pgguardian.central.store import CentralStore, get_central_store
 from pgguardian.cli import GlobalOptions, build_settings
 from pgguardian.config.settings import PgGuardianSettings
 from pgguardian.database.connection import ConnectionError, DbClient
@@ -26,6 +27,18 @@ _JWT_CACHE: dict[str, str] = {}
 def get_api_settings() -> ApiSettings:
     """Build API settings from the environment (per request, no globals)."""
     return ApiSettings()
+
+
+def get_central_store_dep(
+    settings: ApiSettings = Depends(get_api_settings),
+) -> CentralStore:
+    """Users/sessions/operation-log store for the configured backend.
+
+    PostgreSQL for the web deployment (default), SQLite for the self-contained
+    desktop build. Profile selection is ignored — this is never the diagnosed
+    server, only pgGuardian's own metadata.
+    """
+    return get_central_store(settings)
 
 
 def get_jwt_settings(settings: ApiSettings = Depends(get_api_settings)) -> str:
@@ -237,64 +250,6 @@ def resolve_client(
     # Preserve API-level timeouts/thresholds on top of the profile base.
     resolved.connect_timeout = settings.connect_timeout
     resolved.query_timeout_ms = settings.query_timeout_ms
-    return DbClient(resolved, cli_connection_string=cli_conn_str_override)
-
-
-def resolve_auth_client(
-    settings: ApiSettings = Depends(get_api_settings),
-) -> DbClient:
-    """Build a DbClient exclusively for auth/session endpoints.
-
-    The user/session tables (``pgguardian_users``, ``pgguardian_sessions``)
-    live on the **default/ambient** database (``PGGUARDIAN_DATABASE``), never
-    on a user-selected profile's database. Profile headers/query/store must
-    therefore be **completely ignored** for login / logout / refresh /
-    change_password flows, otherwise selecting a profile that points at
-    ``template1`` (or any other DB) results in "Invalid credentials" even
-    when the password is correct (the users table simply isn't there).
-
-    To guarantee the correct DB is always used, we bypass ``build_settings``
-    entirely (which can apply saved-profile defaults) and force the ambient
-    ``PGGUARDIAN_*`` env values (already loaded into ``settings`` via the
-    normal Pydantic env parser) onto both the ``PgGuardianSettings`` object
-    and the low-level ``cli_connection_string`` override.
-    """
-    # 1. Use ApiSettings (pure env-driven) as the settings base — never
-    #    consult ProfileStore here, even for the "default" profile.
-    host = settings.host
-    port = settings.port
-    database = settings.database
-    username = settings.username
-    password = settings.password
-    # 2. Stamp the final values on a fresh settings object so
-    #    `resolve_connection_string` cannot later pick up stale / profile-
-    #    derived values from any other resolution path.
-    from pgguardian.config.settings import get_settings
-    resolved = get_settings(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        connection_string=None,  # force rebuild from the explicit fields above
-        active_profile=None,  # auth never runs under a user profile context
-    )
-    # 3. Forward the API-level timeouts/thresholds (they are not stored on
-    #    the core PgGuardianSettings model but are known in this layer).
-    resolved.connect_timeout = settings.connect_timeout
-    resolved.query_timeout_ms = settings.query_timeout_ms
-    # 4. Force the exact libpq connection string so neither ambient PG*
-    #    env variables nor psycopg defaults can silently redirect us.
-    parts = [
-        f"host={host}",
-        f"port={port}",
-        f"dbname={database}",
-        f"user={username}",
-    ]
-    if password:
-        parts.append(f"password={password}")
-    parts.append(f"connect_timeout={resolved.connect_timeout}")
-    cli_conn_str_override = " ".join(parts)
     return DbClient(resolved, cli_connection_string=cli_conn_str_override)
 
 

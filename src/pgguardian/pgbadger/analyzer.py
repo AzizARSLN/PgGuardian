@@ -22,6 +22,7 @@ QUERY_FINDING_LIMIT = 15
 MIN_QUERY_SHARE = 0.5
 WIDE_SELECT_COLUMNS = 25
 MANY_JOINS = 6
+MAX_EXAMPLES = 12
 HOUR_MS = 3_600_000
 
 # First match wins. Unlisted ERROR and FATAL lines end up in OTHER_ERRORS.
@@ -236,6 +237,16 @@ def _index_candidates(tree: exp.Expression, tables: list[exp.Table]) -> list[dic
     return candidates
 
 
+def _merge_examples(item: dict[str, Any], row: dict[str, Any]) -> None:
+    """Keep the distinct real statements seen for one fingerprint across sources."""
+    examples = item.setdefault("examples", [])
+    for example in row.get("examples", []):
+        if len(examples) >= MAX_EXAMPLES:
+            return
+        if example not in examples:
+            examples.append(example)
+
+
 def _collect_statements(parsed: dict[str, Any]) -> list[dict[str, Any]]:
     """time consuming + frequent + slow + temp lists merged by statement."""
     merged: dict[str, dict[str, Any]] = {}
@@ -245,6 +256,7 @@ def _collect_statements(parsed: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             item = merged.setdefault(_fingerprint(row["sql"]), {**row, "sources": []})
             item["sources"].append(source)
+            _merge_examples(item, row)
     for row in parsed.get("temp_most", []):
         if row.get("sql"):
             item = merged.setdefault(
@@ -253,22 +265,28 @@ def _collect_statements(parsed: dict[str, Any]) -> list[dict[str, Any]]:
             )
             item["temp_bytes"] = row.get("total_bytes", 0)
             item["temp_count"] = row.get("count", 0)
+            _merge_examples(item, row)
     return sorted(merged.values(), key=lambda s: s.get("total_ms", 0), reverse=True)
 
 
-def _query_findings(
+def _query_details(
     parsed: dict[str, Any], lookup: Callable[[str], dict[str, Any] | None] | None
 ) -> list[dict[str, Any]]:
+    """Heavy statements with every number kept, for the Queries view.
+
+    This is the same selection as the QUERY_LOAD findings, but nothing is turned
+    into prose: the screen formats the numbers so it can rank, chart and compare.
+    """
     total = parsed.get("total_query_ms") or 1
-    findings = []
+    details = []
     for statement in _collect_statements(parsed):
         apps = statement.get("apps") or []
         names = [a["name"] for a in apps]
         if names and all(classify_app(n) == "backup" for n in names):
-            continue  # Reported together as BACKUP_WINDOW.
+            continue  # Reported together as BACKUP_LOAD.
         share = 100 * statement.get("total_ms", 0) / total
         has_temp = statement.get("temp_bytes", 0) > 0
-        if (share < MIN_QUERY_SHARE and not has_temp) or len(findings) >= QUERY_FINDING_LIMIT:
+        if (share < MIN_QUERY_SHARE and not has_temp) or len(details) >= QUERY_FINDING_LIMIT:
             continue
         shape = statement_traits(statement["sql"])
         traits = list(shape["traits"])
@@ -280,30 +298,62 @@ def _query_findings(
         if names and any(classify_app(n) == "job" for n in names):
             traits.append("SCHEDULED_JOB")
         severity = "high" if share >= 5 else "medium" if share >= 1 or has_temp else "low"
-        index = _verified_indexes(shape["index"], lookup)
-        tables = shape["tables"]
-        findings.append(
+        hours = statement.get("hours") or []
+        details.append(
             {
                 "id": f"q_{_sql_id(statement['sql'])}",
-                "code": "QUERY_LOAD",
+                "rank": len(details) + 1,
                 "severity": severity,
+                "sql": statement["sql"],
+                "examples": statement.get("examples", []),
+                "tables": shape["tables"],
+                "share": round(share, 1),
+                "total_ms": statement.get("total_ms", 0),
+                "calls": calls,
+                "min_ms": statement.get("min_ms", 0),
+                "avg_ms": statement.get("avg_ms", 0),
+                "max_ms": statement.get("max_ms", 0),
+                "peak": _peak_hour(hours),
+                "hours": hours,
+                "apps": names,
+                "users": [u["name"] for u in (statement.get("users") or [])],
+                "temp_bytes": statement.get("temp_bytes", 0),
+                "temp_count": statement.get("temp_count", 0),
+                "traits": traits,
+                "sources": statement.get("sources", []),
+                "indexes": _verified_indexes(shape["index"], lookup),
+            }
+        )
+    return details
+
+
+def _query_findings(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    findings = []
+    for row in details:
+        tables = row["tables"]
+        has_temp = row["temp_bytes"] > 0
+        findings.append(
+            {
+                "id": row["id"],
+                "code": "QUERY_LOAD",
+                "severity": row["severity"],
                 "category": "query",
-                "sort": -share,
+                "sort": -row["share"],
                 "values": {
                     "tables": ", ".join(tables[:4]) + (" ..." if len(tables) > 4 else "") or "-",
-                    "share": f"{share:.1f}",
-                    "total": format_duration(statement.get("total_ms", 0)),
-                    "calls": f"{calls:,}",
-                    "avg": format_duration(statement.get("avg_ms", 0)),
-                    "max": format_duration(statement.get("max_ms", 0)),
-                    "peak": _peak_hour(statement.get("hours") or []) or "-",
-                    "apps": ", ".join(names[:5]) or "-",
-                    "users": ", ".join(u["name"] for u in (statement.get("users") or [])[:3]) or "-",
-                    "temp": format_size(statement.get("temp_bytes", 0)) if has_temp else "",
+                    "share": f"{row['share']:.1f}",
+                    "total": format_duration(row["total_ms"]),
+                    "calls": f"{row['calls']:,}",
+                    "avg": format_duration(row["avg_ms"]),
+                    "max": format_duration(row["max_ms"]),
+                    "peak": row["peak"] or "-",
+                    "apps": ", ".join(row["apps"][:5]) or "-",
+                    "users": ", ".join(row["users"][:3]) or "-",
+                    "temp": format_size(row["temp_bytes"]) if has_temp else "",
                 },
-                "traits": traits,
-                "sql": statement["sql"],
-                "index": index,
+                "traits": row["traits"],
+                "sql": row["sql"],
+                "index": row["indexes"],
             }
         )
     return findings
@@ -600,8 +650,9 @@ def analyse(
 ) -> dict[str, Any]:
     """Findings sorted by urgency, plus the summary numbers of the report."""
     breakdown = _load_breakdown(parsed)
+    details = _query_details(parsed, lookup)
     findings = (
-        _global_findings(parsed, breakdown) + _query_findings(parsed, lookup) + _event_findings(parsed)
+        _global_findings(parsed, breakdown) + _query_findings(details) + _event_findings(parsed)
     )
     findings.sort(key=lambda f: (SEVERITY_ORDER[f["severity"]], f.get("sort", 0)))
     for finding in findings:
@@ -628,6 +679,7 @@ def analyse(
             "lock_wait": format_duration(sum(lock["ms"] for lock in parsed.get("locks", []))),
         },
         "findings": findings,
+        "queries": details,
     }
 
 

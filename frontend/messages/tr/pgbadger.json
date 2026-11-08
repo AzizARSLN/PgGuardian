@@ -2,7 +2,7 @@
   "pgbadger": {
     "title": "pgBadger Analizi",
     "subtitle": "Sahadan gelen pgBadger raporunu yükleyin, sorunun nerede olduğunu ve her ekibin ne yapacağını görün.",
-    "privacy": "Yüklenen HTML saklanmaz. Örnek sorgular okunmaz, SQL ve hata mesajlarındaki değerler maskelenir; yalnızca bu sunucuda tutulur ve dışarı gönderilmez.",
+    "privacy": "Yüklenen HTML saklanmaz. SQL ve hata mesajlarındaki değerler maskelenir; yalnızca ağır sorguların örnekleri gerçek değerleriyle gösterilir. Veriler bu sunucuda tutulur ve dışarı gönderilmez.",
     "upload": "Rapor yükle",
     "uploading": "Yükleniyor...",
     "uploaded": "Rapor yüklendi",
@@ -30,11 +30,63 @@
     "back": "Raporlar",
     "tabs": {
       "summary": "Özet",
+      "software": "Yazılım",
+      "db": "DB",
+      "queries": "Sorgular",
       "findings": "Sorunlar",
       "backend": "Backend",
       "ui": "UI",
-      "db": "DBA",
       "activity": "Geçmiş"
+    },
+    "team": {
+      "software": "Yazılım ekibi: servis, sorgu, transaction ve ekran akışı tarafında yapılacaklar.",
+      "db": "Veritabanı ekibi: sunucu, index, bakım ve ayarlar tarafında yapılacaklar."
+    },
+    "queries": {
+      "heading": "Süresi uzun sorgular",
+      "intro": "Bu dönemde en çok zaman harcayan sorgular. \"Çalışma\" sorgunun kaç kez tekrarlandığını gösterir; ortalama ve en uzun süreler tek çalışmayı anlatır.",
+      "heavyCount": "Ağır sorgu",
+      "totalRuns": "Toplam çalışma",
+      "topShare": "En pahalı sorgunun payı",
+      "totalCost": "Bu sorguların toplam süresi",
+      "rank": "Sıra",
+      "share": "Pay",
+      "total": "Toplam süre",
+      "runs": "Çalışma",
+      "runsValue": "{count} çalışma",
+      "avg": "Ortalama",
+      "min": "En kısa",
+      "max": "En uzun",
+      "peak": "En yoğun saat",
+      "when": "Saatlik dağılım",
+      "tables": "Tablolar",
+      "apps": "Uygulamalar",
+      "users": "Kullanıcılar",
+      "temp": "Geçici dosya",
+      "sql": "SQL",
+      "indexes": "Index adayları",
+      "empty": "Eşiğin üzerinde ağır sorgu bulunamadı.",
+      "runsHint": "Kaç kez çalıştı",
+      "examples": "Örnek sorgular ({count})",
+      "examplesHint": "pgBadger'ın kaydettiği gerçek çalışmalar; değerler maskelenmemiştir, kişisel veri içerebilir.",
+      "exampleN": "Örnek {index}",
+      "date": "Tarih",
+      "duration": "Süre",
+      "database": "Veritabanı",
+      "user": "Kullanıcı",
+      "host": "Kaynak",
+      "app": "Uygulama"
+    },
+    "viewer": {
+      "search": "Ara",
+      "download": "İndir",
+      "fullscreen": "Tam ekran"
+    },
+    "sources": {
+      "time_consuming": "En çok zaman",
+      "most_frequent": "En sık",
+      "normalized_slowest": "En yavaş",
+      "temp_most": "Geçici dosya"
     },
     "summary": {
       "queries": "Sorgu",

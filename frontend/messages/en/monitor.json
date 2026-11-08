@@ -187,6 +187,7 @@
     },
     "indexes": {
       "index": "Index",
+      "columns": "Columns",
       "size": "Size",
       "scans": "Scans",
       "tuples": "Tuples",

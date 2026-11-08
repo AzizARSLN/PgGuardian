@@ -235,9 +235,11 @@ export async function apiFetch<T = unknown>(
   } = options;
 
   const queryParams = opId ? { ...(params ?? {}), op_id: opId } : params;
-  const url = `${API_BASE_URL}${endpoint}${
-    queryParams ? buildQueryString(queryParams) : ""
-  }`;
+  const query = queryParams ? buildQueryString(queryParams) : "";
+  // Some endpoints already carry a query string (e.g. `/x?lang=en`). Merge
+  // with `&` so the params are not appended as a second, broken `?`.
+  const separator = query && endpoint.includes("?") ? "&" : "";
+  const url = `${API_BASE_URL}${endpoint}${separator}${query}`;
 
   const headers: Record<string, string> = {
     Accept: "application/json",

@@ -27,13 +27,21 @@ export const metadata: Metadata = {
   ],
 };
 
+// The desktop build is a static export, where `cookies()` is unavailable.
+// It falls back to the default locale and lets the client pick up any stored
+// preference (the web build keeps the server-side cookie read).
+const DESKTOP_BUILD = process.env.PGGUARDIAN_DESKTOP === "1";
+
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies();
-  const locale: Locale = cookieStore.get("pgg_locale")?.value === "en" ? "en" : "tr";
+  let locale: Locale = "tr";
+  if (!DESKTOP_BUILD) {
+    const cookieStore = await cookies();
+    locale = cookieStore.get("pgg_locale")?.value === "en" ? "en" : "tr";
+  }
 
   return (
     <html lang={locale} suppressHydrationWarning>

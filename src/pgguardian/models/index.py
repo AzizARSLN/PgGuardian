@@ -23,6 +23,7 @@ class IndexInfo(BaseModel):
     index_scans: int = 0
     tuples_read: int = 0
     tuples_fetched: int = 0
+    key_columns: list[str] = Field(default_factory=list)
     potentially_unused: bool = False
     reason: str | None = None
 
@@ -96,6 +97,7 @@ class RedundantIndex(BaseModel):
     schema_name: str | None = None
     table_name: str | None = None
     index_name: str
+    columns: list[str] = Field(default_factory=list)
     covered_by: str
     size_bytes: int = 0
 
@@ -129,6 +131,7 @@ class IndexSuggestion(BaseModel):
     schema_name: str | None = None
     table_name: str | None = None
     index_name: str | None = None
+    columns: list[str] = Field(default_factory=list)
     command: str | None = None
     confidence: str = "medium"  # low | medium | high
     estimated_reclaim_bytes: int = 0

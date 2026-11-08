@@ -97,6 +97,17 @@ CREATE INDEX IF NOT EXISTS idx_pgguardian_operation_log_action
 CREATE INDEX IF NOT EXISTS idx_pgguardian_operation_log_status
     ON pgguardian_operation_log (status);
 
+-- Offline license: a single row (id = 1) holds the activated Ed25519-signed key.
+CREATE TABLE IF NOT EXISTS pgguardian_license (
+    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    license_key TEXT NOT NULL,
+    email TEXT,
+    plan TEXT,
+    issued_at TEXT,
+    expires_at TEXT,
+    activated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pgguardian') THEN
@@ -109,6 +120,7 @@ GRANT USAGE ON SCHEMA public TO pgguardian;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_users TO pgguardian;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_sessions TO pgguardian;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_operation_log TO pgguardian;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pgguardian_license TO pgguardian;
 GRANT USAGE, SELECT ON SEQUENCE pgguardian_users_id_seq TO pgguardian;
 GRANT USAGE, SELECT ON SEQUENCE pgguardian_sessions_id_seq TO pgguardian;
 GRANT USAGE, SELECT ON SEQUENCE pgguardian_operation_log_id_seq TO pgguardian;

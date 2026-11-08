@@ -107,7 +107,17 @@ const BACKEND_ERRORS: Record<string, string> = {
   "Account disabled.": "login.errors.disabled",
 };
 
+// `useSearchParams` requires a Suspense boundary when the page is prerendered
+// (the desktop static export renders it at build time).
 export default function LoginPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <LoginPageContent />
+    </React.Suspense>
+  );
+}
+
+function LoginPageContent() {
   const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();

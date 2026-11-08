@@ -5,6 +5,17 @@ import { api, setApiTokenInMemory, clearApiTokenInMemory } from "@/lib/api/clien
 import { tGlobal } from "@/lib/i18n";
 import { useProfileStore } from "@/store/useProfileStore";
 
+// The web build talks to the Next.js route handler at /api/auth, which proxies
+// to the backend and owns the HttpOnly refresh cookie. The desktop build has no
+// Next.js server: the bundled FastAPI sidecar serves both the UI and the API on
+// one origin, so it calls the auth endpoints directly.
+const IS_DESKTOP = process.env.NEXT_PUBLIC_PGGUARDIAN_DESKTOP === "1";
+const AUTH_LOGIN_URL = IS_DESKTOP ? "/api/v1/auth/login" : "/api/auth";
+const AUTH_REFRESH_URL = IS_DESKTOP ? "/api/v1/auth/refresh" : "/api/auth";
+const AUTH_LOGOUT_URL = IS_DESKTOP ? "/api/v1/auth/logout" : "/api/auth";
+const AUTH_REFRESH_METHOD = IS_DESKTOP ? "POST" : "PATCH";
+const AUTH_LOGOUT_METHOD = IS_DESKTOP ? "POST" : "DELETE";
+
 export type UserRole = "Admin" | "DBA" | "Viewer";
 
 export interface User {
@@ -56,7 +67,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async ({ email, password }) => {
     set({ isLoading: true });
     try {
-      const res = await fetch("/api/auth", {
+      const res = await fetch(AUTH_LOGIN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -93,8 +104,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshAccessToken: () => {
     refreshInFlight ??= (async () => {
     try {
-      const res = await fetch("/api/auth", {
-        method: "PATCH",
+      const res = await fetch(AUTH_REFRESH_URL, {
+        method: AUTH_REFRESH_METHOD,
         headers: { "Content-Type": "application/json" },
         credentials: "include",
       });
@@ -125,8 +136,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      await fetch("/api/auth", {
-        method: "DELETE",
+      await fetch(AUTH_LOGOUT_URL, {
+        method: AUTH_LOGOUT_METHOD,
         credentials: "include",
       });
     } catch {

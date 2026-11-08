@@ -1,8 +1,9 @@
 """Authentication router: login, logout, /me, refresh.
 
-Endpoints use direct psycopg3 access to pgguardian_users / pgguardian_sessions
-(schema defined in docker/init.sql). Tokens are HS256 JWT; refresh token is
-stored as an HttpOnly cookie.
+Users/sessions are read and written through pgGuardian's central metadata store
+(``pgguardian.central.store``): PostgreSQL for the web deployment, a local
+SQLite file for the self-contained desktop build. Tokens are HS256 JWT; the
+refresh token is stored as an HttpOnly cookie.
 """
 
 from __future__ import annotations
@@ -22,8 +23,7 @@ from pgguardian.api.deps import (
     verify_jwt,
 )
 from pgguardian.api.settings import ApiSettings
-from pgguardian.config.settings import PgGuardianSettings, get_settings
-from pgguardian.database.connection import DbClient
+from pgguardian.central.store import get_central_store
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -73,41 +73,6 @@ def _jti_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _auth_db_client(settings: ApiSettings) -> DbClient:
-    """Return a DbClient for AUTH tables only.
-
-    Users/sessions tables live in the central PgGuardian database configured
-    via PGGUARDIAN_* env vars. We MUST NOT look at X-Profile-Name, profile
-    store or active profile for auth because profile DBs don't have these
-    tables. We also build connection string manually to skip any cached
-    profile-specific connection string.
-    """
-    host = settings.host
-    port = settings.port
-    database = settings.database
-    username = settings.username
-    password = settings.password
-    resolved: PgGuardianSettings = get_settings(
-        host=host,
-        port=port,
-        database=database,
-        username=username,
-        password=password,
-        connection_string=None,
-        active_profile=None,
-    )
-    parts = [
-        f"host={host}",
-        f"port={port}",
-        f"dbname={database}",
-        f"user={username}",
-    ]
-    if password:
-        parts.append(f"password={password}")
-    parts.append(f"connect_timeout={resolved.connect_timeout}")
-    return DbClient(resolved, cli_connection_string=" ".join(parts))
-
-
 def _mint_tokens(
     user_id: int,
     email: str,
@@ -152,15 +117,11 @@ def login(
     secret: str = Depends(get_jwt_settings),
 ) -> LoginResponse:
     """Issue access + refresh tokens for valid email/password credentials."""
-    client = _auth_db_client(settings)
-    row = client.fetch_one(
-        "SELECT id, email, full_name, password_hash, app_role, is_active, password_must_change "
-        "FROM pgguardian_users WHERE lower(email) = %s",
-        (body.email.lower().strip(),),
-    )
+    store = get_central_store(settings)
+    row = store.find_user_by_email(body.email)
     if row is None:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
-    if not _verify(body.password, row["password_hash"]):
+    if not _verify(body.password, str(row["password_hash"])):
         raise HTTPException(status_code=401, detail="Invalid credentials.")
     if not row["is_active"]:
         raise HTTPException(status_code=401, detail="Account disabled.")
@@ -175,22 +136,14 @@ def login(
         secret=secret,
     )
 
-    expires_at = datetime.now(UTC) + REFRESH_TTL
-    client.execute_raw(
-        "INSERT INTO pgguardian_sessions (user_id, refresh_hash, user_agent, ip_addr, expires_at) "
-        "VALUES (%s, %s, %s, %s::inet, %s)",
-        (
-            user_id,
-            _jti_hash(refresh),
-            request.headers.get("user-agent"),
-            request.client.host if request.client else None,
-            expires_at,
-        ),
+    store.create_session(
+        user_id=user_id,
+        refresh_hash=_jti_hash(refresh),
+        user_agent=request.headers.get("user-agent"),
+        ip_addr=request.client.host if request.client else None,
+        expires_at=datetime.now(UTC) + REFRESH_TTL,
     )
-    client.execute_raw(
-        "UPDATE pgguardian_users SET last_login = now() WHERE id = %s",
-        (user_id,),
-    )
+    store.touch_last_login(user_id)
 
     response.set_cookie(
         key=REFRESH_COOKIE,
@@ -221,26 +174,21 @@ def logout(
     refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
 ) -> None:
     """Invalidate the stored refresh session and clear the cookie."""
-    client = _auth_db_client(settings)
+    store = get_central_store(settings)
     if refresh:
-        client.execute_raw(
-            "DELETE FROM pgguardian_sessions WHERE refresh_hash = %s",
-            (_jti_hash(refresh),),
-        )
+        store.delete_session(_jti_hash(refresh))
     response.delete_cookie(key=REFRESH_COOKIE, httponly=True, samesite="lax")
+
+
 @router.get("/me", response_model=UserPublic)
 def me(
     settings: ApiSettings = Depends(get_api_settings),
     claims: dict[str, Any] = Depends(verify_jwt),
 ) -> UserPublic:
     """Return the authenticated user's public profile."""
-    client = _auth_db_client(settings)
+    store = get_central_store(settings)
     user_id = int(claims["sub"])
-    row = client.fetch_one(
-        "SELECT id, email, full_name, app_role, password_must_change FROM pgguardian_users "
-        "WHERE id = %s AND is_active = TRUE",
-        (user_id,),
-    )
+    row = store.get_active_user(user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="User not found.")
     return UserPublic(
@@ -250,6 +198,8 @@ def me(
         role=str(row["app_role"]),
         password_must_change=bool(row["password_must_change"]),
     )
+
+
 @router.post("/refresh", response_model=LoginResponse)
 def refresh(
     response: Response,
@@ -262,7 +212,7 @@ def refresh(
     The refresh token itself is rotated: the old session hash is deleted and a
     new HttpOnly cookie is issued.
     """
-    client = _auth_db_client(settings)
+    store = get_central_store(settings)
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Missing refresh cookie.")
     try:
@@ -278,12 +228,7 @@ def refresh(
         raise HTTPException(status_code=401, detail="Invalid refresh.") from err
     if decoded.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Wrong token type.")
-    session = client.fetch_one(
-        "SELECT s.id, s.user_id, u.email, u.full_name, u.app_role, u.is_active, "
-        "u.password_must_change FROM pgguardian_sessions s JOIN pgguardian_users u "
-        "ON u.id = s.user_id WHERE s.refresh_hash = %s AND s.expires_at > now()",
-        (_jti_hash(refresh_token),),
-    )
+    session = store.find_session(_jti_hash(refresh_token))
     if session is None:
         raise HTTPException(status_code=401, detail="Session revoked.")
     if not session["is_active"]:
@@ -291,11 +236,7 @@ def refresh(
     user_id = int(session["user_id"])
     # Keep the old token briefly: a reload can abort this response after the
     # rotation, and the browser would be left holding a dead cookie.
-    client.execute_raw(
-        "UPDATE pgguardian_sessions SET expires_at = LEAST(expires_at, now() + %s * interval '1 second')"
-        " WHERE id = %s",
-        (REFRESH_GRACE_SECONDS, int(session["id"])),
-    )
+    store.expire_session_soon(int(session["id"]), REFRESH_GRACE_SECONDS)
     access, new_refresh, expires_in = _mint_tokens(
         user_id=user_id,
         email=str(session["email"]),
@@ -304,17 +245,12 @@ def refresh(
         password_must_change=bool(session["password_must_change"]),
         secret=secret,
     )
-    expires_at = datetime.now(UTC) + REFRESH_TTL
-    client.execute_raw(
-        "INSERT INTO pgguardian_sessions (user_id, refresh_hash, user_agent, ip_addr, expires_at) "
-        "VALUES (%s, %s, %s, %s::inet, %s)",
-        (
-            user_id,
-            _jti_hash(new_refresh),
-            request.headers.get("user-agent"),
-            request.client.host if request.client else None,
-            expires_at,
-        ),
+    store.create_session(
+        user_id=user_id,
+        refresh_hash=_jti_hash(new_refresh),
+        user_agent=request.headers.get("user-agent"),
+        ip_addr=request.client.host if request.client else None,
+        expires_at=datetime.now(UTC) + REFRESH_TTL,
     )
     response.set_cookie(
         key=REFRESH_COOKIE,
@@ -336,6 +272,8 @@ def refresh(
             password_must_change=bool(session["password_must_change"]),
         ),
     )
+
+
 @router.patch("/me/change_password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     body: ChangePasswordRequest,
@@ -343,23 +281,17 @@ def change_password(
     claims: dict[str, Any] = Depends(verify_jwt),
 ) -> None:
     """Change the authenticated user's own password (any role)."""
-    client = _auth_db_client(settings)
+    store = get_central_store(settings)
     if len(body.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 chars.")
     user_id = int(claims["sub"])
-    row = client.fetch_one(
-        "SELECT password_hash FROM pgguardian_users WHERE id = %s AND is_active = TRUE",
-        (user_id,),
-    )
-    if row is None:
+    current_hash = store.get_password_hash(user_id)
+    if current_hash is None:
         raise HTTPException(status_code=404, detail="User not found.")
-    if not _verify(body.current_password, str(row["password_hash"])):
+    if not _verify(body.current_password, current_hash):
         raise HTTPException(status_code=400, detail="Incorrect current password.")
-    client.execute_raw(
-        "UPDATE pgguardian_users SET password_hash = %s, password_must_change = FALSE WHERE id = %s",
-        (_hash(body.new_password), user_id),
-    )
-    client.execute_raw("DELETE FROM pgguardian_sessions WHERE user_id = %s", (user_id,))
+    store.set_password(user_id, _hash(body.new_password), must_change=False)
+    store.delete_user_sessions(user_id)
 
 
 def bootstrap_admin_if_needed(settings: ApiSettings | None = None) -> None:
@@ -373,23 +305,22 @@ def bootstrap_admin_if_needed(settings: ApiSettings | None = None) -> None:
     if settings is None:
         settings = ApiSettings()
     try:
-        client = _auth_db_client(settings)
+        store = get_central_store(settings)
+        if store.count_users() > 0:
+            return
     except Exception:
-        return
-    try:
-        count_row = client.fetch_one("SELECT count(*) AS c FROM pgguardian_users")
-    except Exception:
-        return
-    if not count_row or int(count_row.get("c", 0)) > 0:
         return
     password = settings.bootstrap_password or os.environ.get(
         "PGGUARDIAN_BOOTSTRAP_PASSWORD", "admin123"
     )
     try:
-        client.execute_raw(
-            "INSERT INTO pgguardian_users (email, full_name, password_hash, app_role, "
-            "password_must_change) VALUES (%s, %s, %s, %s, TRUE)",
-            ("Admin@local", "Bootstrap Admin", _hash(password), "Admin"),
+        store.create_user(
+            email="Admin@local",
+            full_name="Bootstrap Admin",
+            password_hash=_hash(password),
+            app_role="Admin",
+            is_active=True,
+            password_must_change=True,
         )
     except Exception:
         return
