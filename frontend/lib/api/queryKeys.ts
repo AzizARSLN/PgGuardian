@@ -79,6 +79,8 @@ export const qk = {
     alerts: (limit?: number) => ["indexes", "alerts", limit] as const,
     history: (profile?: string, database?: string, limit?: number) =>
       ["indexes", "history", profile, database, limit] as const,
+    createProgress: (opId?: string | null) =>
+      ["indexes", "create-progress", opId] as const,
   },
 
   databases: {

@@ -18,6 +18,7 @@ from pgguardian.central.store import CentralStore, get_central_store
 from pgguardian.cli import GlobalOptions, build_settings
 from pgguardian.config.settings import PgGuardianSettings
 from pgguardian.database.connection import ConnectionError, DbClient
+from pgguardian.licensing import resolve_license_state
 from pgguardian.profiles.store import ProfileNotFoundError, ProfileStore
 from pgguardian.utils.security import sanitize_error
 
@@ -39,6 +40,25 @@ def get_central_store_dep(
     server, only pgGuardian's own metadata.
     """
     return get_central_store(settings)
+
+
+def require_license(settings: ApiSettings = Depends(get_api_settings)) -> None:
+    """Block guarded calls when a license is enforced but missing/invalid (403).
+
+    No-op unless ``PGGUARDIAN_LICENSE_ENFORCED=1``. Read-only endpoints are never
+    gated here, so an unlicensed install stays usable in read-only mode.
+    """
+    if not settings.license_enforced:
+        return
+    state = resolve_license_state(get_central_store(settings), settings)
+    if not state.licensed:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "license_required",
+                "message": state.reason or "A valid license is required for this operation.",
+            },
+        )
 
 
 def get_jwt_settings(settings: ApiSettings = Depends(get_api_settings)) -> str:

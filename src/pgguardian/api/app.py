@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse
 
 from pgguardian import __version__
-from pgguardian.api.deps import require_role_OR_open, verify_token_OR_jwt
+from pgguardian.api.deps import require_license, require_role_OR_open, verify_token_OR_jwt
 from pgguardian.api.routers import auth as auth_router
 from pgguardian.api.routers import backups as backups_router
 from pgguardian.api.routers import configops as configops_router
@@ -101,6 +101,9 @@ def create_app() -> FastAPI:
     write_roles = {"Admin", "DBA"}
     viewer_allowed = [Depends(require_role_OR_open(read_roles))]
     writer_allowed = [Depends(require_role_OR_open(write_roles))]
+    # Mutations also need a valid license once enforcement is on; read-only
+    # routers stay reachable so an unlicensed install works in read-only mode.
+    writer_gated = writer_allowed + [Depends(require_license)]
 
     @app.get("/reference", include_in_schema=False)
     def scalar_reference() -> HTMLResponse:
@@ -132,28 +135,28 @@ def create_app() -> FastAPI:
     app.include_router(events_router.router, dependencies=guarded_or_jwt)
     app.include_router(diagnostics_router.router, dependencies=viewer_allowed)
     app.include_router(indexes_router.read_router, dependencies=viewer_allowed)
-    app.include_router(indexes_router.router, dependencies=writer_allowed)
+    app.include_router(indexes_router.router, dependencies=writer_gated)
     app.include_router(statements_router.router, dependencies=viewer_allowed)
     app.include_router(schemas_router.router, dependencies=viewer_allowed)
     app.include_router(databases_router.read_router, dependencies=viewer_allowed)
-    app.include_router(databases_router.router, dependencies=writer_allowed)
+    app.include_router(databases_router.router, dependencies=writer_gated)
     app.include_router(replication_router.router, dependencies=viewer_allowed)
-    app.include_router(snapshots_router.router, dependencies=writer_allowed)
-    app.include_router(backups_router.router, dependencies=writer_allowed)
-    app.include_router(sql_router.router, dependencies=writer_allowed)
+    app.include_router(snapshots_router.router, dependencies=writer_gated)
+    app.include_router(backups_router.router, dependencies=writer_gated)
+    app.include_router(sql_router.router, dependencies=writer_gated)
     app.include_router(pgbadger_router.read_router, dependencies=viewer_allowed)
-    app.include_router(pgbadger_router.router, dependencies=writer_allowed)
+    app.include_router(pgbadger_router.router, dependencies=writer_gated)
     app.include_router(profiles_router.read_router, dependencies=viewer_allowed)
-    app.include_router(profiles_router.router, dependencies=writer_allowed)
-    app.include_router(roles_router.router, dependencies=writer_allowed)
-    app.include_router(querymgmt_router.router, dependencies=writer_allowed)
-    app.include_router(maintenance_ops_router.router, dependencies=writer_allowed)
-    app.include_router(repack_router.router, dependencies=writer_allowed)
-    app.include_router(ops_router.router, dependencies=writer_allowed)
+    app.include_router(profiles_router.router, dependencies=writer_gated)
+    app.include_router(roles_router.router, dependencies=writer_gated)
+    app.include_router(querymgmt_router.router, dependencies=writer_gated)
+    app.include_router(maintenance_ops_router.router, dependencies=writer_gated)
+    app.include_router(repack_router.router, dependencies=writer_gated)
+    app.include_router(ops_router.router, dependencies=writer_gated)
     app.include_router(operation_log_router.router, dependencies=viewer_allowed)
-    app.include_router(toolkit_router.router, dependencies=writer_allowed)
-    app.include_router(configops_router.router, dependencies=writer_allowed)
-    app.include_router(table_io_router.router, dependencies=writer_allowed)
+    app.include_router(toolkit_router.router, dependencies=writer_gated)
+    app.include_router(configops_router.router, dependencies=writer_gated)
+    app.include_router(table_io_router.router, dependencies=writer_gated)
     app.websocket("/ws/events")(events_router.websocket_stream)
 
     if frontend_dir is not None:

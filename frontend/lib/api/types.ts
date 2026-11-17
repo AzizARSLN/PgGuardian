@@ -8,6 +8,8 @@ export interface CallOptions {
   opId?: string;
   signal?: AbortSignal;
   skipToast?: boolean;
+  /** Per-call request timeout override (ms); long DDL needs a larger value. */
+  timeout?: number;
 }
 
 export type Severity = "OK" | "INFO" | "WARNING" | "CRITICAL" | "UNKNOWN";
@@ -248,6 +250,48 @@ export interface IndexMonitorPoint {
   health_score: number;
   critical_alerts: number;
   warning_alerts: number;
+}
+
+/**
+ * Live progress of one running CREATE INDEX / REINDEX operation, from
+ * `pg_stat_progress_create_index`. A concurrent build is finished once
+ * `tuples_done` reaches `tuples_total`.
+ */
+export interface IndexCreateProgress {
+  pid: number;
+  database_name?: string | null;
+  table_name?: string | null;
+  index_name?: string | null;
+  command?: string | null;
+  phase?: string | null;
+  lockers_total: number;
+  lockers_done: number;
+  blocks_total: number;
+  blocks_done: number;
+  tuples_total: number;
+  tuples_done: number;
+  partitions_total: number;
+  partitions_done: number;
+  elapsed_seconds?: number | null;
+  started_at?: string | null;
+  wait_event_type?: string | null;
+  wait_event?: string | null;
+  username?: string | null;
+  application_name?: string | null;
+  client_addr?: string | null;
+  state?: string | null;
+  blocking_pids: number[];
+  query?: string | null;
+}
+
+export interface CreateIndexRequest extends MutationRequest {
+  schema_name: string;
+  table_name: string;
+  columns: string[];
+  index_name?: string | null;
+  method?: string;
+  unique?: boolean;
+  concurrently?: boolean;
 }
 
 export interface LockInfo {
@@ -1099,6 +1143,25 @@ export const endpoints = {
       params: { keep_days: keepDays, confirm: true },
       ...options,
     }),
+
+  getIndexCreateProgress: (
+    opId?: string,
+    options?: CallOptions
+  ): Promise<IndexCreateProgress[]> =>
+    api.get<IndexCreateProgress[]>("/indexes/create-progress", {
+      params: { op_id: opId },
+      ...options,
+    }),
+
+  createIndex: (
+    body: CreateIndexRequest,
+    options?: CallOptions
+  ): Promise<DryRunResult | MaintenanceActionResult> =>
+    api.post<DryRunResult | MaintenanceActionResult>(
+      "/maintenance/create-index",
+      body,
+      options
+    ),
 
   getMaintenance: (limit = 5000): Promise<MaintenanceReport> =>
     api.get<MaintenanceReport>("/maintenance", { params: { limit } }),

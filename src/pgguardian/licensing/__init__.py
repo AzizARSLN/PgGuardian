@@ -12,12 +12,15 @@ from pgguardian.licensing.keys import (
     sign_license,
     verify_license,
 )
+from pgguardian.licensing.state import LicenseState, resolve_license_state
 
 __all__ = [
     "DEFAULT_PUBLIC_KEY",
     "LicenseError",
     "LicenseInfo",
+    "LicenseState",
     "generate_keypair",
+    "resolve_license_state",
     "sign_license",
     "verify_license",
 ]

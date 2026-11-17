@@ -166,6 +166,26 @@ class DropIndexRequest(MutationRequest):
     index_name: str
 
 
+class CreateIndexRequest(MutationRequest):
+    """CREATE [UNIQUE] INDEX [CONCURRENTLY] on a table.
+
+    Concurrent is the default because it does not block writes; the
+    non-concurrent form takes a lock that blocks writes and is treated as
+    DANGEROUS. The index name is generated from the table and columns when
+    it is not given.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_name: str
+    table_name: str
+    columns: list[str] = Field(min_length=1)
+    index_name: str | None = None
+    method: str = "btree"
+    unique: bool = False
+    concurrently: bool = True
+
+
 class RaiseSequenceMaxValueRequest(MutationRequest):
     """Raise a sequence MAXVALUE to a multiple of its current ceiling (DANGEROUS)."""
 
@@ -537,6 +557,100 @@ def run_drop_index(
             status = _execute_untimed(client, query, tracked)
     audit("maintenance.drop_index", target, RiskLevel.DANGEROUS, settings)
     return MaintenanceActionResult(action="drop_index", target=target, command_status=status)
+
+
+# Index access methods PostgreSQL ships with. Anything else is rejected so the
+# method never reaches the composed statement unchecked.
+_INDEX_METHODS = frozenset({"btree", "hash", "gist", "gin", "spgist", "brin"})
+
+
+def _default_index_name(table: str, columns: list[str], unique: bool) -> str:
+    """A deterministic index name, kept within the 63-byte identifier limit."""
+    prefix = "uq" if unique else "idx"
+    return f"{prefix}_{table}_{'_'.join(columns)}"[:63]
+
+
+@router.post("/create-index", response_model=DryRunResult | MaintenanceActionResult)
+def run_create_index(
+    body: CreateIndexRequest,
+    op_id: str | None = None,
+    client: DbClient = Depends(resolve_client),
+    settings: ApiSettings = Depends(get_api_settings),
+    claims: dict[str, Any] | None = Depends(verify_token_OR_jwt),
+) -> DryRunResult | MaintenanceActionResult:
+    """CREATE INDEX on a table — CONCURRENTLY by default, non-concurrent is DANGEROUS.
+
+    A concurrent build does not block writes; the plain form takes a lock that
+    blocks writes until it finishes. While it runs, ``pg_stat_progress_create_index``
+    reports the phase and the tuples/partitions progress.
+    """
+    tracked = validate_op_id(op_id) if op_id else None
+    if body.concurrently:
+        ensure_writes_allowed(settings, "maintenance.create_index")
+        risk = RiskLevel.MAINTENANCE
+    else:
+        ensure_dangerous_allowed(settings, "maintenance.create_index")
+        risk = RiskLevel.DANGEROUS
+    schema_name = validate_identifier(body.schema_name, what="schema name")
+    table_name = validate_identifier(body.table_name, what="table name")
+    method = body.method.lower()
+    if method not in _INDEX_METHODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported index method '{body.method}'. "
+            f"Use one of: {', '.join(sorted(_INDEX_METHODS))}.",
+        )
+    # Preserve order, drop duplicates: (a, a) is not a valid index definition.
+    columns: list[str] = []
+    for column in body.columns:
+        name = validate_identifier(column, what="column name")
+        if name not in columns:
+            columns.append(name)
+    if not columns:
+        raise HTTPException(status_code=400, detail="Pass at least one column.")
+    index_name = (
+        validate_identifier(body.index_name, what="index name")
+        if body.index_name
+        else _default_index_name(table_name, columns, body.unique)
+    )
+    table_sql: object = SQL("{}.{}").format(
+        Identifier(schema_name), Identifier(table_name)
+    )
+    query = SQL(
+        "CREATE {unique}INDEX {concurrently}{name} ON {table} USING {method} ({columns})"
+    ).format(
+        unique=SQL("UNIQUE ") if body.unique else SQL(""),
+        concurrently=SQL("CONCURRENTLY ") if body.concurrently else SQL(""),
+        name=Identifier(index_name),
+        table=table_sql,
+        method=Identifier(method),
+        columns=SQL(", ").join(Identifier(column) for column in columns),
+    )
+    target = f"{schema_name}.{table_name}"
+    index_target = f"{schema_name}.{index_name}"
+    if body.dry_run:
+        return DryRunResult(
+            action="maintenance.create_index",
+            risk=risk,
+            sql=[query.as_string()],
+            target=index_target,
+        )
+    require_confirm(body, "maintenance.create_index")
+    with _log_ctx(
+        settings,
+        claims,
+        action="maintenance.create_index",
+        command=query,
+        target=index_target,
+        op_id=tracked,
+    ):
+        with mapped_errors(settings):
+            client.ping()
+            status = _execute_untimed(client, query, tracked)
+    audit("maintenance.create_index", index_target, risk, settings)
+    return MaintenanceActionResult(
+        action="create_index", target=index_target, command_status=status
+    )
 
 
 @router.post("/sequence-maxvalue", response_model=DryRunResult | MaintenanceActionResult)

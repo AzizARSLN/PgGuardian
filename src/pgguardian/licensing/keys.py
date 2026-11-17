@@ -25,9 +25,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 PREFIX = "PGG1"
 
-# Placeholder: set the vendor public key before shipping. Overridable at runtime
-# with ``PGGUARDIAN_LICENSE_PUBLIC_KEY`` (base64url of the 32 raw key bytes).
-DEFAULT_PUBLIC_KEY = ""
+# Vendor public key baked into the build (base64url of the 32 raw key bytes).
+# It is public by design and safe to commit; the matching private key stays with
+# the vendor. Overridable at runtime with ``PGGUARDIAN_LICENSE_PUBLIC_KEY`` for
+# local/testing keys.
+DEFAULT_PUBLIC_KEY = "QS6k5oo-sXoaZcbdH5NNzrmahx_3sP0krJHXot8OWbA"
 
 
 class LicenseError(ValueError):

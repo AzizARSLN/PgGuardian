@@ -99,6 +99,7 @@ const OPERATION_ACTIONS = [
   "maintenance.analyze",
   "maintenance.reindex",
   "maintenance.drop_index",
+  "maintenance.create_index",
   "maintenance.sequence_maxvalue",
 ] as const;
 /** Recorded outcome kinds for a logged operation. */

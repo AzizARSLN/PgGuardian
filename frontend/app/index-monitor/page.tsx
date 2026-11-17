@@ -11,12 +11,16 @@ import {
   ArrowUp,
   ArrowUpDown,
   CheckCircle2,
+  Activity,
+  ChevronDown,
+  ChevronRight,
   Copy,
   HardDrive,
   Info,
   Layers,
   Loader2,
   Play,
+  Plus,
   RefreshCw,
   ShieldAlert,
   Trash2,
@@ -27,7 +31,15 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -43,8 +55,10 @@ import { IfWriter } from "@/components/role-guard";
 import { api, ApiError } from "@/lib/api/client";
 import {
   endpoints,
+  type CreateIndexRequest,
   type DuplicateIndexGroup,
   type IndexAlert,
+  type IndexCreateProgress,
   type IndexDetail,
   type IndexMonitorPoint,
   type IndexSuggestion,
@@ -53,7 +67,7 @@ import {
 } from "@/lib/api/types";
 import { qk } from "@/lib/api/queryKeys";
 import useConfirm from "@/lib/hooks/useConfirm";
-import { OpStopButton, useOpControl } from "@/lib/hooks/use-op-control";
+import { OpBlockedHint, OpStopButton, useOpControl } from "@/lib/hooks/use-op-control";
 import { useI18n, useT } from "@/lib/i18n";
 import { cn, formatBytes } from "@/lib/utils";
 import { useProfileStore } from "@/store/useProfileStore";
@@ -64,6 +78,10 @@ const PRUNE_DAYS = 90;
 const HISTORY_LIMIT = 100;
 const LONG_ACTION_TIMEOUT_MS = 30 * 60 * 1000;
 const INDEXES_PREFIX = ["indexes"];
+const CREATE_PROGRESS_POLL_MS = 1500;
+/** Refresh cadence for the server-wide live index-build monitor. */
+const LIVE_PROGRESS_POLL_MS = 2000;
+const INDEX_METHODS = ["btree", "hash", "gin", "gist", "brin", "spgist"] as const;
 
 const CELL = "px-2 py-1.5 text-xs";
 const HEAD = "h-8 px-2 text-xs";
@@ -517,6 +535,12 @@ export default function IndexMonitorPage() {
         </div>
       </div>
 
+      <LiveIndexBuildMonitor />
+
+      <IfWriter>
+        <CreateIndexPanel />
+      </IfWriter>
+
       {!reportQuery.isError && (
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
           {reportQuery.isLoading || !summary ? (
@@ -728,6 +752,742 @@ export default function IndexMonitorPage() {
           busy={actionMutation.isPending}
         />
       ) : null}
+    </div>
+  );
+}
+
+function defaultIndexName(table: string, columns: string[], unique: boolean): string {
+  const prefix = unique ? "uq" : "idx";
+  return `${prefix}_${table}_${columns.join("_")}`.slice(0, 63);
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Server-wide live monitoring of every CREATE INDEX / REINDEX currently
+ * running, sourced from `pg_stat_progress_create_index`. The build is complete
+ * once `tuples_done` reaches `tuples_total` (its row then leaves the view).
+ */
+function LiveIndexBuildMonitor() {
+  const t = useT();
+  const { formatNumber } = useI18n();
+  const [auto, setAuto] = useState(true);
+
+  const buildsQuery = useQuery({
+    queryKey: qk.indexes.createProgress(null),
+    queryFn: () => endpoints.getIndexCreateProgress(),
+    refetchInterval: auto ? LIVE_PROGRESS_POLL_MS : false,
+  });
+
+  const rows = buildsQuery.data ?? [];
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Activity className="h-4 w-4 shrink-0 text-info" />
+          <span className="text-sm font-semibold">{t("indexMonitor.live.title")}</span>
+          <span className="hidden truncate text-xs text-muted-foreground lg:inline">
+            {t("indexMonitor.live.subtitle")}
+          </span>
+          {rows.length > 0 ? (
+            <Badge variant="outline" className="text-[10px] border-info/40 text-info">
+              {t("indexMonitor.live.count", { count: rows.length })}
+            </Badge>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+            <Checkbox checked={auto} onCheckedChange={(v) => setAuto(v === true)} />
+            {t("indexMonitor.live.auto")}
+          </label>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => buildsQuery.refetch()}
+            disabled={buildsQuery.isFetching}
+          >
+            <RefreshCw
+              className={cn("mr-1.5 h-3.5 w-3.5", buildsQuery.isFetching && "animate-spin")}
+            />
+            {t("indexMonitor.live.refresh")}
+          </Button>
+        </div>
+      </div>
+
+      {buildsQuery.isError ? (
+        <p className="px-3 py-4 text-xs text-destructive">
+          {(buildsQuery.error as Error)?.message ?? "—"}
+        </p>
+      ) : buildsQuery.isLoading ? (
+        <div className="space-y-1.5 p-3">
+          {[0, 1].map((i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="px-3 py-4 text-xs text-muted-foreground">{t("indexMonitor.live.empty")}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/40 text-left text-[11px] uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colTable")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colIndex")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colCommand")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colPhase")}</th>
+                <th className="w-56 px-3 py-1.5 font-medium">{t("indexMonitor.live.colProgress")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colElapsed")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colWait")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colPid")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colUser")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("indexMonitor.live.colBlockers")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <LiveBuildRow key={row.pid} row={row} formatNumber={formatNumber} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LiveBuildRow({
+  row,
+  formatNumber,
+}: {
+  row: IndexCreateProgress;
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string;
+}) {
+  const t = useT();
+  const total = row.tuples_total;
+  const done = row.tuples_done;
+  const scanDone = total > 0 && done >= total;
+  const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : null;
+  const isPgGuardian = (row.application_name ?? "").startsWith("pgGuardian-op:");
+  const blocked = row.blocking_pids.length > 0;
+
+  const eta = (() => {
+    if (scanDone || percent == null) return null;
+    const elapsed = row.elapsed_seconds ?? 0;
+    if (elapsed <= 0 || done <= 0) return null;
+    const rate = done / elapsed;
+    if (rate <= 0) return null;
+    return (total - done) / rate;
+  })();
+
+  return (
+    <tr className={cn("border-t border-border", blocked && "bg-destructive/5")}>
+      <td className="px-3 py-1.5 font-mono">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate">{row.table_name ?? "—"}</span>
+          {isPgGuardian ? (
+            <Badge variant="outline" className="shrink-0 text-[10px]">
+              {t("indexMonitor.live.pgguardian")}
+            </Badge>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-3 py-1.5 font-mono">{row.index_name ?? "—"}</td>
+      <td className="px-3 py-1.5 font-mono">{row.command ?? "—"}</td>
+      <td className="px-3 py-1.5">
+        <div className="flex flex-col gap-0.5">
+          <span>{row.phase ?? "—"}</span>
+          {row.partitions_total > 0 ? (
+            <span className="text-[10px] text-muted-foreground">
+              {t("indexMonitor.live.partitionsShort", {
+                done: formatNumber(row.partitions_done),
+                total: formatNumber(row.partitions_total),
+              })}
+            </span>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-3 py-1.5">
+        <div className="space-y-1">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            {percent == null ? (
+              <div className="h-full w-1/4 animate-pulse rounded-full bg-info/60" />
+            ) : (
+              <div
+                className={cn("h-full rounded-full", scanDone ? "bg-success" : "bg-info")}
+                style={{ width: `${percent}%` }}
+              />
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+            <span className="font-mono">
+              {percent == null ? "—" : `${percent}%`} ·{" "}
+              {t("indexMonitor.live.tuplesShort", {
+                done: formatNumber(done),
+                total: formatNumber(total),
+              })}
+            </span>
+            {eta != null ? (
+              <span className="shrink-0">{t("indexMonitor.create.eta", { time: formatDuration(eta) })}</span>
+            ) : null}
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-1.5 font-mono">{formatDuration(row.elapsed_seconds)}</td>
+      <td className="px-3 py-1.5">
+        {row.wait_event ? `${row.wait_event_type ?? ""} ${row.wait_event}`.trim() : "—"}
+      </td>
+      <td className="px-3 py-1.5 font-mono">{row.pid}</td>
+      <td className="px-3 py-1.5">
+        <div className="flex flex-col gap-0.5">
+          <span>{row.username ?? "—"}</span>
+          {row.client_addr ? (
+            <span className="text-[10px] text-muted-foreground">{row.client_addr}</span>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-3 py-1.5">
+        {blocked ? (
+          <span className="inline-flex items-center gap-1 font-mono text-destructive">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            {row.blocking_pids.join(", ")}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * "İndex Ekleme" group: pick schema → table → columns, choose the access
+ * method and options, review the generated DDL and create the index while
+ * following its live build progress from `pg_stat_progress_create_index`.
+ */
+function CreateIndexPanel() {
+  const t = useT();
+  const qc = useQueryClient();
+  const { confirm, Component: ConfirmDialog } = useConfirm();
+  const op = useOpControl();
+
+  const [open, setOpen] = useState(false);
+  const [schema, setSchema] = useState("");
+  const [table, setTable] = useState("");
+  const [columns, setColumns] = useState<string[]>([]);
+  const [method, setMethod] = useState<string>("btree");
+  const [unique, setUnique] = useState(false);
+  const [concurrently, setConcurrently] = useState(true);
+  const [indexName, setIndexName] = useState("");
+  const [opId, setOpId] = useState<string | null>(null);
+  const [target, setTarget] = useState<{ table: string; index: string } | null>(null);
+
+  const schemasQuery = useQuery({
+    queryKey: qk.schemas.all(),
+    queryFn: () => endpoints.listSchemas(),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  const tablesQuery = useQuery({
+    queryKey: qk.schemas.tables(schema),
+    queryFn: () => endpoints.listTables(schema),
+    enabled: open && !!schema,
+    staleTime: 60_000,
+  });
+
+  const detailQuery = useQuery({
+    queryKey: qk.schemas.table(schema, table),
+    queryFn: () => endpoints.describeTable(schema, table),
+    enabled: open && !!schema && !!table,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (body: CreateIndexRequest) => {
+      const name =
+        body.index_name?.trim() ||
+        defaultIndexName(body.table_name, body.columns, body.unique ?? false);
+      setTarget({ table: `${body.schema_name}.${body.table_name}`, index: name });
+      const handle = op.begin("create-index");
+      setOpId(handle.opId);
+      return endpoints.createIndex(body, {
+        timeout: LONG_ACTION_TIMEOUT_MS,
+        opId: handle.opId,
+        signal: handle.signal,
+      });
+    },
+    onSuccess: (_result, body) => {
+      const name =
+        body.index_name?.trim() ||
+        defaultIndexName(body.table_name, body.columns, body.unique ?? false);
+      toast.success(t("indexMonitor.create.created", { index: name }));
+      qc.invalidateQueries({ queryKey: INDEXES_PREFIX });
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 499) return;
+      toast.error(t("indexMonitor.create.createFailed"));
+    },
+    onSettled: () => op.end(),
+  });
+
+  const onSchemaChange = (value: string) => {
+    setSchema(value);
+    setTable("");
+    setColumns([]);
+    setIndexName("");
+  };
+
+  const onTableChange = (value: string) => {
+    setTable(value);
+    setColumns([]);
+    setIndexName("");
+  };
+
+  const toggleColumn = (name: string) => {
+    setColumns((prev) =>
+      prev.includes(name) ? prev.filter((c) => c !== name) : [...prev, name]
+    );
+  };
+
+  const resolvedName =
+    indexName.trim() ||
+    (table && columns.length ? defaultIndexName(table, columns, unique) : "");
+
+  const ddl = useMemo(() => {
+    if (!schema || !table || columns.length === 0) return "";
+    const name = indexName.trim() || defaultIndexName(table, columns, unique);
+    return (
+      `CREATE ${unique ? "UNIQUE " : ""}INDEX ${concurrently ? "CONCURRENTLY " : ""}` +
+      `${quoteIdent(name)} ON ${quoteIdent(schema)}.${quoteIdent(table)} ` +
+      `USING ${method} (${columns.map(quoteIdent).join(", ")});`
+    );
+  }, [schema, table, columns, indexName, unique, concurrently, method]);
+
+  const canSubmit = !!schema && !!table && columns.length > 0 && !mutation.isPending;
+
+  const handleCreate = async () => {
+    if (!canSubmit) return;
+    const ok = await confirm({
+      title: t("indexMonitor.create.confirmTitle", { table: `${schema}.${table}` }),
+      description: concurrently
+        ? t("indexMonitor.create.confirmConcurrent")
+        : t("indexMonitor.create.confirmBlocking"),
+      sql_preview: ddl ? [ddl] : undefined,
+      risk_level: concurrently ? "MAINTENANCE" : "DANGEROUS",
+      confirm_label: t("indexMonitor.create.submit"),
+      cancel_label: t("common.cancel"),
+    });
+    if (!ok) return;
+    mutation.mutate({
+      schema_name: schema,
+      table_name: table,
+      columns,
+      index_name: indexName.trim() || undefined,
+      method,
+      unique,
+      concurrently,
+      confirm: true,
+    });
+  };
+
+  const schemas = schemasQuery.data ?? [];
+  const tables = tablesQuery.data ?? [];
+  const colList = detailQuery.data?.columns ?? [];
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <ConfirmDialog />
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/40"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {open ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <Plus className="h-4 w-4 shrink-0 text-success" />
+          <span className="truncate text-sm font-semibold">
+            {t("indexMonitor.create.title")}
+          </span>
+          <span className="hidden truncate text-xs text-muted-foreground lg:inline">
+            {t("indexMonitor.create.subtitle")}
+          </span>
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {open ? t("indexMonitor.create.close") : t("indexMonitor.create.open")}
+        </span>
+      </button>
+
+      {open ? (
+        <div className="space-y-3 border-t border-border p-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Field label={t("indexMonitor.create.schema")}>
+              <Select value={schema} onValueChange={onSchemaChange}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={t("indexMonitor.create.schemaPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {schemas.map((s) => (
+                    <SelectItem key={s.name} value={s.name} className="text-xs">
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label={t("indexMonitor.create.table")}>
+              <Select value={table} onValueChange={onTableChange} disabled={!schema}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue
+                    placeholder={t(
+                      schema
+                        ? "indexMonitor.create.tablePlaceholder"
+                        : "indexMonitor.create.tablePlaceholderDisabled"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {tables.map((tb) => (
+                    <SelectItem
+                      key={tb.table_name}
+                      value={tb.table_name}
+                      className="text-xs"
+                    >
+                      {tb.table_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label={t("indexMonitor.create.method")}>
+              <Select value={method} onValueChange={setMethod}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INDEX_METHODS.map((m) => (
+                    <SelectItem key={m} value={m} className="font-mono text-xs">
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          <div>
+            <div className="mb-1 flex flex-wrap items-baseline justify-between gap-1">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {t("indexMonitor.create.columns")}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                {t("indexMonitor.create.columnsHint")}
+              </span>
+            </div>
+
+            {!schema || !table ? (
+              <p className="rounded-md border border-dashed border-border px-2 py-3 text-xs text-muted-foreground">
+                {t("indexMonitor.create.tablePlaceholder")}
+              </p>
+            ) : detailQuery.isLoading ? (
+              <div className="space-y-1.5">
+                {[0, 1].map((i) => (
+                  <Skeleton key={i} className="h-6 w-full" />
+                ))}
+              </div>
+            ) : colList.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {t("indexMonitor.create.noColumns")}
+              </p>
+            ) : (
+              <>
+                <div className="max-h-40 overflow-y-auto rounded-md border border-border p-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {colList.map((c) => (
+                      <label
+                        key={c.name}
+                        className={cn(
+                          "inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
+                          columns.includes(c.name)
+                            ? "border-info/50 bg-info/10"
+                            : "border-border"
+                        )}
+                      >
+                        <Checkbox
+                          checked={columns.includes(c.name)}
+                          onCheckedChange={() => toggleColumn(c.name)}
+                        />
+                        <span className="font-mono">{c.name}</span>
+                        <span className="text-muted-foreground">{c.data_type}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {columns.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    <span className="text-[11px] text-muted-foreground">
+                      {t("indexMonitor.create.columnsSelected")}
+                    </span>
+                    {columns.map((c, i) => (
+                      <Badge key={c} variant="outline" className="gap-1 font-mono text-[11px]">
+                        <span className="text-muted-foreground">{i + 1}</span>
+                        {c}
+                        <button
+                          type="button"
+                          onClick={() => toggleColumn(c)}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={c}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-3">
+            <label className="inline-flex items-center gap-2 text-xs">
+              <Checkbox checked={unique} onCheckedChange={(v) => setUnique(v === true)} />
+              <span className="font-semibold">UNIQUE</span>
+              <span className="text-[11px] text-muted-foreground">
+                {t("indexMonitor.create.uniqueHint")}
+              </span>
+            </label>
+            <label className="inline-flex items-center gap-2 text-xs">
+              <Checkbox
+                checked={concurrently}
+                onCheckedChange={(v) => setConcurrently(v === true)}
+              />
+              <span className="font-semibold">CONCURRENTLY</span>
+              <span className="text-[11px] text-muted-foreground">
+                {t("indexMonitor.create.concurrentlyHint")}
+              </span>
+            </label>
+            <Field label={t("indexMonitor.create.indexName")}>
+              <Input
+                value={indexName}
+                onChange={(e) => setIndexName(e.target.value)}
+                placeholder={t("indexMonitor.create.indexNamePlaceholder")}
+                className="h-8 text-xs"
+              />
+            </Field>
+          </div>
+
+          {resolvedName ? (
+            <p className="text-[11px] text-muted-foreground">
+              {t("indexMonitor.create.nameGenerated", { name: resolvedName })}
+            </p>
+          ) : null}
+
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {t("indexMonitor.create.ddl")}
+              </span>
+              {ddl ? <CopyButton text={ddl} /> : null}
+            </div>
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-black/30 p-2 font-mono text-[11px]">
+              {ddl || t("indexMonitor.create.needSelection")}
+            </pre>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              disabled={!canSubmit}
+              onClick={handleCreate}
+            >
+              {mutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {mutation.isPending
+                ? t("indexMonitor.create.creating")
+                : t("indexMonitor.create.submit")}
+            </Button>
+            <OpStopButton control={op} className="h-8 text-xs" />
+          </div>
+
+          <OpBlockedHint control={op} />
+
+          {opId ? (
+            <CreateIndexProgressCard
+              opId={opId}
+              pending={mutation.isPending}
+              target={target}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Live build progress for one CREATE INDEX operation, mirroring
+ * `pg_stat_progress_create_index`. The build is finished once `tuples_done`
+ * reaches `tuples_total`; the row then leaves the view.
+ */
+function CreateIndexProgressCard({
+  opId,
+  pending,
+  target,
+}: {
+  opId: string;
+  pending: boolean;
+  target: { table: string; index: string } | null;
+}) {
+  const t = useT();
+  const { formatNumber } = useI18n();
+  const progressQuery = useQuery({
+    queryKey: qk.indexes.createProgress(opId),
+    queryFn: () => endpoints.getIndexCreateProgress(opId),
+    refetchInterval: pending ? CREATE_PROGRESS_POLL_MS : false,
+  });
+  const row: IndexCreateProgress | undefined = progressQuery.data?.[0];
+  const total = row?.tuples_total ?? 0;
+  const doneTuples = row?.tuples_done ?? 0;
+  const complete = !!row && total > 0 && doneTuples >= total;
+  const percent = total > 0 ? Math.min(100, Math.round((doneTuples / total) * 100)) : null;
+  const live = pending && !complete;
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {live ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-info" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+          )}
+          <span className="text-xs font-semibold">
+            {t("indexMonitor.create.progressTitle")}
+          </span>
+          {target ? (
+            <span className="truncate font-mono text-[11px] text-muted-foreground">
+              {target.table} · {target.index}
+            </span>
+          ) : null}
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            "text-[10px]",
+            live ? "border-info/40 text-info" : "border-success/40 text-success"
+          )}
+        >
+          {live ? t("indexMonitor.create.running") : t("indexMonitor.create.done")}
+        </Badge>
+      </div>
+
+      {row ? (
+        <>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            {percent == null ? (
+              <div className="h-full w-1/4 animate-pulse rounded-full bg-info/60" />
+            ) : (
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  complete ? "bg-success" : "bg-info"
+                )}
+                style={{ width: `${percent}%` }}
+              />
+            )}
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>
+              {percent == null
+                ? t("indexMonitor.create.progressWaiting")
+                : t("indexMonitor.create.percent", { percent })}
+            </span>
+            <span className="font-mono">
+              {t("indexMonitor.create.ofTotal", {
+                done: formatNumber(doneTuples),
+                total: formatNumber(total),
+              })}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            <DetailMetric label={t("indexMonitor.create.command")} value={row.command ?? "—"} />
+            <DetailMetric label={t("indexMonitor.create.phase")} value={row.phase ?? "—"} />
+            <DetailMetric
+              label={t("indexMonitor.create.tuples")}
+              value={`${formatNumber(row.tuples_done)} / ${formatNumber(row.tuples_total)}`}
+            />
+            <DetailMetric
+              label={t("indexMonitor.create.blocks")}
+              value={`${formatNumber(row.blocks_done)} / ${formatNumber(row.blocks_total)}`}
+            />
+            {row.partitions_total > 0 ? (
+              <DetailMetric
+                label={t("indexMonitor.create.partitions")}
+                value={`${formatNumber(row.partitions_done)} / ${formatNumber(row.partitions_total)}`}
+              />
+            ) : null}
+            {row.lockers_total > 0 ? (
+              <DetailMetric
+                label={t("indexMonitor.create.lockers")}
+                value={`${formatNumber(row.lockers_done)} / ${formatNumber(row.lockers_total)}`}
+              />
+            ) : null}
+            <DetailMetric
+              label={t("indexMonitor.create.elapsed")}
+              value={formatDuration(row.elapsed_seconds)}
+            />
+            <DetailMetric
+              label={t("indexMonitor.create.waitEvent")}
+              value={
+                row.wait_event
+                  ? `${row.wait_event_type ?? ""} ${row.wait_event}`.trim()
+                  : "—"
+              }
+            />
+            <DetailMetric label={t("indexMonitor.create.pid")} value={String(row.pid)} />
+          </div>
+        </>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {pending
+            ? t("indexMonitor.create.progressWaiting")
+            : t("indexMonitor.create.progressNone")}
+        </p>
+      )}
     </div>
   );
 }

@@ -196,6 +196,42 @@ class IndexMonitorReport(BaseModel):
     alerts: list[IndexAlert] = Field(default_factory=list)
 
 
+class IndexCreateProgress(BaseModel):
+    """Live progress of one running CREATE INDEX / REINDEX operation.
+
+    Mirrors ``pg_stat_progress_create_index``. For a concurrent build the work
+    is finished once ``tuples_done`` reaches ``tuples_total``; the operation is
+    done when the row leaves the progress view.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    pid: int
+    database_name: str | None = None
+    table_name: str | None = None
+    index_name: str | None = None
+    command: str | None = None
+    phase: str | None = None
+    lockers_total: int = 0
+    lockers_done: int = 0
+    blocks_total: int = 0
+    blocks_done: int = 0
+    tuples_total: int = 0
+    tuples_done: int = 0
+    partitions_total: int = 0
+    partitions_done: int = 0
+    elapsed_seconds: float | None = None
+    started_at: datetime | None = None
+    wait_event_type: str | None = None
+    wait_event: str | None = None
+    username: str | None = None
+    application_name: str | None = None
+    client_addr: str | None = None
+    state: str | None = None
+    blocking_pids: list[int] = Field(default_factory=list)
+    query: str | None = None
+
+
 class IndexMonitorPoint(BaseModel):
     """One stored time-series point of index summary metrics."""
 

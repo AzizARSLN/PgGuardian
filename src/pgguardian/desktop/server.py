@@ -88,6 +88,10 @@ def prepare_environment() -> Path:
     os.environ.setdefault("PGGUARDIAN_CENTRAL_DB_FILE", str(data_dir / "central.db"))
     os.environ.setdefault("PGGUARDIAN_JWT_SECRET", _persistent_secret(data_dir / "jwt_secret"))
     os.environ.setdefault("PGGUARDIAN_COOKIE_SECURE", "0")
+    # Dağıtılan masaüstü derlemesi lisans ister: lisans etkinleştirilene kadar
+    # yalnızca salt-okunur uçlar çalışır, mutasyonlar 403 döner. Geliştirme /
+    # iç kullanım için PGGUARDIAN_LICENSE_ENFORCED=0 ile kapatılabilir.
+    os.environ.setdefault("PGGUARDIAN_LICENSE_ENFORCED", "1")
     return data_dir
 
 
